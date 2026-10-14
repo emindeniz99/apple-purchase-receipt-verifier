@@ -4,9 +4,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * How the implementation reports a failed check internally. Never reaches a
- * caller: {@link DefaultVerifier} turns it into a {@link Failure}, keeping the
- * cause only for {@link Reason#UNREADABLE_PAYLOAD} and the
- * {@link Reason#MALFORMED} that {@link #unexpected} builds.
+ * caller: {@link Endpoint} turns it into a status, and {@link DefaultVerifier}
+ * into a {@link Failure}, keeping the cause only for
+ * {@link Reason#UNREADABLE_PAYLOAD} and the {@link Reason#MALFORMED} that
+ * {@link #unexpected} builds.
  *
  * <p>The message never quotes the input, so it is safe to log as is.</p>
  */

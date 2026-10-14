@@ -20,12 +20,12 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * certificate encoding strictness, RSA and EC key bounds, and the path
  * builder's and validator's node bounds. Its PKIX builder and validator
  * also use a {@code BouncyCastleProvider} registered with {@code Security}
- * as "BC" when one exists, and their own otherwise. None of these can make a signature verify that does not. They
- * change which encodings parse and how much work is allowed. A host can
- * therefore make this library refuse genuine input (a nesting bound below 9
- * refuses every genuine receipt, which {@link Verifier#create} checks for),
- * or accept an unusual encoding of content that a valid signature covers.
- * The README lists them.</p>
+ * as "BC" when one exists, and their own otherwise. None of these can make a
+ * signature verify that does not. They change which encodings parse and how
+ * much work is allowed. A host can therefore make this library refuse genuine
+ * input (a nesting bound below 9 refuses every genuine receipt, which
+ * {@link Verifier#create} checks for), or accept an unusual encoding of
+ * content that a valid signature covers. The README lists them.</p>
  */
 final class BouncyCastle {
 

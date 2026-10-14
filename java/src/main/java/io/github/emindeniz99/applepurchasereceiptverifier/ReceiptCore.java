@@ -100,7 +100,7 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
-        return verifyDer(StrictBase64.decode(base64, false, Reason.MALFORMED, "receipt"), trustAnchors, now);
+        return verifyDer(StrictBase64.standard(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
     }
 
     /** {@link #verify} after the base64 step. */
@@ -115,18 +115,6 @@ final class ReceiptCore {
             throw VerificationException.unexpected(e);
         }
         return parseSignedPayload(payload);
-    }
-
-    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
-    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
-        try {
-            return ReceiptDecoder.parse(payload);
-        } catch (RuntimeException e) {
-            throw new VerificationException(
-                    Reason.UNREADABLE_PAYLOAD,
-                    "signed receipt content could not be read: " + e.getClass().getName(),
-                    e);
-        }
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
@@ -293,6 +281,12 @@ final class ReceiptCore {
         VerificationException first = null;
         for (X509Certificate signerCert : matches) {
             try {
+                // Refused before anything decodes its key (see AppleTrust).
+                if (!authenticated.contains(signerCert)) {
+                    throw new VerificationException(
+                            Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
+                }
+                PublicKey signerKey = AppleTrust.decodeKey(signerCert, "receipt signer certificate");
                 List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
                 // The certificate after the signer on the path; a signer a
                 // root issued directly has none.
@@ -301,7 +295,7 @@ final class ReceiptCore {
                 // The chain before the signature: checking the signature
                 // first would run the attacker's own key before anything
                 // about it is trusted.
-                verifyCmsSignature(signer, signerCert);
+                verifyCmsSignature(signer, signerKey);
                 return;
             } catch (VerificationException e) {
                 if (first == null) {
@@ -320,12 +314,6 @@ final class ReceiptCore {
     private static List<? extends Certificate> validateChain(
             X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        // Refused before anything decodes its key (see AppleTrust).
-        if (!authenticated.contains(signerCert)) {
-            throw new VerificationException(
-                    Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
-        }
-        AppleTrust.decodeKey(signerCert, "receipt signer certificate");
         try {
             X509CertSelector target = new X509CertSelector();
             target.setCertificate(signerCert);
@@ -344,8 +332,7 @@ final class ReceiptCore {
         }
     }
 
-    private static void verifyCmsSignature(SignerInformation signer, X509Certificate signerCert)
-            throws VerificationException {
+    private static void verifyCmsSignature(SignerInformation signer, PublicKey signerKey) throws VerificationException {
         // No algorithm allowlist of our own: the signer is pinned to an
         // Apple root and carries Apple's marker, so any algorithm
         // BouncyCastle can verify is accepted but the refused ones. One it
@@ -371,7 +358,7 @@ final class ReceiptCore {
             // Wrapped here, not when the SignerInfos are read: the copy reads
             // the attributes, and ones that do not decode fail this SignerInfo
             // alone.
-            if (!new SignedAsSent(signer).verify(signerVerifier(signerCert.getPublicKey()))) {
+            if (!new SignedAsSent(signer).verify(signerVerifier(signerKey))) {
                 throw new VerificationException(
                         Reason.INVALID_SIGNATURE, "CMS signature does not match the signer certificate's key");
             }
@@ -467,6 +454,18 @@ final class ReceiptCore {
                 new JcaDigestCalculatorProviderBuilder()
                         .setProvider(BouncyCastle.PROVIDER)
                         .build());
+    }
+
+    /** Apple signed these bytes, so whatever stops the parse is UNREADABLE_PAYLOAD, never MALFORMED. */
+    private static ReceiptPayload parseSignedPayload(byte[] payload) throws VerificationException {
+        try {
+            return ReceiptDecoder.parse(payload);
+        } catch (RuntimeException e) {
+            throw new VerificationException(
+                    Reason.UNREADABLE_PAYLOAD,
+                    "signed receipt content could not be read: " + e.getClass().getName(),
+                    e);
+        }
     }
 
     /**

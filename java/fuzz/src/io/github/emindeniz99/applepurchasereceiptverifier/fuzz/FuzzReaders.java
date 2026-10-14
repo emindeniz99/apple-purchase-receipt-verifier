@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
  *   <li>{@code ReceiptDecoder.parse}: the receipt attribute walk: the ASN.1
  *       SET, the optional Xcode double wrap, the per-attribute type and value
  *       decode, the in-app sub-walk, the date and integer bounds.
- *   <li>{@code StrictBase64.decode}: the base64 dialect Apple's clients
+ *   <li>{@code StrictBase64.standard}: the base64 dialect Apple's clients
  *       actually send.
  *   <li>{@code JwsCore.Header.read} and {@code JwsCore.readPayload}: the
  *       streaming reads of a decoded JWS header and payload.
@@ -43,14 +43,14 @@ public final class FuzzReaders {
 
     private static final Method PARSE_PAYLOAD = method("ReceiptDecoder", "parse", byte[].class);
     private static final Method DECODE_BASE64 =
-            method("StrictBase64", "decode", String.class, boolean.class, Reason.class, String.class);
+            method("StrictBase64", "standard", String.class, Reason.class, String.class);
     private static final Method READ_HEADER = method("JwsCore$Header", "read", byte[].class);
     private static final Method READ_PAYLOAD = method("JwsCore", "readPayload", byte[].class);
 
     public static void fuzzerTestOneInput(byte[] data) {
         String text = new String(data, StandardCharsets.ISO_8859_1);
         call("ReceiptDecoder.parse", PARSE_PAYLOAD, true, (Object) data);
-        call("StrictBase64.decode", DECODE_BASE64, false, text, false, Reason.MALFORMED, "receipt");
+        call("StrictBase64.standard", DECODE_BASE64, false, text, Reason.MALFORMED, "receipt");
         call("JwsCore.Header.read", READ_HEADER, false, (Object) data);
         call("JwsCore.readPayload", READ_PAYLOAD, false, (Object) data);
     }

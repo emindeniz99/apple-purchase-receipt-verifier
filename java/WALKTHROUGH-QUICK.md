@@ -129,9 +129,7 @@ it carries more than 1,000 extensions, or its own label is one of those
 labels or a salt its issuer's key cannot hold. A SignerInfo is left out
 for the same name and parameter shapes or more than 1,000 attributes.
 Passing over or leaving out only removes something: the receipt still
-needs Apple's signature under a pinned chain. Each refusal, with what it
-cost and why no Apple input is affected, is in R20 of
-`docs/rust-core/DECISIONS.md`.
+needs Apple's signature under a pinned chain.
 
 | `Reason` | Meaning | Action |
 |---|---|---|

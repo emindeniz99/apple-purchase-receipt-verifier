@@ -213,7 +213,7 @@ public class ReceiptBenchmark {
     private static MethodHandle decodeHandle() {
         try {
             Method decode = Class.forName("io.github.emindeniz99.applepurchasereceiptverifier.StrictBase64")
-                    .getDeclaredMethod("decode", String.class, Reason.class, String.class);
+                    .getDeclaredMethod("standard", String.class, Reason.class, String.class);
             decode.setAccessible(true);
             // The arguments ReceiptCore passes for receipt-data.
             return MethodHandles.insertArguments(

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
@@ -40,8 +41,9 @@ final class JwsCore {
 
     /**
      * Verifies {@code jws} and returns its payload. A payload that is not a
-     * JSON object is judged only after the signature, as {@link Reason#UNREADABLE_PAYLOAD}: a
-     * parse problem in something Apple signed is never {@code MALFORMED}.
+     * JSON object is judged only after the signature, as
+     * {@link Reason#UNREADABLE_PAYLOAD}: a parse problem in something Apple
+     * signed is never {@code MALFORMED}.
      */
     static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
             throws VerificationException {
@@ -69,9 +71,9 @@ final class JwsCore {
         if (parts.length != 3) {
             throw new VerificationException(Reason.MALFORMED, "expected 3 dot-separated segments, got " + parts.length);
         }
-        byte[] headerBytes = StrictBase64.decode(parts[0], true, Reason.MALFORMED, "header");
-        byte[] payloadBytes = StrictBase64.decode(parts[1], true, Reason.MALFORMED, "payload");
-        byte[] signature = StrictBase64.decode(parts[2], true, Reason.MALFORMED, "signature");
+        byte[] headerBytes = StrictBase64.url(parts[0], Reason.MALFORMED, "header");
+        byte[] payloadBytes = StrictBase64.url(parts[1], Reason.MALFORMED, "payload");
+        byte[] signature = StrictBase64.url(parts[2], Reason.MALFORMED, "signature");
 
         Header header = Header.read(headerBytes);
         if (!"ES256".equals(header.alg)) {
@@ -82,8 +84,6 @@ final class JwsCore {
         }
         // x5c[2] is decoded but unused: the pinned anchor stands in for it.
         List<@Nullable X509Certificate> chain = decodeChain(header.x5c);
-        X509Certificate leaf = chain.get(0);
-        X509Certificate intermediate = chain.get(1);
 
         // The sender's signedDate picks the instant the chain must be valid at,
         // before anything is trusted. That only moves the validity window; the
@@ -92,11 +92,14 @@ final class JwsCore {
         // transaction carries stands in, as in Apple's library, then the clock.
         Payload read = readOrNull(payloadBytes);
         Long carried = read == null ? null : read.chainInstant();
-        authenticateTopDown(leaf, intermediate, trustAnchors);
-        validateChain(leaf, intermediate, new Date(carried != null ? carried : now), trustAnchors);
+        List<X509Certificate> path = authenticateTopDown(chain.get(0), chain.get(1), trustAnchors);
+        X509Certificate leaf = path.get(0);
+        X509Certificate intermediate = path.get(1);
+        PublicKey leafKey = AppleTrust.decodeKey(leaf, "x5c[0]");
+        validateChain(path, new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         AppleTrust.requireMarkers(leaf, intermediate, "x5c");
-        verifyEs256(leaf, parts[0] + "." + parts[1], signature);
+        verifyEs256(leafKey, parts[0] + "." + parts[1], signature);
         // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
         Payload payload = read != null ? read : readPayload(payloadBytes);
         return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8), payload.environment());
@@ -177,9 +180,10 @@ final class JwsCore {
 
     /**
      * What one read of a signed payload yields: its last top-level
-     * {@code signedDate} and {@code receiptCreationDate}, and the three places Apple documents for its
-     * environment. A repeated name keeps its last value, a repeated
-     * {@code data} or {@code summary} included, as everywhere in a payload.
+     * {@code signedDate} and {@code receiptCreationDate}, and the three
+     * places Apple documents for its environment. A repeated name keeps its
+     * last value, a repeated {@code data} or {@code summary} included, as
+     * everywhere in a payload.
      */
     static final class Payload {
         @Nullable
@@ -310,7 +314,7 @@ final class JwsCore {
         List<@Nullable X509Certificate> chain = new ArrayList<>();
         try {
             for (String entry : x5c) {
-                byte[] der = StrictBase64.decode(entry, false, Reason.INVALID_CERTIFICATE, "x5c entry");
+                byte[] der = StrictBase64.standard(entry, Reason.INVALID_CERTIFICATE, "x5c entry");
                 // The first object only, as a CertificateFactory reads one.
                 X509CertificateHolder holder = PreTrustScreen.readCertificate(new ASN1InputStream(der).readObject());
                 chain.add(holder == null ? null : converter.getCertificate(holder));
@@ -324,9 +328,10 @@ final class JwsCore {
     /**
      * Checks both signatures from a pinned root down, decoding a key only once
      * it is vouched for; see {@link AppleTrust}. A null certificate, one
-     * {@link #decodeChain} passed over, is signed by nobody.
+     * {@link #decodeChain} passed over, is signed by nobody. Returns the two,
+     * leaf first.
      */
-    private static void authenticateTopDown(
+    private static List<X509Certificate> authenticateTopDown(
             @Nullable X509Certificate leaf, @Nullable X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         if (intermediate == null || !AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
@@ -342,15 +347,14 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
-        AppleTrust.decodeKey(leaf, "x5c[0]");
+        return Arrays.asList(leaf, intermediate);
     }
 
-    private static void validateChain(
-            X509Certificate leaf, X509Certificate intermediate, Date at, Set<TrustAnchor> trustAnchors)
+    private static void validateChain(List<X509Certificate> chain, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         try {
             CertPath path = CertificateFactory.getInstance("X.509", BouncyCastle.PROVIDER)
-                    .generateCertPath(Arrays.asList(leaf, intermediate));
+                    .generateCertPath(chain);
             PKIXParameters params = new PKIXParameters(trustAnchors);
             params.setRevocationEnabled(false);
             params.setDate(at);
@@ -367,7 +371,7 @@ final class JwsCore {
      * takes twice the leaf curve's order, so without the length check a
      * P-384 leaf would verify a 96-byte signature.
      */
-    private static void verifyEs256(X509Certificate leaf, String signingInput, byte[] signature)
+    private static void verifyEs256(PublicKey leafKey, String signingInput, byte[] signature)
             throws VerificationException {
         if (signature.length != 64) {
             throw new VerificationException(
@@ -375,7 +379,7 @@ final class JwsCore {
         }
         try {
             Signature verifier = Signature.getInstance(ES256_ALGORITHM, BouncyCastle.PROVIDER);
-            verifier.initVerify(leaf.getPublicKey());
+            verifier.initVerify(leafKey);
             verifier.update(signingInput.getBytes(StandardCharsets.US_ASCII));
             if (!verifier.verify(signature)) {
                 throw new VerificationException(

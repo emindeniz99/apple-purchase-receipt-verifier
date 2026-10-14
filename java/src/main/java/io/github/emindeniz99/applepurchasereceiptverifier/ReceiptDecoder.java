@@ -28,9 +28,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The receipt payload, the attribute SET inside the CMS envelope, as a
  * {@link ReceiptPayload}, by the decode rules in the README, "Decoding a
- * receipt".
- * Before the signature only {@link #readCreationDate} runs; every failure of
- * {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
+ * receipt". Before the signature only {@link #readCreationDate} runs; every
+ * failure of {@link #parse} is {@link Reason#UNREADABLE_PAYLOAD}.
  */
 final class ReceiptDecoder {
 
@@ -214,7 +213,8 @@ final class ReceiptDecoder {
                             Reason.UNREADABLE_PAYLOAD,
                             "receipt attribute has " + seq.size() + " fields, expected at least 3");
                 }
-                // 0 to Integer.MAX_VALUE; a wider type is refused, since narrowing would invent one.
+                // 0 to Integer.MAX_VALUE; a wider type is refused, since
+                // narrowing would invent one.
                 type = ASN1Integer.getInstance(seq.getObjectAt(0)).intValueExact();
                 if (type < 0) {
                     throw new VerificationException(Reason.UNREADABLE_PAYLOAD, "receipt attribute type out of range");

@@ -532,8 +532,8 @@ cRLDistributionPoints, 2026-10-06).
   Java's order. A target a pinned anchor vouched for whose key OpenSSL
   cannot build is `INVALID_CERTIFICATE` before its path is built: the
   receipt signer once `authenticated_top_down` holds it
-  (`ReceiptCore.validateChain` checks `authenticated.contains` and then
-  the key), the JWS leaf right after the intermediate's signature over
+  (`ReceiptCore.verifySigner` checks `authenticated.contains` and then
+  decodes the key), the JWS leaf right after the intermediate's signature over
   it (`JwsCore.authenticateTopDown`). A target nobody pinned vouched for
   is `UNTRUSTED_CHAIN` before its key is looked at, as before. The
   removed code was a hand-written half of `X509_verify_cert`, which

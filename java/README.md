@@ -523,8 +523,7 @@ procedure does not ask for them; the library requires them on receipts too. Not 
 Apple's PKI page carries the first. "Apple Worldwide Developer Relations
 CA - G2" (ECC, under Apple Root CA - G3) carries
 1.2.840.113635.100.6.2.15 instead, so a leaf under it is
-`INVALID_CERTIFICATE_PURPOSE` here and in the Rust core, as it is in
-Apple's library.
+`INVALID_CERTIFICATE_PURPOSE` here, as it is in Apple's library.
 
 Revocation is not checked: no OCSP, no CRL. Offline verification is the
 point; Apple handles a compromised signing certificate by rotating it, and
@@ -838,76 +837,48 @@ can build. These are warm-JVM figures; see
 [Running in production](#running-in-production) for the cold start. The
 machine was shared with other work, so treat them as an order of magnitude.
 
-The digest a SignerInfo declares is the sender's choice and is not
-signed, and BouncyCastle digests the whole content with it once for
-every certificate a SignerInfo names whose chain and markers pass, before
-that SignerInfo's signature is checked: once per SignerInfo when, as in
-Apple's receipts, one certificate matches. A cap-sized receipt with four
-SignerInfos naming Apple's public receipt-signing certificate and
-declaring GOST R 34.11-94 cost about 1.2 s warm and up to 1.8 s cold on
-Java 8, against about 0.09 s warm for SHA-256. The library now refuses
-the eight slow digests BouncyCastle implements (GOST R 34.11-94, MD2,
-Whirlpool, GOST R 34.11-2012 and DSTU 7564) before digesting a byte, as
-`INVALID_SIGNATURE`, which costs less than a SHA-256 receipt. The slowest
-digest still accepted, RIPEMD-160 at about 2.3 times SHA-256, costs about
-0.17 to 0.21 s warm and up to 0.44 s cold for the same receipt, measured
-on 2026-10-13 with a plain loop, not JMH, on a 4 vCPU machine
-(`docs/evidence/2026-10-13-java-digest-cost.md`).
+Some unsigned parts of a receipt or a JWS once cost seconds, or an
+`OutOfMemoryError`, inside BouncyCastle before anything was trusted. Each
+bullet gives what that input costs today at the cap, measured on
+2026-10-13 and 2026-10-14 with a plain loop, not JMH, on a 4 vCPU machine.
+The figures from before each change are in the repository's
+`docs/evidence/2026-10-13-java-digest-cost.md`,
+`docs/evidence/2026-10-13-java-pretrust-reencoding.md` and
+`docs/evidence/2026-10-13-java-pretrust-shape.md`, and, for the copies of
+the root, in `THREAT-MODEL.md` at the repository root.
 
-Three more sender-chosen inputs cost seconds before any signer was
-trusted, measured the same way on 2026-10-13. Re-encoding ASN.1 to DER
-sorts every SET in it: the library re-encoded each certificate-bag entry
-before parsing it, and BouncyCastle re-encodes a SignerInfo issuer value
-that is not a string to hash and compare the name. At the cap, a bag
-entry of nested SETs cost about 3 s and an issuer value of them about
-11 s. The library now reads each bag entry as parsed, and leaves out a
-SignerInfo whose issuer holds anything but strings, as no name Apple
-issues does; both inputs cost what parsing them costs, 0.25 to 0.9 s.
-The signatureAlgorithm is unsigned too: md2WithRSAEncryption made
-BouncyCastle hash the signed attributes with MD2 (0.26 s at the cap,
-against 0.03 s), and RSASSA-PSS with a saltLength of 1,000,000,000 made
-it allocate that many bytes, an `OutOfMemoryError` out of
-`verifyReceipt`. The MD2 label is refused before anything is hashed, and
-a PSS saltLength the signer's key cannot hold (RFC 8017) before anything
-is allocated, both as `INVALID_SIGNATURE`; a PSS signature whose salt
-fits verifies. The generic composite label (1.3.6.1.4.1.18227.2.1),
-defined by an individual draft from January 2020 until May 2023, names
-any number of parts, and BouncyCastle
-made a signature check per part and streamed the whole content into
-each: 15.6 s for 1,000 parts over a cap-sized receipt, and a
-`StackOverflowError` out of `verifyReceipt` at 50,000. It is refused
-before anything is built, as `INVALID_SIGNATURE`. No Apple receipt uses
-it. The per-pair composite OIDs of the LAMPS draft (IANA
-1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle verifies
-through their own SPI and not through the generic path, are not
-affected.
-A bag entry shaped as a certificate, with nested values in its names or
-algorithm parameters, cost 3.6 to 17 s at the cap inside BouncyCastle's
-X.509 class, which DER-encodes them as it builds, verifies and compares
-the certificate, and the receipt still verified; the JWS `x5c` chain
-builds the same object under its 256 KiB cap. The library now passes
-over a certificate whose names hold anything but strings or whose
-algorithm parameters hold a SET, as no certificate Apple issues does,
-before converting it, so such a receipt costs about its parse, 0.4 to
-0.85 s, and up to 1.1 s for a value nested 50 deep. A certificate's own
-signature label is unsigned as well: RSASSA-PSS with a saltLength of
-2,147,483,647 threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB
-JWS, and a saltLength the issuer's key cannot hold (RFC 8017) is now
-refused before anything is built. Under the generic composite label,
-BouncyCastle compared the whole list of parts once per part, so a bag
-entry with 20,000 parts cost 18 to 47 s from a 0.5 MB receipt that
-still verified; a certificate with that label is now signed by nobody.
-The label md2WithRSAEncryption made BouncyCastle run MD2 over the TBS
-once per issuer whose name matched, and every CA in the bag was an
-issuer, copies of the root included: a cap-sized stranger beside seven
-copies of the root cost about 2.5 s a call, measured on 2026-10-14. A
-certificate with that label is now signed by nobody, and a copy of a root
-or of an accepted CA is not tried as an issuer again: 0.05 to 0.2 s.
-BouncyCastle also DER-encoded a
-SignerInfo's signed attributes before checking its signature, 2.8 to 4.9
-s for one cap-sized nested attribute; they are now hashed as sent, 0.5
-to 0.9 s (`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,
-`docs/evidence/2026-10-13-java-pretrust-shape.md`).
+- A SignerInfo naming one of the eight slow digests BouncyCastle
+  implements (GOST R 34.11-94, MD2, Whirlpool, GOST R 34.11-2012 and
+  DSTU 7564) is refused before a byte is digested, as `INVALID_SIGNATURE`,
+  for less than a SHA-256 receipt costs. The slowest digest still
+  accepted, RIPEMD-160, costs 0.17 to 0.21 s warm and up to 0.44 s cold
+  for a receipt with four SignerInfos naming Apple's receipt-signing
+  certificate: the digest runs once per SignerInfo whose certificate
+  passes the chain and marker checks.
+- A SignerInfo labelled md2WithRSAEncryption is refused before its signed
+  attributes are hashed, as `INVALID_SIGNATURE`.
+- A SignerInfo labelled RSASSA-PSS with a saltLength the signer's key
+  cannot hold (RFC 8017) is refused before anything is allocated, as
+  `INVALID_SIGNATURE`; a PSS signature whose salt fits verifies.
+- A SignerInfo labelled with the generic composite OID
+  (1.3.6.1.4.1.18227.2.1) is refused before any part is built, as
+  `INVALID_SIGNATURE`. The per-pair composite OIDs of the LAMPS draft stay
+  accepted.
+- A SignerInfo whose issuer holds anything but strings is left out, and a
+  bag entry is read as parsed, not re-encoded to DER: either input costs
+  its parse, 0.25 to 0.9 s.
+- A bag certificate whose names hold anything but strings, or whose
+  algorithm parameters hold a SET, is passed over before it is converted:
+  about its parse, 0.4 to 0.85 s, and up to 1.1 s for a value nested 50
+  deep.
+- A certificate labelled RSASSA-PSS with a saltLength its issuer's key
+  cannot hold, or labelled with the generic composite OID, is signed by
+  nobody, before anything is built.
+- A certificate labelled md2WithRSAEncryption is signed by nobody, and a
+  copy of a root or of an accepted CA is not tried as an issuer again: a
+  cap-sized stranger beside seven copies of the root costs 0.05 to 0.2 s.
+- A SignerInfo's signed attributes are hashed as sent, not re-encoded to
+  DER: 0.5 to 0.9 s for one cap-sized nested attribute.
 
 ## Testing with synthetic receipts
 
@@ -1050,12 +1021,15 @@ A time-zone database that has America/Los_Angeles, which the endpoint's
 Pacific-time dates need: a trimmed runtime (jlink, a slim container image)
 without it makes `Verifier.create` throw `IllegalStateException`.
 
-**What to re-check on a BouncyCastle upgrade.** The code relies on a few
-BouncyCastle behaviours that are not API contracts. Thread safety is not
-one of them: apart from the provider instance, every BouncyCastle object is
-built per call, including the CMS verifier builder, the PKIX validator and
-path builder (it keeps per-build counters), the `CertificateFactory` (it
-keeps stream state between calls) and every `Signature`.
+**What to re-check on a BouncyCastle upgrade.** The resource bounds and
+two decode rules rest on BouncyCastle 1.86 behaviours that are not API
+contracts. Each bullet
+names one, the class that relies on it, and the test that pins it, or
+"no test". Thread safety is not on the list: apart from the
+provider instance, every BouncyCastle object is built per call, including
+the CMS verifier builder, the PKIX validator and path builder (it keeps
+per-build counters), the `CertificateFactory` (it keeps stream state
+between calls) and every `Signature`.
 
 - BouncyCastle bounds the nesting of every constructed value, definite or
   indefinite length, at 64 by default (`org.bouncycastle.asn1.max_cons_depth`),
@@ -1065,12 +1039,86 @@ keeps stream state between calls) and every `Signature`.
   a certificate, for example), so it must still exist, and still throw an
   `IOException`, after an upgrade. `Verifier.create` checks only that the
   bound admits 9 levels, what a genuine receipt needs; that it exists at
-  all rests on the 1.86 floor.
+  all rests on the 1.86 floor. Tests:
+  `ReceiptDecoderTest.asn1NestedPastBouncyCastlesBoundIsRefusedAsADefect`,
+  `BouncyCastleFloorTest.createRefusesANestingBoundGenuineReceiptsDoNotFit`.
 - The signature BIT STRING of a certificate is decoded lazily, so the
   decoders read it once on purpose (`PreTrustScreen.readCertificate`, for
-  the bag and for x5c).
+  the bag and for x5c). Tests:
+  `CertificateDecodeTest.aNonSignerCertificateWithAnUnalignedSignatureIsInvalidReceiptFormat`,
+  `CertificateDecodeTest.anX5cLeafWithAnUnalignedSignatureIsInvalidCertificate`.
 - `IA5String` does not check that its bytes are seven-bit, so
-  `ReceiptDecoder.decodeString` does.
+  `ReceiptDecoder.decodeString` does. Test:
+  `ReceiptDecoderTest.anIa5StringWithAByteFrom0x80UpIsKeptRaw`.
+- Converting a certificate to a JCA `X509Certificate`
+  (`JcaX509CertificateConverter`) does not decode its key;
+  `getPublicKey()` does. `ReceiptCertificates.decode` and
+  `JwsCore.decodeChain` convert every entry before any is vouched for, so
+  the top-down rule in `AppleTrust` rests on this. Tests:
+  `UnauthenticatedKeyCostTest.aGenuineReceiptPaddedWithHugeKeysVerifiesQuickly`,
+  `UnauthenticatedKeyCostTest.aJwsWhoseCertificatesHaveHugeKeysIsRefusedQuickly`.
+- A SignerId in subjectKeyIdentifier form matches on the extension's
+  octets, or on a SHA-1 of the encoded SubjectPublicKeyInfo, and decodes no
+  key (`ReceiptCertificates.signers`). No test.
+- `BCStrictStyle.areEqual` compares two names RDN by RDN, in order, in
+  linear time. `ReceiptCertificates.signers` uses it for the
+  issuer-and-serial form in place of `SignerId.match`. Test, for reordered
+  names only:
+  `UnauthenticatedKeyCostTest.aSignerIdWhoseIssuerReordersTheCertificatesRdnsIsRefusedQuickly`.
+  No test times two equal long names.
+- `SignerInformationStore` keys its signers by SignerId, and comparing two
+  issuer names costs time quadratic in their RDN count.
+  `ReceiptCore.oneSigner` gives each SignerInfo a store of its own, which
+  compares nothing. Test:
+  `UnauthenticatedKeyCostTest.twoSignerIdsWhoseIssuersReorderEachOthersRdnsAreRefusedQuickly`.
+- Of the digests the CMS layer resolves, the eight in
+  `ReceiptCore.REFUSED_DIGESTS` cost 2.9 to 25 times SHA-256 and every other
+  one at most 2.6 times. md2WithRSAEncryption is the one signature label whose digest is
+  slow (`AppleTrust.REFUSED_SIGNATURE_ALGORITHM`). A release that adds a slow
+  digest or label needs it on the list. Test: `DigestDenylistCostTest`.
+- `SignerInformation` reads its signed attributes for hashing through the
+  overridable `getEncodedSignedAttributes()`, and a subclass can read the
+  protected `signedAttributeSet`. `ReceiptCore.SignedAsSent` overrides it to
+  hash them as sent, not re-encoded to DER. Test:
+  `UnauthenticatedKeyCostTest.aSignerInfoWhoseSignedAttributesHoldNestedSetsIsHashedAsSent`.
+- The CMS verifier hands `ContentVerifierProvider.get` the algorithm it is
+  about to build: the one its name for the SignerInfo's labels resolves to,
+  with the signatureAlgorithm's unsigned parameters.
+  `ReceiptCore.signerVerifier` refuses the generic composite label and an
+  RSASSA-PSS salt the key cannot hold there. Tests:
+  `UnauthenticatedKeyCostTest.aSignerInfoWithAnEacPssLabelAndAHugeSaltIsRefusedBeforeAnythingIsAllocated`,
+  `UnauthenticatedKeyCostTest.aSignerInfoWithACompositeLabelOfManyPartsIsRefusedBeforeTheContentIsRead`.
+- A certificate's extensions and a SignerInfo's attributes go into a
+  `java.util.Hashtable` keyed by OID, where OIDs of one hash make building
+  the table quadratic. `PreTrustScreen.MAX_OID_TABLE_ENTRIES` is set from an
+  estimate read off the sources. No test times the table. These pin the cap:
+  `UnauthenticatedKeyCostTest.aSignerCertificateAtTheExtensionCapVerifiesAndOneOverIsPassedOver`,
+  `UnauthenticatedKeyCostTest.aSignerInfoAtTheAttributeCapVerifiesAndOneOverIsLeftOut`.
+- The certificate parser reads a tagged first TBS field as the version,
+  whatever its tag number, and reads extensions only from a later `[3]`
+  field. `PreTrustScreen.tooManyExtensions` counts every `[3]` after the
+  first field. Tests:
+  `UnauthenticatedKeyCostTest.everyExtensionsFieldOfTheTbsCounts`,
+  `UnauthenticatedKeyCostTest.aVersionTaggedThreeIsNotCountedAsExtensions`.
+- The X.509 object keeps extension values as octets until they are asked
+  for, so `PreTrustScreen.convertible` screens only names and algorithm
+  parameters. Test:
+  `UnauthenticatedKeyCostTest.aBagCertificateWithNestedSetsInsideAnExtensionStaysCheap`.
+- DER encoding of an RDN's SET OF values encodes each value once and sorts
+  the encodings in N log N. It is the one SET `PreTrustScreen.convertible`
+  cannot leave out. Test:
+  `UnauthenticatedKeyCostTest.aBagCertificateWithOneWideRdnStaysCheap`.
+- Parsing an EXTERNAL puts any element that is not an OID, an INTEGER or a
+  tagged object in its data value descriptor, so `PreTrustScreen.holdsSet`
+  looks there and in the content. Tests:
+  `UnauthenticatedKeyCostTest.aBagCertificateWhoseKeyParametersHoldNestedSetsInAnExternalIsPassedOverUnconverted`,
+  `UnauthenticatedKeyCostTest.aSignerInfoWhoseSignatureParametersHoldNestedSetsInAnExternalIsLeftOut`.
+- The PKIX path builder, under the JDK's default `maxPathLength` of 5,
+  returns a path of up to seven certificates below the anchor and refuses
+  an eighth. The library sets no length of its own
+  (`ReceiptCore.authenticatedTopDown`). Tests:
+  `ReceiptVerificationTest.acceptsAPathOfSevenTheBuilderValidates`,
+  `ReceiptVerificationTest.refusesAPathOfEightTheBuilderDoesNotReturn`.
 
 **The trust anchors are compiled in.** The three roots are base64
 constants in `AppleRootCerts`. To add a root Apple publishes, add its
