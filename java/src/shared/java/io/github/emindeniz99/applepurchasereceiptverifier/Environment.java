@@ -21,7 +21,7 @@ public enum Environment {
     }
 
     /** The {@code environment} string of a verifyReceipt response. */
-    String value() {
+    public String value() {
         return value;
     }
 }

@@ -1767,7 +1767,7 @@ of 2026-09-29 and 30"; R39 and R41 settled the API items listed there
   certificate type where it has one (Java, .NET and Go) and are bytes
   elsewhere; the one-implementation allowlist already names the .NET and
   Go types (OD-04, STATUS.md).
-  Java's `Environment.value()` becomes public.
+  Java's `Environment.value()` becomes public (done 2026-10-14).
 - **The WIT package version moves from `aprv:verifier@1.0.0` to
   `aprv:verifier@0.1.0`,** because the product is pre-1.0. The export
   names carry the version (R23), so this renames the ABI: the WIT file,
