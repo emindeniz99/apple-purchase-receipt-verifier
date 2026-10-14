@@ -171,3 +171,16 @@ and the published test-helper jar (21,009 bytes), SHA-256
 No binaries, keys, receipt copies or raw logs were committed.
 Reproduction code and commands:
 [review folder](2026-10-14-java-vendor-review/README.md).
+
+## Decision (owner, 2026-10-14, Q170 and Q171)
+
+The three rule-2 findings stay as they are and are recorded in
+DECISIONS.md R20. Apple's own App Store Server Library (Java,
+`ChainVerifier` and `SignedDataVerifier` on `main`, read 2026-10-14)
+refuses the same shapes: `EXPECTED_CHAIN_LENGTH = 3`, any `alg` but
+`"ES256"` is "Unrecognized JWT algorithm", and the chain is validated by
+the JDK's `CertPathValidator("PKIX")`, which chains names with
+`X500Principal.equals`. A shape Apple's own verifier refuses is not one
+Apple can ship; when that library changes, this one changes with it
+(ROADMAP.md, "Later / hardening"). The `Verifier` comment and the two
+documentation findings were fixed in a separate pull request.
