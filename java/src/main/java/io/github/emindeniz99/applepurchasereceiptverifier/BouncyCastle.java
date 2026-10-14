@@ -11,7 +11,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * service can make it refuse a genuine one: the default
  * {@code SecureRandom}, drawn from when an RSA public key is first
  * decoded; a default whose provider throws makes a genuine receipt answer
- * {@code UNTRUSTED_CHAIN} (the README, "One platform caveat").
+ * {@code UNTRUSTED_CHAIN}.
  *
  * <p>BouncyCastle still reads settings of its own. Some
  * {@code org.bouncycastle.*} properties are looked up in
@@ -25,7 +25,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
  * much work is allowed. A host can therefore make this library refuse genuine
  * input (a nesting bound below 9 refuses every genuine receipt, which
  * {@link Verifier#create} checks for), or accept an unusual encoding of
- * content that a valid signature covers. The README lists them.</p>
+ * content that a valid signature covers.</p>
  */
 final class BouncyCastle {
 

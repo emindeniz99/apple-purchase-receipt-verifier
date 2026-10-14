@@ -498,7 +498,7 @@ never by `ordinal()`.
 | `INVALID_SIGNATURE` | The signature does not match the signed content |
 | `UNTRUSTED_CHAIN` | The certificate chain does not reach a pinned root, or a receipt's signer is more than seven certificates below one, each signed by the one above (BouncyCastle 1.86's path builder refuses an eighth) |
 | `INVALID_CERTIFICATE` | A certificate the check depends on does not decode, or is expired or not yet valid at the signing instant |
-| `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, or the intermediate lacks Apple's WWDR marker OID. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
+| `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, the intermediate lacks Apple's WWDR marker OID, or a root issued the leaf with no intermediate between them. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
 | `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
 

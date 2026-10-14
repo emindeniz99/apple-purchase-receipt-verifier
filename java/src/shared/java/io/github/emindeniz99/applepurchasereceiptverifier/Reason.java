@@ -8,14 +8,14 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 public enum Reason {
     /**
      * The base64, ASN.1, CMS or JWS structure is broken, or a structural
-     * bound was exceeded (JSON nesting, embedded certificates, SignerInfos;
-     * see "Resource bounds" in the README). Decided before any signature is
-     * checked.
+     * bound was exceeded (JSON nesting, embedded certificates, SignerInfos).
+     * Decided before any signature is checked.
      */
     MALFORMED,
     /**
-     * The input is over its fixed size cap (see "Resource bounds" in the
-     * README). Decided before anything is decoded.
+     * The input is over its fixed size cap, counted in UTF-8 bytes:
+     * 3,145,728 for a base64 receipt, 262,144 for a JWS. Decided before
+     * anything is decoded.
      */
     TOO_LARGE,
     /** The signature does not match the signed content. */
@@ -32,8 +32,9 @@ public enum Reason {
     INVALID_CERTIFICATE,
     /**
      * A certificate that chains to a pinned root but is of the wrong kind:
-     * the leaf lacks Apple's signing marker OID or the intermediate lacks
-     * Apple's WWDR marker OID. Developer certificates chain to the same roots,
+     * the leaf lacks Apple's signing marker OID, the intermediate lacks
+     * Apple's WWDR marker OID, or a root issued the leaf with no intermediate
+     * between them. Developer certificates chain to the same roots,
      * so this is what keeps them from signing receipts or JWS payloads.
      */
     INVALID_CERTIFICATE_PURPOSE,

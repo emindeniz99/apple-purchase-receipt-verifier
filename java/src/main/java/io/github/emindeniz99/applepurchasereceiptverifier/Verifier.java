@@ -82,7 +82,11 @@ public interface Verifier {
      * none), Apple's marker OIDs on the signer and on the intermediate that
      * issued it, and the CMS signature. Up to four SignerInfos are tried in
      * order: the first that verifies decides, and when none does the first
-     * one's failure is the verdict. More than four is {@code MALFORMED}.</p>
+     * one's failure is the verdict. More than four is {@code MALFORMED}. A
+     * SignerInfo of a shape Apple never issues is left out before any is
+     * tried, so "first" means first among those kept, and each one is tried
+     * with every embedded certificate its SignerId names, in the same
+     * way.</p>
      */
     VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64);
 

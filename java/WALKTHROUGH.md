@@ -31,7 +31,8 @@ with certificates, ASN.1 or Apple receipts.
 `io.github.emindeniz99.applepurchasereceiptverifier`, in two directories:
 
 - `java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/`:
-  the implementation, all package-private (`ReceiptCore`, `JwsCore`, ...).
+  the implementation (`ReceiptCore`, `JwsCore`, ...), package-private except
+  the public `Verifier` interface.
 - `java/src/shared/java/io/github/emindeniz99/applepurchasereceiptverifier/`:
   the public API types (`Config`, `Reason`, `ReceiptPayload`, ...), compiled
   into the same jar.
@@ -447,7 +448,7 @@ byte-identical copy only once; §4.2 has the renewal example this protects.
 
 | Reason | Meaning |
 |---|---|
-| `MALFORMED` | Broken structure or a structural bound exceeded, before any signature check, including an unchecked exception BouncyCastle or Jackson threw on unverified input |
+| `MALFORMED` | Broken structure or a structural bound exceeded, before any signature check, including an unchecked exception BouncyCastle or Jackson threw in parsing or screening |
 | `TOO_LARGE` | Over a size cap, before decoding |
 | `INVALID_SIGNATURE` | The signature does not match the content, or BouncyCastle cannot verify the SignerInfo |
 | `UNTRUSTED_CHAIN` | No path to a pinned root, or a receipt signer more than 7 signed steps below one, which the path builder refuses |
@@ -542,7 +543,7 @@ a genuine Apple sandbox receipt (case
 | Step | Method | What happens on g5 | Reason on failure |
 |---|---|---|---|
 | 1 | `DefaultVerifier.verifyReceipt` | Reads the clock once, 2026-10-06, before touching the input, so a throwing clock never lands in a catch that blames the input | `INTERNAL_ERROR` |
-| 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.standard` | 7,556 characters, under the cap; length divisible by 4, the JDK decoder refuses anything else; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
+| 2 | `verify` (1), `Utf8Length.exceeds`, `StrictBase64.standard` | 7,556 characters, under the cap; `StrictBase64` requires a non-empty length divisible by 4, and the JDK decoder then rejects other characters and bad padding; 5,665 bytes | `TOO_LARGE`, `MALFORMED` |
 | 3 | `verifyDer` (2) | Wraps steps 4 to 9: any `RuntimeException` BouncyCastle throws there becomes `MALFORMED` | `MALFORMED` |
 | 4 | `verifySignature` (3), `parseCms` (4), `encapsulatedPayload` (5), `signerInfos` (6), `ReceiptDecoder.readCreationDate` | Nothing after the envelope; eContent of 1,344 bytes; one SignerInfo (issuer WWDR G5 plus serial, SHA-256, rsaEncryption, no signedAttrs). Attribute 12 is `2025-12-26T18:39:47Z`: the instant | `MALFORMED`; the date never fails |
 | 5 | `ReceiptCertificates.decode`, `PreTrustScreen.readCertificate` | Counts the bag before decoding, skips `[0]` to `[3]` entries, reads no key: the leaf (valid to 2026-08-23), WWDR G5 (to 2030-12-10), a copy of Apple Root CA | `MALFORMED`: a broken entry |
@@ -619,8 +620,9 @@ segments joined by dots: `header.payload.signature`. Decoded:
 - **`x5c`**: the chain as standard-base64 DER, leaf first. Apple's is a
   leaf, the WWDR G6 intermediate and Apple Root CA - G3 (a
   `fixtures/cases.json` case is built from it). The markers are the same.
-- **The instant**: `signedDate` (epoch milliseconds); if absent or not a
-  representable instant, an app transaction's `receiptCreationDate`, as
+- **The instant**: `signedDate` (epoch milliseconds); if absent, not a JSON
+  number, or a number no long holds (the last occurrence wins), an app
+  transaction's `receiptCreationDate`, as
   Apple's own library does; else the clock. Cases
   `app-transaction/verify-at-the-receipt-creation-date-without-a-signed-date`
   and `app-transaction/signed-date-wins-over-the-receipt-creation-date`.
