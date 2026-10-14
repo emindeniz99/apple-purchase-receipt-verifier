@@ -855,8 +855,10 @@ the root, in `THREAT-MODEL.md` at the repository root.
   for a receipt with four SignerInfos naming Apple's receipt-signing
   certificate: the digest runs once per SignerInfo whose certificate
   passes the chain and marker checks.
-- A SignerInfo labelled md2WithRSAEncryption is refused before its signed
-  attributes are hashed, as `INVALID_SIGNATURE`.
+- A SignerInfo whose signature label names one of those digests
+  (md2WithRSAEncryption, a GOST or Streebog label, RSASSA-PSS over one of
+  them) is refused before its signed attributes are hashed, as
+  `INVALID_SIGNATURE`.
 - A SignerInfo labelled RSASSA-PSS with a saltLength the signer's key
   cannot hold (RFC 8017) is refused before anything is allocated, as
   `INVALID_SIGNATURE`; a PSS signature whose salt fits verifies.
@@ -874,9 +876,12 @@ the root, in `THREAT-MODEL.md` at the repository root.
 - A certificate labelled RSASSA-PSS with a saltLength its issuer's key
   cannot hold, or labelled with the generic composite OID, is signed by
   nobody, before anything is built.
-- A certificate labelled md2WithRSAEncryption is signed by nobody, and a
-  copy of a root or of an accepted CA is not tried as an issuer again: a
-  cap-sized stranger beside seven copies of the root costs 0.05 to 0.2 s.
+- A certificate whose signature label names one of those digests
+  (md2WithRSAEncryption under an RSA root, a GOST label under an EC one) is
+  signed by nobody, before a byte is digested, and a copy of a root or of
+  an accepted CA is not tried as an issuer again: a cap-sized stranger
+  labelled md2WithRSAEncryption beside seven copies of the root costs 0.05
+  to 0.2 s.
 - A SignerInfo's signed attributes are hashed as sent, not re-encoded to
   DER: 0.5 to 0.9 s for one cap-sized nested attribute.
 
@@ -1073,9 +1078,12 @@ between calls) and every `Signature`.
   `UnauthenticatedKeyCostTest.twoSignerIdsWhoseIssuersReorderEachOthersRdnsAreRefusedQuickly`.
 - Of the digests the CMS layer resolves, the eight in
   `ReceiptCore.REFUSED_DIGESTS` cost 2.9 to 25 times SHA-256 and every other
-  one at most 2.6 times. md2WithRSAEncryption is the one signature label whose digest is
-  slow (`AppleTrust.REFUSED_SIGNATURE_ALGORITHM`). A release that adds a slow
-  digest or label needs it on the list. Test: `DigestDenylistCostTest`.
+  one at most 2.6 times. A signature label is refused by the digest
+  `DefaultDigestAlgorithmIdentifierFinder` finds for it
+  (`ReceiptCore.namesRefusedDigest`), so a release that adds a slow digest
+  needs it on the list, and one that adds a slow label needs the finder to
+  map it. Tests: `DigestDenylistCostTest`,
+  `UnauthenticatedKeyCostTest.aCertificateLabelledGost2001UnderAnEcRootIsSignedByNobody`.
 - `SignerInformation` reads its signed attributes for hashing through the
   overridable `getEncodedSignedAttributes()`, and a subclass can read the
   protected `signedAttributeSet`. `ReceiptCore.SignedAsSent` overrides it to

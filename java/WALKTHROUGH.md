@@ -700,13 +700,14 @@ trusted: a SignerInfo's digest and signature labels, a certificate's own
 signature label, and the shapes of names and algorithm parameters. Where
 that work costs seconds or gigabytes and no Apple input has the shape,
 Java refuses it first. A SignerInfo naming one of eight slow digests
-(GOST R 34.11-94, MD2, Whirlpool, Streebog, DSTU 7564), the
-md2WithRSAEncryption or generic composite label, or an RSASSA-PSS salt
-that is negative or longer than the signer's key can hold is
-`INVALID_SIGNATURE`. A bag certificate is passed over, signed by nobody,
-when a name value is not a string, an algorithm's parameters hold a SET,
-it carries more than 1,000 extensions, or its own label is one of those
-labels or a salt its issuer's key cannot hold. A SignerInfo is left out
+(GOST R 34.11-94, MD2, Whirlpool, Streebog, DSTU 7564), in its digest
+field or through its signature label (md2WithRSAEncryption among them),
+the generic composite label, or an RSASSA-PSS salt that is negative or
+longer than the signer's key can hold is `INVALID_SIGNATURE`. A bag
+certificate is passed over, signed by nobody, when a name value is not a
+string, an algorithm's parameters hold a SET, it carries more than 1,000
+extensions, or its own label names one of those digests, is the composite
+label or carries a salt its issuer's key cannot hold. A SignerInfo is left out
 for the same name and parameter shapes or more than 1,000 attributes.
 Passing over or leaving out only removes something: the receipt still
 needs Apple's signature under a pinned chain.

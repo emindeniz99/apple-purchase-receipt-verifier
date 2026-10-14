@@ -11,10 +11,13 @@ import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
+import java.security.spec.ECPrivateKeySpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -631,6 +634,38 @@ class UnauthenticatedKeyCostTest {
                 .build(new JcaContentSignerBuilder("MD2withRSA").build(pki.rootKey)));
         signed.verify(pki.root.getPublicKey(), BouncyCastle.PROVIDER);
         assertFalse(AppleTrust.signedBy(signed, pki.root.getPublicKey()));
+    }
+
+    @Test
+    void aCertificateLabelledGost2001UnderAnEcRootIsSignedByNobody() throws Exception {
+        // gostR3411-94-with-gostR3410-2001 names GOST R 34.11-94, 25 times
+        // SHA-256, and BouncyCastle verifies it under any EC key: a stranger
+        // naming an EC root ran that digest over its TBS before the signature
+        // failed. Refused by the digest its label names, the stranger is
+        // passed over, as the md2WithRSAEncryption one is, and a certificate
+        // the root really signed under the label is signed by nobody.
+        TestPki ec = TestPki.jws();
+        TestPki rsa = TestPki.receipt();
+        AlgorithmIdentifier gost = new AlgorithmIdentifier(CryptoProObjectIdentifiers.gostR3411_94_with_gostR3410_2001);
+        Checks.receipt(
+                Checks.verifier(rsa.root, ec.root),
+                withBagEntry(rsa, certificateShaped(gost, subject(ec.root), new X500Name("CN=x"), key(ec.leaf))));
+
+        X509Certificate signed = bouncyCastle(new X509v3CertificateBuilder(
+                        subject(ec.root),
+                        new BigInteger(64, RANDOM),
+                        ec.leaf.getNotBefore(),
+                        ec.leaf.getNotAfter(),
+                        new X500Name("CN=x"),
+                        key(ec.leaf))
+                .build(new JcaContentSignerBuilder("GOST3411withECGOST3410")
+                        .setProvider(BouncyCastle.PROVIDER)
+                        .build(KeyFactory.getInstance("ECGOST3410", BouncyCastle.PROVIDER)
+                                .generatePrivate(new ECPrivateKeySpec(
+                                        ((ECPrivateKey) ec.rootKey).getS(), ((ECPrivateKey) ec.rootKey).getParams())))));
+        assertEquals(gost.getAlgorithm().getId(), signed.getSigAlgOID());
+        signed.verify(ec.root.getPublicKey(), BouncyCastle.PROVIDER);
+        assertFalse(AppleTrust.signedBy(signed, ec.root.getPublicKey()));
     }
 
     /**
