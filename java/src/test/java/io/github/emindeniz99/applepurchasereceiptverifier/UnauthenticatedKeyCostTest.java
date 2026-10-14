@@ -1024,14 +1024,13 @@ class UnauthenticatedKeyCostTest {
         KeyPair signerKey = rsa2048();
         X509CertificateHolder intermediate = new X509CertificateHolder(pki.intermediate.getEncoded());
         X509CertificateHolder root = new X509CertificateHolder(pki.root.getEncoded());
-        X509CertificateHolder atCap = signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS);
+        X509CertificateHolder atCap = signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_OID_TABLE_ENTRIES);
         ReceiptPayload verified = Checks.receipt(
                 Checks.verifier(pki),
                 receiptSignedBy(signerKey, Collections.singletonList(atCap), Arrays.asList(atCap, intermediate, root)));
         assertEquals(BUNDLE, verified.bundleId());
 
-        X509CertificateHolder over =
-                signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1);
+        X509CertificateHolder over = signerWithExtensions(pki, signerKey, PreTrustScreen.MAX_OID_TABLE_ENTRIES + 1);
         byte[] receipt =
                 receiptSignedBy(signerKey, Collections.singletonList(over), Arrays.asList(over, intermediate, root));
         VerificationException e =
@@ -1048,7 +1047,7 @@ class UnauthenticatedKeyCostTest {
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1));
+                fillerExtensions(PreTrustScreen.MAX_OID_TABLE_ENTRIES + 1));
         assertTrue(PreTrustScreen.tooManyExtensions(stranger));
         Checks.receipt(Checks.verifier(pki), withBagEntry(pki, stranger));
     }
@@ -1093,7 +1092,7 @@ class UnauthenticatedKeyCostTest {
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1));
+                fillerExtensions(PreTrustScreen.MAX_OID_TABLE_ENTRIES + 1));
         ASN1Sequence tbs = ASN1Sequence.getInstance(certificate.getObjectAt(0));
         ASN1EncodableVector fields = new ASN1EncodableVector();
         for (ASN1Encodable field : tbs) {
@@ -1108,7 +1107,7 @@ class UnauthenticatedKeyCostTest {
                 subject(pki.root),
                 new X500Name("CN=x"),
                 key(pki.leaf),
-                fillerExtensions(PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS))));
+                fillerExtensions(PreTrustScreen.MAX_OID_TABLE_ENTRIES))));
     }
 
     @Test
@@ -1167,11 +1166,11 @@ class UnauthenticatedKeyCostTest {
     void aJwsIntermediateAtTheExtensionCapVerifiesAndOneOverIsUntrusted() throws Exception {
         TestPki pki = TestPki.jws();
         String atCap = pki.signJwsWithHeader(
-                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS)), "{}");
+                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_OID_TABLE_ENTRIES)), "{}");
         Checks.signedData(Checks.verifier(pki), atCap);
 
         String over = pki.signJwsWithHeader(
-                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_CERTIFICATE_EXTENSIONS + 1)), "{}");
+                jwsHeader(pki, intermediateWithExtensions(pki, PreTrustScreen.MAX_OID_TABLE_ENTRIES + 1)), "{}");
         VerificationException e =
                 assertThrows(VerificationException.class, () -> Checks.signedData(Checks.verifier(pki), over));
         assertEquals(Reason.UNTRUSTED_CHAIN, e.reason(), e.getMessage());
@@ -1184,7 +1183,7 @@ class UnauthenticatedKeyCostTest {
         TestPki pki = TestPki.receipt();
         SignedData genuine = signedData(pki.signReceipt(TestPki.singleAttributePayload(9999, new byte[16])));
         SignerInfo signer = SignerInfo.getInstance(genuine.getSignerInfos().getObjectAt(0));
-        int unsigned = ReceiptCore.MAX_SIGNER_INFO_ATTRIBUTES
+        int unsigned = PreTrustScreen.MAX_OID_TABLE_ENTRIES
                 - signer.getAuthenticatedAttributes().size();
         ASN1Encodable atCap = withUnsignedAttributes(signer, fillerAttributes(unsigned));
         Checks.receipt(Checks.verifier(pki), receipt(genuine, genuine.getCertificates(), new DLSet(atCap)));

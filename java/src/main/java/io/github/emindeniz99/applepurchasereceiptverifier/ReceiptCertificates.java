@@ -98,8 +98,8 @@ final class ReceiptCertificates {
      * quadratic in the RDN count of two names nobody has authenticated yet.
      * So a SignerId listing the certificate's RDNs in another order names
      * no certificate. Both names hold strings only, the SignerId's checked
-     * in ReceiptCore and every certificate's in {@link #decode}, so the
-     * comparison re-encodes no value.</p>
+     * by {@link PreTrustScreen#appleShaped} and every certificate's in
+     * {@link #decode}, so the comparison re-encodes no value.</p>
      */
     List<X509Certificate> signers(SignerInformation signer) throws VerificationException {
         SignerId sid = signer.getSID();

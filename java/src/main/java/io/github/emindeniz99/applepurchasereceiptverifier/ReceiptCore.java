@@ -26,9 +26,7 @@ import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
-import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.iso.ISOIECObjectIdentifiers;
@@ -54,22 +52,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * The receipt half of {@link Verifier#verifyReceipt}, offline, against the
  * pinned roots. Stateless; every cryptographic step uses
- * {@link BouncyCastle#PROVIDER}.
+ * {@link BouncyCastle#PROVIDER}. The shapes screened before trust, a
+ * SignerInfo's among them, are in {@link PreTrustScreen}.
  */
 final class ReceiptCore {
 
     /** Genuine receipts carry one; each SignerInfo costs a chain build and a signature check. */
     static final int MAX_SIGNER_INFOS = 4;
-
-    /**
-     * The most attributes a SignerInfo may carry, signed and unsigned
-     * together, counted before BouncyCastle reads each set into the same
-     * OID-keyed table as a certificate's extensions, at the cost
-     * {@link PreTrustScreen#MAX_CERTIFICATE_EXTENSIONS} gives. The unsigned
-     * attributes are anyone's to add; Apple's receipt SignerInfos carry
-     * none. A SignerInfo over it is left out.
-     */
-    static final int MAX_SIGNER_INFO_ATTRIBUTES = 1000;
 
     /**
      * The largest receipt accepted: the base64 text's length in UTF-8 bytes,
@@ -209,7 +198,7 @@ final class ReceiptCore {
         List<SignerInformation> signers = new ArrayList<>();
         for (int i = 0; i < raw.size(); i++) {
             ASN1Encodable entry = raw.getObjectAt(i);
-            if (appleShaped(SignerInfo.getInstance(entry))) {
+            if (PreTrustScreen.appleShaped(SignerInfo.getInstance(entry))) {
                 signers.add(oneSigner(signedData, entry));
             }
         }
@@ -217,40 +206,6 @@ final class ReceiptCore {
             throw new VerificationException(Reason.MALFORMED, "signer certificate not embedded");
         }
         return signers;
-    }
-
-    /**
-     * Whether {@code info} has a shape Apple issues. One that does not names
-     * no Apple certificate and is left out before BouncyCastle does
-     * super-linear work on it.
-     */
-    private static boolean appleShaped(SignerInfo info) {
-        // Hashing a SignerId, and comparing its issuer with each
-        // certificate's, re-encodes every issuer value that is not a
-        // string, at a cost that grows with its nesting: up to 10 s for
-        // one cap-sized value. Every name Apple issues holds strings, so
-        // such an issuer names no Apple certificate, and its SignerInfo
-        // is left out before either.
-        SignerIdentifier sid = info.getSID();
-        if (!sid.isTagged()
-                && !PreTrustScreen.stringsOnly(
-                        IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
-            return false;
-        }
-        // BouncyCastle compares these parameters with the
-        // CMSAlgorithmProtection attribute's, which sorts a SET on both
-        // sides, and no digest or signature algorithm defines one.
-        if (PreTrustScreen.holdsSet(info.getDigestAlgorithm().getParameters())
-                || PreTrustScreen.holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
-            return false;
-        }
-        // Counted before BouncyCastle builds its tables of them.
-        return size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
-                <= MAX_SIGNER_INFO_ATTRIBUTES;
-    }
-
-    private static int size(@Nullable ASN1Set attributes) {
-        return attributes == null ? 0 : attributes.size();
     }
 
     /**

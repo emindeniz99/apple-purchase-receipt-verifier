@@ -7,6 +7,9 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
+import org.bouncycastle.asn1.cms.SignerIdentifier;
+import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -23,35 +26,41 @@ import org.jspecify.annotations.Nullable;
  * ({@link #readCertificate}), counting the entry's extensions before the
  * parse ({@link #tooManyExtensions}), decoding the signature BIT STRING
  * BouncyCastle would otherwise read lazily, and screening the parts of it
- * the X.509 grammar leaves open ({@link #convertible}). {@link ReceiptCore} applies
- * the same two screens to a SignerInfo's issuer name ({@link #stringsOnly})
- * and algorithm parameters ({@link #holdsSet}). None of it decides trust;
+ * the X.509 grammar leaves open ({@link #convertible}). It leaves out a
+ * receipt's SignerInfo of a shape Apple never issues ({@link #appleShaped}),
+ * with the same two screens on its issuer name ({@link #stringsOnly}) and
+ * algorithm parameters ({@link #holdsSet}) and the same count on its
+ * attributes ({@link #MAX_OID_TABLE_ENTRIES}). None of it decides trust;
  * that is {@link AppleTrust}.
  */
 final class PreTrustScreen {
 
     /**
-     * The most extensions a certificate may carry, counted before it is
-     * parsed. BouncyCastle keeps a certificate's extensions in a
-     * {@code java.util.Hashtable} keyed by OID, whose hash is an unkeyed
-     * function of the OID's octets and whose buckets are lists, so
-     * distinct OIDs of one hash make building the table quadratic in their
-     * number. Apple's certificates carry three to eight. Each insert scans
-     * the bucket twice, so at this cap one table costs at most about a
-     * million OID comparisons, a few hundred milliseconds at the longest
-     * OIDs BouncyCastle admits (each comparison is {@code Arrays.equals}
-     * over up to 4,096 octets), and a certificate's table is built at least
-     * twice: an estimate from the sources, not timed. A certificate over it
-     * is passed over, as one {@link #convertible} rejects.
+     * The most entries BouncyCastle may put in one OID-keyed table built from
+     * unvouched bytes: a certificate's extensions, or a SignerInfo's
+     * attributes, signed and unsigned together, each counted before it is
+     * parsed. BouncyCastle keeps both in a {@code java.util.Hashtable} keyed
+     * by OID, whose hash is an unkeyed function of the OID's octets and
+     * whose buckets are lists, so distinct OIDs of one hash make building
+     * the table quadratic in their number. Apple's certificates carry three
+     * to eight extensions; the unsigned attributes are anyone's to add, and
+     * Apple's receipt SignerInfos carry none. Each insert scans the bucket
+     * twice, so at this cap one table costs at most about a million OID
+     * comparisons, a few hundred milliseconds at the longest OIDs
+     * BouncyCastle admits (each comparison is {@code Arrays.equals} over up
+     * to 4,096 octets), and a certificate's table is built at least twice:
+     * an estimate from the sources, not timed. A certificate over it is
+     * passed over, as one {@link #convertible} rejects; a SignerInfo over it
+     * is left out.
      */
-    static final int MAX_CERTIFICATE_EXTENSIONS = 1000;
+    static final int MAX_OID_TABLE_ENTRIES = 1000;
 
     private PreTrustScreen() {}
 
     /**
      * One Certificate entry, of the receipt's bag or of an {@code x5c}
      * header, read without decoding its key, or null for an entry passed
-     * over: one over {@link #MAX_CERTIFICATE_EXTENSIONS}, counted before the
+     * over: one over {@link #MAX_OID_TABLE_ENTRIES}, counted before the
      * parse builds BouncyCastle's table of them, or one {@link #convertible}
      * passes over, which the conversion would spend seconds on. An entry
      * under the cap that does not parse throws.
@@ -74,7 +83,7 @@ final class PreTrustScreen {
 
     /**
      * Whether {@code certificate}, a Certificate not yet parsed, carries more
-     * than {@link #MAX_CERTIFICATE_EXTENSIONS} extensions. Every {@code [3]}
+     * than {@link #MAX_OID_TABLE_ENTRIES} extensions. Every {@code [3]}
      * field of the TBS after its first counts wherever it stands, a superset
      * of the fields BouncyCastle parses as extensions, which it reads only
      * after the subject's key. The first is not counted: BouncyCastle reads a
@@ -96,7 +105,7 @@ final class PreTrustScreen {
                         ASN1Sequence.getInstance((ASN1TaggedObject) field, true).size();
             }
         }
-        return count > MAX_CERTIFICATE_EXTENSIONS;
+        return count > MAX_OID_TABLE_ENTRIES;
     }
 
     /**
@@ -126,6 +135,39 @@ final class PreTrustScreen {
                 && !holdsSet(tbs.getSignature().getParameters())
                 && !holdsSet(certificate.getSignatureAlgorithm().getParameters())
                 && !holdsSet(tbs.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
+    }
+
+    /**
+     * Whether {@code info}, a receipt's SignerInfo, has a shape Apple issues.
+     * One that does not names no Apple certificate and is left out before
+     * BouncyCastle does super-linear work on it.
+     */
+    static boolean appleShaped(SignerInfo info) {
+        // Hashing a SignerId, and comparing its issuer with each
+        // certificate's, re-encodes every issuer value that is not a
+        // string, at a cost that grows with its nesting: up to 10 s for
+        // one cap-sized value. Every name Apple issues holds strings, so
+        // such an issuer names no Apple certificate, and its SignerInfo
+        // is left out before either.
+        SignerIdentifier sid = info.getSID();
+        if (!sid.isTagged()
+                && !stringsOnly(IssuerAndSerialNumber.getInstance(sid.getId()).getName())) {
+            return false;
+        }
+        // BouncyCastle compares these parameters with the
+        // CMSAlgorithmProtection attribute's, which sorts a SET on both
+        // sides, and no digest or signature algorithm defines one.
+        if (holdsSet(info.getDigestAlgorithm().getParameters())
+                || holdsSet(info.getDigestEncryptionAlgorithm().getParameters())) {
+            return false;
+        }
+        // Counted before BouncyCastle builds its tables of them.
+        return size(info.getAuthenticatedAttributes()) + size(info.getUnauthenticatedAttributes())
+                <= MAX_OID_TABLE_ENTRIES;
+    }
+
+    private static int size(@Nullable ASN1Set attributes) {
+        return attributes == null ? 0 : attributes.size();
     }
 
     /** Whether every attribute value in {@code name} is a string. */
