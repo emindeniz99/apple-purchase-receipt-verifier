@@ -97,7 +97,7 @@ already-pinned roots, independently of the deliberate resource/label limits.
   accurately describe the code, apart from the qualified documentation
   corrections above; they do not establish future compatibility.
 
-**Ready to vendor as is: no under the stated rules; first change the issuer-name filter in `AppleTrust.signedByAny` to the existing linear BC name comparison.**
+**The reviewer's verdict, before the decision below: ready to vendor as is, no under the stated rules; first change the issuer-name filter in `AppleTrust.signedByAny` to the existing linear BC name comparison.** The owner kept the filter (see Decision).
 
 ## Validation and measured results
 
