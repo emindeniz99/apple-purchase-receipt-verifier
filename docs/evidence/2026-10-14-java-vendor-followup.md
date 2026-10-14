@@ -170,3 +170,16 @@ identifier or receipt timestamp was printed by the probe. The conclusions
 are bounded to this commit, these dependency versions, Temurin HotSpot 17,
 the source review and this input set; they do not certify arbitrary future
 Apple protocols or other JVMs.
+
+## Decision (owner, 2026-10-14, Q170 and Q171)
+
+The two rule-2 findings stay as they are and are recorded in
+DECISIONS.md R20, with the issuer-name finding of the first review.
+Apple's own App Store Server Library (Java, `ChainVerifier` and
+`SignedDataVerifier` on `main`, read 2026-10-14) refuses the same shapes:
+`EXPECTED_CHAIN_LENGTH = 3`, and any `alg` but `"ES256"` is "Unrecognized
+JWT algorithm". A shape Apple's own verifier refuses is not one Apple can
+ship; when that library changes, this one changes with it (ROADMAP.md,
+"Later / hardening"). The `Verifier` comment, the base64 wording of the
+walkthroughs and the notification example's environment check were fixed
+in a separate pull request.
