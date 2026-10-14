@@ -634,7 +634,7 @@ segments joined by dots: `header.payload.signature`. Decoded:
 | 3 | Header is one JSON object, `alg` is `ES256`, `x5c` is exactly 3 strings | `MALFORMED` |
 | 4 | `decodeChain`: each entry strict base64 and a certificate; keys not read; a leaf or intermediate entry `PreTrustScreen.readCertificate` passes over becomes null and fails at step 6 as `UNTRUSTED_CHAIN`; a passed-over `x5c[2]` has no effect | `INVALID_CERTIFICATE` |
 | 5 | `readOrNull`: read the payload, if it reads, for the instant | never fails |
-| 6 | `authenticateTopDown`: intermediate signed by a pinned root and a CA, then its key decoded; leaf signed by the intermediate. Then the leaf's key decoded | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
+| 6 | `authenticateTopDown`: intermediate signed by a pinned root and a CA, then its key decoded; leaf signed by the intermediate. Then, in `verifyUnguarded`, the leaf's key decoded | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 7 | `validateChain`: PKIX **validate** of `[leaf, intermediate]` at the instant | `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE` |
 | 8 | Leaf and intermediate markers | `INVALID_CERTIFICATE_PURPOSE` |
 | 9 | `verifyEs256`: exactly 64 bytes, then ECDSA with the leaf key | `INVALID_SIGNATURE` |

@@ -841,12 +841,11 @@ Some unsigned parts of a receipt or a JWS once cost seconds, or an
 `OutOfMemoryError`, inside BouncyCastle before anything was trusted. Each
 bullet gives what that input costs today at the cap, measured on
 2026-10-13 and 2026-10-14 with a plain loop, not JMH, on a 4 vCPU machine.
-The figures
-from before each change are in the repository's
+The figures from before each change are in the repository's
 `docs/evidence/2026-10-13-java-digest-cost.md`,
-`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,
-`docs/evidence/2026-10-13-java-pretrust-shape.md` and, for the copies of
-the root, `THREAT-MODEL.md`.
+`docs/evidence/2026-10-13-java-pretrust-reencoding.md` and
+`docs/evidence/2026-10-13-java-pretrust-shape.md`, and, for the copies of
+the root, in `THREAT-MODEL.md` at the repository root.
 
 - A SignerInfo naming one of the eight slow digests BouncyCastle
   implements (GOST R 34.11-94, MD2, Whirlpool, GOST R 34.11-2012 and
@@ -854,7 +853,8 @@ the root, `THREAT-MODEL.md`.
   for less than a SHA-256 receipt costs. The slowest digest still
   accepted, RIPEMD-160, costs 0.17 to 0.21 s warm and up to 0.44 s cold
   for a receipt with four SignerInfos naming Apple's receipt-signing
-  certificate.
+  certificate: the digest runs once per SignerInfo whose certificate
+  passes the chain and marker checks.
 - A SignerInfo labelled md2WithRSAEncryption is refused before its signed
   attributes are hashed, as `INVALID_SIGNATURE`.
 - A SignerInfo labelled RSASSA-PSS with a saltLength the signer's key
@@ -1021,8 +1021,9 @@ A time-zone database that has America/Los_Angeles, which the endpoint's
 Pacific-time dates need: a trimmed runtime (jlink, a slim container image)
 without it makes `Verifier.create` throw `IllegalStateException`.
 
-**What to re-check on a BouncyCastle upgrade.** The resource bounds rest
-on BouncyCastle 1.86 behaviours that are not API contracts. Each bullet
+**What to re-check on a BouncyCastle upgrade.** The resource bounds and
+two decode rules rest on BouncyCastle 1.86 behaviours that are not API
+contracts. Each bullet
 names one, the class that relies on it, and the test that pins it, or
 "no test". Thread safety is not on the list: apart from the
 provider instance, every BouncyCastle object is built per call, including
