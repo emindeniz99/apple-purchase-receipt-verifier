@@ -140,8 +140,9 @@ cost and why no Apple input is affected, is in R20 of
 | `INTERNAL_ERROR` | The runtime or library broke | Alert, do not retry |
 
 **Unverified input must never produce the last two on a healthy runtime**
-(only the runtime itself can, as a clock that throws), or anyone could page
-your on-call engineer.
+(`UNREADABLE_PAYLOAD` follows only a payload whose signature verified and
+that does not parse; `INTERNAL_ERROR` only the runtime itself, as a clock
+that throws), or anyone could page your on-call engineer.
 
 ## 5. JWS (StoreKit 2)
 
