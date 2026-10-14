@@ -1174,7 +1174,7 @@ the bcprov loaded; it is the one test to adapt to your own build. Declare
 that property in your pom and it passes unchanged. With hardcoded versions
 or a Gradle build, drop or rewrite that one method.
 
-**The generators are not tests, and `mvn test` writes nothing.** The 29
+**The generators are not tests, and `mvn test` writes nothing.** The
 classes named `*Fixture` or `*Fixtures` (other than `TestFixtures`) are
 `main` programs with no `@Test`, so Maven never runs them. They are what
 produced the committed files under `fixtures/`. Run one by hand and it
@@ -1200,8 +1200,8 @@ helpers they share: `TestPki`, `Checks`, `TestFixtures`,
 Two generators go with them, because a test compiles against each:
 `LargeReceiptFixture` (`InputSizeBoundsTest`) and `StandardShapeFixtures`
 (`StandardShapesTest`); both need only `TestPki` and `TestFixtures`.
-`FixtureGeneratorTest` and the other 27 `*Fixture(s)` classes can be left
-out: with them removed, the suite compiles and runs 696 tests with none
+`FixtureGeneratorTest` and the other `*Fixture(s)` classes can be left
+out: with them removed, the suite compiles and runs with no test
 skipped, `BouncyCastleFloorTest` among them, provided your pom declares that
 property. `HostPolicyTest` and
 `TrustStoreIsolationTest` start a child JVM from `java.home` and skip
