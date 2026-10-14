@@ -462,6 +462,22 @@ cRLDistributionPoints, 2026-10-06).
   the pinned Apple chain vouches for. With OpenSSL's CMS API the core
   answers as Java does on 22 of 22 algorithm rows
   ([follow-up §3.2][followup]).
+- **Shapes refused by design that Apple's own library refuses too**
+  (owner, 2026-10-14, Q170; [the vendor review](../evidence/2026-10-14-java-vendor-review.md)
+  and [its follow-up](../evidence/2026-10-14-java-vendor-followup.md)):
+  a JWS whose `x5c` is not exactly three entries, a JWS `alg` other than
+  ES256, and a receipt leaf whose issuer name is encoded in a string
+  type other than the issuing CA's subject (BMPString or TeletexString
+  against PrintableString: `X500Principal.equals` compares them unequal
+  where BouncyCastle's `X500Name` would not). The RFCs allow all three
+  and BouncyCastle 1.86 validates them, but Apple's App Store Server
+  Library (Java `ChainVerifier` and `SignedDataVerifier`, read
+  2026-10-14) refuses each: `EXPECTED_CHAIN_LENGTH = 3`, any `alg` but
+  `"ES256"`, and the JDK's `CertPathValidator("PKIX")`, which chains
+  names with `X500Principal.equals`. A shape Apple's own verifier
+  refuses is not one Apple can ship, so Java does not widen for them;
+  when Apple's library changes, this library changes with it
+  (ROADMAP.md, "Later / hardening").
 - **The rule** (amended by the owner on 2026-09-30): divergences between
   the core and the Java implementation are recorded. A divergence is fixed
   only when it changes an Apple-signed input's verdict or accepts
