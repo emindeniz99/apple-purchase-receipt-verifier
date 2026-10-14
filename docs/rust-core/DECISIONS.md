@@ -694,7 +694,7 @@ cRLDistributionPoints, 2026-10-06).
   Over the same bytes on BouncyCastle 1.86 the eight cost 2.9 to 25
   times SHA-256 and every other digest it resolves at most 2.6 times.
   `DigestDenylistCostTest` re-measures that on every build against a
-  band, refused above 2.4 and allowed below 3.2, so a digest near the
+  band, refused above 2.4 and allowed below 4.0, so a digest near the
   boundary cannot flap. RIPEMD-160, now the slowest digest accepted,
   costs about 0.2 s warm at the cap ([digest cost][digestcost]). It is
   a denylist, so a fast digest added later needs no code change. The

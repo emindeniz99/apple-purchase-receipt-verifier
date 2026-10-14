@@ -754,6 +754,11 @@ class TrustStoreIsolationTest {
     private static List<Path> mainSources() throws IOException {
         List<Path> sources = new ArrayList<>();
         for (Path root : MAIN_SOURCES) {
+            // A vendored copy may merge the two roots into one; the count
+            // below still fails when neither is here.
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
             try (Stream<Path> walk = Files.walk(root)) {
                 sources.addAll(walk.filter(path -> path.getFileName().toString().endsWith(".java"))
                         .sorted()

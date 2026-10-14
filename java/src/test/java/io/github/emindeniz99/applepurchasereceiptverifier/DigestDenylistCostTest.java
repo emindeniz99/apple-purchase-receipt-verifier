@@ -58,15 +58,17 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Two edges, not one cut. A ratio moves by up to a third between runs and
  * JDKs, so a single threshold near any digest would flap. The band between
- * the edges is a dead zone: a digest measured inside it passes whether it is
- * refused or not, and only one that leaves the band on the wrong side fails.
- * On BouncyCastle 1.86 (JDK 8, 11 and 21) the fastest refused digest, DSTU
- * 7564-256, measured 2.9 times SHA-256 at its lowest and the slowest
- * allowed one, RIPEMD-160, 2.6 at its highest; each edge sits at
- * least a fifth away from the nearest measurement
+ * the edges, 2.4 to 4.0, is a dead zone: a digest measured inside it passes
+ * whether it is refused or not, and only one that leaves the band on the
+ * wrong side fails. On BouncyCastle 1.86 (JDK 8, 11 and 21) the fastest
+ * refused digest, DSTU 7564-256, measured 2.9 times SHA-256 at its lowest
+ * and the slowest allowed one, RIPEMD-160, 2.6 at its highest
  * (docs/evidence/2026-10-13-java-digest-cost.md). md2WithRSAEncryption
  * measured 16 times rsaEncryption and every other label 2.4 at most
- * (docs/evidence/2026-10-13-java-pretrust-reencoding.md). A digest whose JIT
+ * (docs/evidence/2026-10-13-java-pretrust-reencoding.md), but one label,
+ * 0.4.0.127.0.7.1.1.4.1.6, read 3.22 once in a full-suite run on Temurin
+ * 17, which the first upper edge, 3.2, failed. Each edge sits at least a
+ * fifth away from the nearest measurement. A digest whose JIT
  * compilation lags reads slow for a few rounds, so rounds continue, keeping
  * each digest's best, until the table agrees or {@link #MAX_ROUNDS} have
  * run. Ratios, never milliseconds, so a slow runner does not fail it.</p>
@@ -77,7 +79,7 @@ class DigestDenylistCostTest {
     private static final double REFUSED_ABOVE = 2.4;
 
     /** An allowed digest must cost less than this many times SHA-256. */
-    private static final double ALLOWED_BELOW = 3.2;
+    private static final double ALLOWED_BELOW = 4.0;
 
     private static final int BUFFER_BYTES = 512 * 1024;
     private static final int WARM_ROUNDS = 2;
