@@ -272,6 +272,7 @@ act on.
 
 ```java
 import io.github.emindeniz99.applepurchasereceiptverifier.Config;
+import io.github.emindeniz99.applepurchasereceiptverifier.Failure;
 import io.github.emindeniz99.applepurchasereceiptverifier.JsonPayload;
 import io.github.emindeniz99.applepurchasereceiptverifier.Reason;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationResult;
@@ -294,9 +295,7 @@ public class Notifications {
     public int handle(String signedPayload) {
         VerificationResult<JsonPayload> outer = verifier.verifySignedData(signedPayload);
         if (!outer.verified()) {
-            // INTERNAL_ERROR is not Apple's fault or an attack: page, and
-            // Apple's retries give you days to ship a fix. Anything else: deny.
-            return outer.failure().reason() == Reason.INTERNAL_ERROR ? 500 : 400;
+            return status(outer.failure());
         }
         ResponseBodyV2DecodedPayload notification;
         try {
@@ -324,7 +323,7 @@ public class Notifications {
         if (data.getSignedTransactionInfo() != null) {
             VerificationResult<JsonPayload> tx = verifier.verifySignedData(data.getSignedTransactionInfo());
             if (!tx.verified()) {
-                return 400;
+                return status(tx.failure());
             }
             try {
                 JWSTransactionDecodedPayload transaction =
@@ -337,7 +336,7 @@ public class Notifications {
         if (data.getSignedRenewalInfo() != null) {
             VerificationResult<JsonPayload> renewal = verifier.verifySignedData(data.getSignedRenewalInfo());
             if (!renewal.verified()) {
-                return 400;
+                return status(renewal.failure());
             }
             try {
                 JWSRenewalInfoDecodedPayload info =
@@ -349,6 +348,16 @@ public class Notifications {
         }
         markSeen(notification.getNotificationUUID());   // only after the work is done
         return 200;
+    }
+
+    /**
+     * INTERNAL_ERROR and UNREADABLE_PAYLOAD are not Apple's fault or an
+     * attack: the library failed, or Apple signed what it cannot read. Page,
+     * and Apple's retries give you days to ship a fix. Anything else: deny.
+     */
+    private static int status(Failure failure) {
+        Reason reason = failure.reason();
+        return reason == Reason.INTERNAL_ERROR || reason == Reason.UNREADABLE_PAYLOAD ? 500 : 400;
     }
 
     private void applyTransaction(String notificationType, JWSTransactionDecodedPayload transaction) { /* your code */ }
