@@ -837,76 +837,48 @@ can build. These are warm-JVM figures; see
 [Running in production](#running-in-production) for the cold start. The
 machine was shared with other work, so treat them as an order of magnitude.
 
-The digest a SignerInfo declares is the sender's choice and is not
-signed, and BouncyCastle digests the whole content with it once for
-every certificate a SignerInfo names whose chain and markers pass, before
-that SignerInfo's signature is checked: once per SignerInfo when, as in
-Apple's receipts, one certificate matches. A cap-sized receipt with four
-SignerInfos naming Apple's public receipt-signing certificate and
-declaring GOST R 34.11-94 cost about 1.2 s warm and up to 1.8 s cold on
-Java 8, against about 0.09 s warm for SHA-256. The library now refuses
-the eight slow digests BouncyCastle implements (GOST R 34.11-94, MD2,
-Whirlpool, GOST R 34.11-2012 and DSTU 7564) before digesting a byte, as
-`INVALID_SIGNATURE`, which costs less than a SHA-256 receipt. The slowest
-digest still accepted, RIPEMD-160 at about 2.3 times SHA-256, costs about
-0.17 to 0.21 s warm and up to 0.44 s cold for the same receipt, measured
-on 2026-10-13 with a plain loop, not JMH, on a 4 vCPU machine
-(`docs/evidence/2026-10-13-java-digest-cost.md`).
+Some unsigned parts of a receipt or a JWS once cost seconds, or an
+`OutOfMemoryError`, inside BouncyCastle before anything was trusted. Each
+bullet gives what that input costs today at the cap, measured on
+2026-10-13 and 2026-10-14 with a plain loop, not JMH, on a 4 vCPU machine.
+The figures
+from before each change are in the repository's
+`docs/evidence/2026-10-13-java-digest-cost.md`,
+`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,
+`docs/evidence/2026-10-13-java-pretrust-shape.md` and, for the copies of
+the root, `THREAT-MODEL.md`.
 
-Three more sender-chosen inputs cost seconds before any signer was
-trusted, measured the same way on 2026-10-13. Re-encoding ASN.1 to DER
-sorts every SET in it: the library re-encoded each certificate-bag entry
-before parsing it, and BouncyCastle re-encodes a SignerInfo issuer value
-that is not a string to hash and compare the name. At the cap, a bag
-entry of nested SETs cost about 3 s and an issuer value of them about
-11 s. The library now reads each bag entry as parsed, and leaves out a
-SignerInfo whose issuer holds anything but strings, as no name Apple
-issues does; both inputs cost what parsing them costs, 0.25 to 0.9 s.
-The signatureAlgorithm is unsigned too: md2WithRSAEncryption made
-BouncyCastle hash the signed attributes with MD2 (0.26 s at the cap,
-against 0.03 s), and RSASSA-PSS with a saltLength of 1,000,000,000 made
-it allocate that many bytes, an `OutOfMemoryError` out of
-`verifyReceipt`. The MD2 label is refused before anything is hashed, and
-a PSS saltLength the signer's key cannot hold (RFC 8017) before anything
-is allocated, both as `INVALID_SIGNATURE`; a PSS signature whose salt
-fits verifies. The generic composite label (1.3.6.1.4.1.18227.2.1),
-defined by an individual draft from January 2020 until May 2023, names
-any number of parts, and BouncyCastle
-made a signature check per part and streamed the whole content into
-each: 15.6 s for 1,000 parts over a cap-sized receipt, and a
-`StackOverflowError` out of `verifyReceipt` at 50,000. It is refused
-before anything is built, as `INVALID_SIGNATURE`. No Apple receipt uses
-it. The per-pair composite OIDs of the LAMPS draft (IANA
-1.3.6.1.5.5.7.6.37 to .54 since draft -13), which BouncyCastle verifies
-through their own SPI and not through the generic path, are not
-affected.
-A bag entry shaped as a certificate, with nested values in its names or
-algorithm parameters, cost 3.6 to 17 s at the cap inside BouncyCastle's
-X.509 class, which DER-encodes them as it builds, verifies and compares
-the certificate, and the receipt still verified; the JWS `x5c` chain
-builds the same object under its 256 KiB cap. The library now passes
-over a certificate whose names hold anything but strings or whose
-algorithm parameters hold a SET, as no certificate Apple issues does,
-before converting it, so such a receipt costs about its parse, 0.4 to
-0.85 s, and up to 1.1 s for a value nested 50 deep. A certificate's own
-signature label is unsigned as well: RSASSA-PSS with a saltLength of
-2,147,483,647 threw `OutOfMemoryError` from a 3.5 KB receipt or a 2.3 KB
-JWS, and a saltLength the issuer's key cannot hold (RFC 8017) is now
-refused before anything is built. Under the generic composite label,
-BouncyCastle compared the whole list of parts once per part, so a bag
-entry with 20,000 parts cost 18 to 47 s from a 0.5 MB receipt that
-still verified; a certificate with that label is now signed by nobody.
-The label md2WithRSAEncryption made BouncyCastle run MD2 over the TBS
-once per issuer whose name matched, and every CA in the bag was an
-issuer, copies of the root included: a cap-sized stranger beside seven
-copies of the root cost about 2.5 s a call, measured on 2026-10-14. A
-certificate with that label is now signed by nobody, and a copy of a root
-or of an accepted CA is not tried as an issuer again: 0.05 to 0.2 s.
-BouncyCastle also DER-encoded a
-SignerInfo's signed attributes before checking its signature, 2.8 to 4.9
-s for one cap-sized nested attribute; they are now hashed as sent, 0.5
-to 0.9 s (`docs/evidence/2026-10-13-java-pretrust-reencoding.md`,
-`docs/evidence/2026-10-13-java-pretrust-shape.md`).
+- A SignerInfo naming one of the eight slow digests BouncyCastle
+  implements (GOST R 34.11-94, MD2, Whirlpool, GOST R 34.11-2012 and
+  DSTU 7564) is refused before a byte is digested, as `INVALID_SIGNATURE`,
+  for less than a SHA-256 receipt costs. The slowest digest still
+  accepted, RIPEMD-160, costs 0.17 to 0.21 s warm and up to 0.44 s cold
+  for a receipt with four SignerInfos naming Apple's receipt-signing
+  certificate.
+- A SignerInfo labelled md2WithRSAEncryption is refused before its signed
+  attributes are hashed, as `INVALID_SIGNATURE`.
+- A SignerInfo labelled RSASSA-PSS with a saltLength the signer's key
+  cannot hold (RFC 8017) is refused before anything is allocated, as
+  `INVALID_SIGNATURE`; a PSS signature whose salt fits verifies.
+- A SignerInfo labelled with the generic composite OID
+  (1.3.6.1.4.1.18227.2.1) is refused before any part is built, as
+  `INVALID_SIGNATURE`. The per-pair composite OIDs of the LAMPS draft stay
+  accepted.
+- A SignerInfo whose issuer holds anything but strings is left out, and a
+  bag entry is read as parsed, not re-encoded to DER: either input costs
+  its parse, 0.25 to 0.9 s.
+- A bag certificate whose names hold anything but strings, or whose
+  algorithm parameters hold a SET, is passed over before it is converted:
+  about its parse, 0.4 to 0.85 s, and up to 1.1 s for a value nested 50
+  deep.
+- A certificate labelled RSASSA-PSS with a saltLength its issuer's key
+  cannot hold, or labelled with the generic composite OID, is signed by
+  nobody, before anything is built.
+- A certificate labelled md2WithRSAEncryption is signed by nobody, and a
+  copy of a root or of an accepted CA is not tried as an issuer again: a
+  cap-sized stranger beside seven copies of the root costs 0.05 to 0.2 s.
+- A SignerInfo's signed attributes are hashed as sent, not re-encoded to
+  DER: 0.5 to 0.9 s for one cap-sized nested attribute.
 
 ## Testing with synthetic receipts
 
