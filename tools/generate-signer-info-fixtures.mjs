@@ -78,6 +78,11 @@
  *                                       md2WithRSAEncryption
  *                                       (1.2.840.113549.1.1.2), with 256 zero
  *                                       octets as its signature
+ *   certificates/gost-94-stranger.der    the same stranger naming Apple Root
+ *                                       CA - G3, the EC root, as its issuer,
+ *                                       labelled gostR3411-94-with-gostR3410-2001
+ *                                       (1.2.643.2.2.3), with 64 zero octets
+ *                                       as its signature
  *   certificates/set-names-stranger.der
  *                                       the receipt with one more bag entry,
  *                                       labelled sha256WithRSAEncryption, with
@@ -216,6 +221,9 @@ const stranger = strangerWith(strangerLabel, Buffer.alloc(256));
 // INTEGER -3,294,967,296: two's complement in 5 octets, low 32 bits 0x3b9aca00.
 const negativeSaltStranger = strangerWith(wrap(0x30, pss(Buffer.from('0205ff3b9aca00', 'hex'))), Buffer.alloc(256));
 const md2Stranger = strangerWith(wrap(0x30, Buffer.from('06092a864886f70d0101020500', 'hex')), Buffer.alloc(256));
+// Under the EC root: BouncyCastle verifies a GOST label with any EC key.
+const g3Subject = tbsOf(readFileSync(join(REPO, 'certs/AppleRootCA-G3.cer')))[5];
+const gostStranger = strangerWith(wrap(0x30, Buffer.from('06062a8503020203', 'hex')), Buffer.alloc(64), g3Subject);
 const setNamesStranger = strangerWith(sha256WithRsa, Buffer.alloc(256), commonName(nestedSet('Stranger')), commonName(nestedSet('Stranger')));
 const ecdsaWithSha256 = Buffer.from('300a06082a8648ce3d040302', 'hex');
 const compositeStranger = strangerWith(
@@ -261,6 +269,7 @@ const files = {
   'certificates/generic-composite-stranger.der': withBagEntry(compositeStranger),
   'certificates/thousand-and-one-extensions-stranger.der': withBagEntry(crowded),
   'certificates/md2-with-rsa-stranger.der': withBagEntry(md2Stranger),
+  'certificates/gost-94-stranger.der': withBagEntry(gostStranger),
   'certificates/set-names-stranger.der': withBagEntry(setNamesStranger),
 };
 for (const [name, bytes] of Object.entries(files)) {
