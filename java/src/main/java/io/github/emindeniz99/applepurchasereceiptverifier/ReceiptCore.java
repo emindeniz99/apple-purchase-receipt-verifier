@@ -30,6 +30,11 @@ import org.bouncycastle.asn1.cms.IssuerAndSerialNumber;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerIdentifier;
 import org.bouncycastle.asn1.cms.SignerInfo;
+import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
+import org.bouncycastle.asn1.iso.ISOIECObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.rosstandart.RosstandartObjectIdentifiers;
+import org.bouncycastle.asn1.ua.UAObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cms.CMSException;
@@ -91,14 +96,14 @@ final class ReceiptCore {
      * signature label that names one of them.
      */
     static final Set<String> REFUSED_DIGESTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "1.2.643.2.2.9", // GOST R 34.11-94
-            "1.2.840.113549.2.2", // MD2
-            "1.0.10118.3.0.55", // Whirlpool
-            "1.2.643.7.1.1.2.2", // GOST R 34.11-2012, 256 bits
-            "1.2.643.7.1.1.2.3", // GOST R 34.11-2012, 512 bits
-            "1.2.804.2.1.1.1.1.2.2.1", // DSTU 7564, 256 bits
-            "1.2.804.2.1.1.1.1.2.2.2", // DSTU 7564, 384 bits
-            "1.2.804.2.1.1.1.1.2.2.3"))); // DSTU 7564, 512 bits
+            CryptoProObjectIdentifiers.gostR3411.getId(), // GOST R 34.11-94
+            PKCSObjectIdentifiers.md2.getId(), // MD2
+            ISOIECObjectIdentifiers.whirlpool.getId(), // Whirlpool
+            RosstandartObjectIdentifiers.id_tc26_gost_3411_12_256.getId(), // GOST R 34.11-2012, 256 bits
+            RosstandartObjectIdentifiers.id_tc26_gost_3411_12_512.getId(), // GOST R 34.11-2012, 512 bits
+            UAObjectIdentifiers.dstu7564digest_256.getId(), // DSTU 7564, 256 bits
+            UAObjectIdentifiers.dstu7564digest_384.getId(), // DSTU 7564, 384 bits
+            UAObjectIdentifiers.dstu7564digest_512.getId()))); // DSTU 7564, 512 bits
 
     private ReceiptCore() {}
 

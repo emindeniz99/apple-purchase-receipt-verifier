@@ -547,6 +547,7 @@ class UnauthenticatedKeyCostTest {
         // RSASSA-PSS label refused: 0.5 to 6 s a call before the composite
         // signature failed to parse. The generic composite label is now
         // refused before any part is looked at.
+        assertEquals("1.3.6.1.4.1.18227.2.1", AppleTrust.GENERIC_COMPOSITE_SIGNATURE);
         AlgorithmIdentifier label =
                 new AlgorithmIdentifier(MiscObjectIdentifiers.id_alg_composite, new DLSequence(pss(1_000_000_000)));
         assertLabelRefusedQuickly(label, COMPOSITE_REFUSED);

@@ -29,6 +29,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.RSASSAPSSparams;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
@@ -77,7 +78,7 @@ final class AppleTrust {
      * verifies through their own SPI and not through this generic path,
      * stay accepted.
      */
-    static final String GENERIC_COMPOSITE_SIGNATURE = "1.3.6.1.4.1.18227.2.1";
+    static final String GENERIC_COMPOSITE_SIGNATURE = MiscObjectIdentifiers.id_alg_composite.getId();
 
     /**
      * md2WithRSAEncryption, the one signature label refused for what its
@@ -88,7 +89,7 @@ final class AppleTrust {
      * per issuer tried, before it compares a signature byte. Apple signs
      * nothing with MD2.
      */
-    static final String REFUSED_SIGNATURE_ALGORITHM = "1.2.840.113549.1.1.2";
+    static final String REFUSED_SIGNATURE_ALGORITHM = PKCSObjectIdentifiers.md2WithRSAEncryption.getId();
 
     /** The critical extensions {@link #HANDLED_CRITICAL_EXTENSIONS} marks processed. */
     private static final Set<String> HANDLED = Collections.unmodifiableSet(
