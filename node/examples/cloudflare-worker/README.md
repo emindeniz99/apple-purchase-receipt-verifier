@@ -139,19 +139,20 @@ purchase history. Keep it that way if you extend it.
 
 ## Deployed
 
-https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-10 with
-wrangler 4.147.0 and package 0.11.0, the WebAssembly core (every response
+https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-15 with
+wrangler 4.147.0 and package 0.12.0, the WebAssembly core (every response
 says which release in `X-Aprv-Version`). The Worker upload is 2,888 KiB,
-956 KiB gzipped, and starts in 1 ms.
+957 KiB gzipped, and starts in 2 ms.
 
-Checked against that URL on 2026-10-10: `/v1/info` and `X-Aprv-Version`
-report 0.11.0; the public sandbox receipt verifies on
-`/v1/verify-receipt/sandbox` with `"status":0` and
-`"environment":"Sandbox"`, and `/production` answers `21007`; a receipt
-with one character flipped is refused (`21002`); `X-Aprv-Now-Ms` sets
-`request_date_ms`; a body of 3,145,729 bytes on `/v1/receipt/verify` is a
-413 with `TOO_LARGE`; the page serves the three `.wasm` core modules it
-runs in the browser. The in-browser answer was compared with the Worker's
-on the 0.10.0 deploy (2026-10-08), not on this one.
+Checked against that URL on 2026-10-15: `/v1/info`, `X-Aprv-Version` and the
+page's package file report 0.12.0; the public sandbox receipt verifies on
+`/v1/receipt/verify` and on `/v1/verify-receipt/sandbox` (`"status":0`,
+`"environment":"Sandbox"`), and `/production` answers `21007`; a receipt
+with one character flipped is refused; `X-Aprv-Now-Ms` sets
+`request_date_ms`; a body of 3,145,729 bytes is a 413 with `TOO_LARGE`
+(`21002` at the endpoint); the demo page's "Both, compared" mode runs the
+package in the browser, where it fetches the three `.wasm` core modules,
+and on the Worker, and the two answers are the same, for a receipt, for
+the sandbox endpoint and for a tampered input to each.
 A redeploy takes a few seconds to reach every location: the first requests
 after one can still be answered by the previous version.
