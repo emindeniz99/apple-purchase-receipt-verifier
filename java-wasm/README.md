@@ -34,7 +34,7 @@ at resolution.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
-  <version>0.11.1</version> <!-- x-release-please-version -->
+  <version>0.12.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -149,7 +149,7 @@ or by `Transfer-Encoding: chunked` alone, and refuses any other.
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier-wasm</artifactId>
-  <version>0.11.1</version> <!-- x-release-please-version -->
+  <version>0.12.0</version> <!-- x-release-please-version -->
   <classifier>linux-x86_64</classifier> <!-- or linux-aarch64 -->
 </dependency>
 ```
