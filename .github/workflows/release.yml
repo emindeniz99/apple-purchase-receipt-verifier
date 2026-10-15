@@ -1829,5 +1829,13 @@ jobs:
             REGISTRIES="$REGISTRIES,nuget"
           fi
           echo "smoke-testing: $REGISTRIES"
+          # A completion built and attested from the branch, not the tag, so
+          # the smoke workflow is told which ref the attestations name (0.12.0
+          # failed its attestation leg without it). A tag run passes nothing:
+          # the tag is the default there.
+          source_ref=()
+          if [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            source_ref=(-f "source_ref=$GITHUB_REF")
+          fi
           gh workflow run post-publish-smoke.yml --repo "$GITHUB_REPOSITORY" \
-            --ref "$REF" -f "version=${REF#v}" -f "registries=$REGISTRIES"
+            --ref "$REF" -f "version=${REF#v}" -f "registries=$REGISTRIES" "${source_ref[@]}"
