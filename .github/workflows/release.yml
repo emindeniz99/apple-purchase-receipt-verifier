@@ -159,8 +159,9 @@ jobs:
           fi
           # A completion publishes, so it runs from main, the one branch the
           # smoke workflow accepts attestations from; refusing any other
-          # branch here stops it before a registry sees anything.
-          if [ "$REF_TYPE" = "branch" ] && [ "$REF_NAME" != "main" ]; then
+          # branch here stops it before a registry sees anything. A dry run
+          # with a tag publishes nothing and may rehearse from any branch.
+          if [ "$REF_TYPE" = "branch" ] && [ "$REF_NAME" != "main" ] && [ "$DRY_RUN" != "true" ]; then
             echo "::error::a completion runs from main, not '$REF_NAME'; dispatch with --ref main -f tag=$TAG"
             exit 1
           fi
