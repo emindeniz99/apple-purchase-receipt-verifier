@@ -39,8 +39,8 @@ name: post-publish-smoke
 # that the resolve job validates as a release version. workflow_run also only
 # fires for runs in this repository, and `release` itself only runs on a v* tag
 # push or a manual dispatch — both of which already require write access.
-on: # zizmor: ignore[dangerous-triggers]
-  workflow_run:
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [release]
     types: [completed]
   workflow_dispatch:
