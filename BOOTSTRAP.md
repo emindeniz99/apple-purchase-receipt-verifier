@@ -325,6 +325,18 @@ published `-wasm` carries the version of the first release after the flip.
    `post-publish-smoke.yml`'s `maven` job (it has only ever resolved the
    main artifact).
 
+**Completing a release from main.** The `maven-central` environment
+deploys only from `v*` tags, and a completion (`release.yml`'s header:
+`gh workflow run release.yml --ref main -f tag=vX.Y.Z`) runs from main, so
+its Maven job is refused with "Branch "main" is not allowed to deploy to
+maven-central" (0.12.0). When a completion has to reach Central:
+
+4. Add `main` to the environment's deployment branches (Settings →
+   Environments → `maven-central` → Deployment branches and tags), re-run
+   the failed Maven job, approve the deployment, and remove the `main`
+   rule again once it has published. Leaving it in would let any run on
+   main reach the Central credentials.
+
 RubyGems, crates.io, NuGet and the Go proxy have no monthly cap, so they
 add no pressure of their own — but a fix in any one of them still spends a
 Central release.

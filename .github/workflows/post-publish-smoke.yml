@@ -54,6 +54,14 @@ on:
         required: false
         default: npm,pypi,maven,swiftpm,go,php,rubygems,crates,nuget
         type: string
+      # A completion (release.yml's header) builds and attests from main, not
+      # from the tag, so its attestations name refs/heads/main and a check
+      # pinned to the tag refused every one of them (0.12.0). release.yml
+      # passes the ref it ran from; nothing else is accepted.
+      source_ref:
+        description: 'The ref release.yml built from when it was not the tag (refs/heads/main for a completion)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -97,6 +105,9 @@ jobs:
     outputs:
       version: ${{ steps.pick.outputs.version }}
       ref: ${{ steps.pick.outputs.ref }}
+      # The ref the attestations were signed at: the tag, or main for a
+      # completion.
+      source-ref: ${{ steps.pick.outputs.source-ref }}
       # Comma-wrapped on both ends, so a leg can test membership with
       # contains(..., ',name,') and never match a name by prefix.
       registries: ${{ steps.pick.outputs.registries }}
@@ -107,6 +118,7 @@ jobs:
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_REGISTRIES: ${{ inputs.registries }}
+          DISPATCH_SOURCE_REF: ${{ inputs.source_ref }}
           RELEASE_REF: ${{ github.event.workflow_run.head_branch }}
           RELEASE_EVENT: ${{ github.event.workflow_run.event }}
           GH_TOKEN: ${{ github.token }}
@@ -143,9 +155,15 @@ jobs:
           case "$REGISTRIES" in
             *[!a-z,]*) echo "::error::'$REGISTRIES' is not a comma-separated registry list"; exit 1 ;;
           esac
+          SOURCE_REF="${DISPATCH_SOURCE_REF:-refs/tags/v$VERSION}"
+          case "$SOURCE_REF" in
+            "refs/tags/v$VERSION"|refs/heads/main) ;;
+            *) echo "::error::'$SOURCE_REF' is neither refs/tags/v$VERSION nor refs/heads/main"; exit 1 ;;
+          esac
           {
             echo "version=$VERSION"
             echo "ref=v$VERSION"
+            echo "source-ref=$SOURCE_REF"
             echo "registries=,$REGISTRIES,"
           } >> "$GITHUB_OUTPUT"
           echo "smoke-testing $VERSION on: $REGISTRIES"
@@ -154,7 +172,7 @@ jobs:
   # (R34, MIGRATION.md steps 1.15 and 2.10): every file against SHA256SUMS;
   # every artifact's SLSA provenance and CycloneDX SBOM attestations with
   # `gh attestation verify`, signed by this repository's release.yml at this
-  # tag; every SBOM checked to name the versions pinned at the tag; the image
+  # tag (at main for a completion); every SBOM checked to name the versions pinned at the tag; the image
   # by digest the same way. Releases before aprv.wasm existed carry none of
   # this, and the job says so and succeeds.
   attestations:
@@ -199,18 +217,18 @@ jobs:
         if: steps.assets.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ needs.resolve.outputs.ref }}
+          SOURCE_REF: ${{ needs.resolve.outputs.source-ref }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/assets"
           workflow="$GITHUB_REPOSITORY/.github/workflows/release.yml"
           for f in aprv.wasm aprv.component.wasm aprv-*-linux-musl aprv-*-apple-darwin aprv-*-windows-msvc.exe; do
             [ -f "$f" ] || { echo "::error::the release has no $f"; exit 1; }
-            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF"
-            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF" \
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "$SOURCE_REF"
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "$SOURCE_REF" \
               --predicate-type https://cyclonedx.org/bom
           done
-          gh attestation verify aprv.wit --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "refs/tags/$REF"
+          gh attestation verify aprv.wit --repo "$GITHUB_REPOSITORY" --signer-workflow "$workflow" --source-ref "$SOURCE_REF"
       - name: every SBOM names the versions pinned at this tag
         if: steps.assets.outputs.present == 'true'
         run: |
@@ -226,14 +244,14 @@ jobs:
         if: steps.assets.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ needs.resolve.outputs.ref }}
+          SOURCE_REF: ${{ needs.resolve.outputs.source-ref }}
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           owner=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REPOSITORY_OWNER")
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           gh attestation verify "oci://ghcr.io/$owner/aprv-server:$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$REF"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "$SOURCE_REF"
 
   npm:
     name: npm — install the published package and verify a receipt
