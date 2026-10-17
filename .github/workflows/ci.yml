@@ -635,7 +635,7 @@ jobs:
           host: python
       # setup-uv provisions the interpreter too (uv python install), from
       # python-build-standalone, including the 3.10 floor.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
       # python/uv.lock is committed and every leg installs from it, so no
@@ -1839,7 +1839,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: python
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
       - name: the fuzzer's environment and the generated seed
@@ -2466,7 +2466,7 @@ jobs:
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: false
       - name: Schemathesis against a started server, without and with a token
@@ -3071,7 +3071,7 @@ jobs:
       # install step. Version deliberately unpinned, as it was under pip:
       # a new zizmor audit that fires on these workflows is a finding we
       # want to see, not one to defer behind a pin.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - run: uvx zizmor .github/workflows/ .github/actions/
 
   # Lint and formatting for the Node port. Separate from the `node` job
@@ -3139,7 +3139,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
