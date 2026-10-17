@@ -489,3 +489,11 @@ jobs:
             -m "$corpus" \
             -- "${changed[@]}"
           git push origin "HEAD:$BRANCH"
+      # The two corpus steps above continue on error so the pins still go
+      # in; once they have, a corpus that was built but not published fails
+      # the run instead of leaving it green with a warning.
+      - name: fail on an unpublished corpus
+        if: steps.download-corpus.outcome == 'failure' || steps.publish-corpus.outcome == 'failure'
+        run: |
+          echo "::error::the corpus was built but not published, so fixtures/corpus.json still pins another module's archive; the module pins went in. Rerun this workflow, or run refresh-corpus.yml after the release"
+          exit 1
