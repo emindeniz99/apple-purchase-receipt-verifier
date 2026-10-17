@@ -260,9 +260,10 @@ jobs:
   # suites run in ci.yml against the module built from the commit, while
   # the archive's module is the last release's, so a suite here would fail
   # whenever the core or a shared case changed since that release. The rows
-  # belong to the archive's module, so after a release changes the module a
-  # new archive is uploaded and fixtures/corpus.json is changed in a PR (a
-  # stale one is reported by the first step).
+  # belong to the archive's module, so the release PR that changes the
+  # module also builds a new archive and changes fixtures/corpus.json
+  # (release-please.yml, release-branch-corpus); a pin of another module's
+  # archive fails the first step.
   corpus:
     if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
     runs-on: ubuntu-latest
@@ -291,10 +292,17 @@ jobs:
           for f in aprv.wasm aprv.component.wasm aprv.wit SHA256SUMS same.py calls rows; do
             if [ ! -e "$RUNNER_TEMP/g1/$f" ]; then echo "::error::the archive has no $f at its top level (the G1 layout)"; exit 1; fi
           done
+          # The rows belong to the archive's module, and the hosts run the
+          # module this tree pins, so the two must be one. The release PR
+          # pins both together (release-please.yml, release-branch-corpus);
+          # a mismatch means that job failed, and comparing rows would only
+          # repeat it on every leg, as ABI mismatches when the WIT version
+          # moved and on java-wasm either way.
           got="$(sha256sum < "$RUNNER_TEMP/g1/aprv.wasm" | cut -c1-64)"
           pinned="$(cut -c1-64 go/internal/wasm/aprv.wasm.sha256)"
           if [ "$got" != "$pinned" ]; then
-            echo "::warning::the archive's aprv.wasm is $got and this tree pins $pinned; its rows describe another module, so every leg fails with an ABI mismatch when the WIT version moved, and java-wasm on the pin either way, until the archive is refreshed"
+            echo "::error::the archive fixtures/corpus.json pins holds aprv.wasm $got, and this tree pins $pinned. Run refresh-corpus.yml from main with the release tag of $pinned and merge the pin it prints (docs/rust-core/DECISIONS.md R35)"
+            exit 1
           fi
           echo "G1=$RUNNER_TEMP/g1" >> "$GITHUB_ENV"
 

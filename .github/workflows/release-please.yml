@@ -268,14 +268,86 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Writes what the two jobs above built into the release branch: the
+  # The parity corpus for the module release-branch-wasm built
+  # (docs/rust-core/DECISIONS.md R35). Its rows belong to one module, so the
+  # release PR that changes the module carries the corpus pin as well and
+  # main never pins an archive of another module (which turned every
+  # nightly corpus leg red after 0.12.0). tools/build-corpus.sh regenerates
+  # the rows from the archive fixtures/corpus.json pins, fails on a flipped
+  # verdict, and names the archive after the version and the module, so a
+  # rebuilt release branch reuses an archive it already published.
+  # Read-only, no cache: it runs the branch's code; refresh-wasm-copies
+  # publishes. If it fails, refresh-wasm-copies still pins the module and
+  # leaves the corpus pin as it was, and nightly says so;
+  # refresh-corpus.yml is the fallback once the release is out.
+  release-branch-corpus:
+    needs: [release-please, release-branch-wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      state: ${{ steps.build.outputs.state }}
+    steps:
+      # The release branch by its literal name (see release-branch-wasm).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: release-please--branches--main--components--apple-purchase-receipt-verifier
+          persist-credentials: false
+      - name: the commit release-branch-wasm built
+        env:
+          WANT: ${{ needs.release-branch-wasm.outputs.commit }}
+        run: |
+          got="$(git rev-parse HEAD)"
+          if [ "$got" != "$WANT" ]; then
+            echo "::error::release-please--branches--main--components--apple-purchase-receipt-verifier is at $got, not $WANT, which release-branch-wasm built"
+            exit 1
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aprv-wasm-release-branch
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: build the corpus for this module
+        id: build
+        env:
+          WASM_SHA256: ${{ needs.release-branch-wasm.outputs.wasm-sha256 }}
+          COMPONENT_SHA256: ${{ needs.release-branch-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          echo "$WASM_SHA256  $RUNNER_TEMP/aprv/aprv.wasm" | sha256sum -c -
+          echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+          out="$RUNNER_TEMP/corpus"
+          tools/build-corpus.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/aprv/aprv.component.wasm" \
+            rust/bindings/abi/wit/aprv.wit "$(cat version.txt)" "$out"
+          if [ -f "$out/state" ]; then
+            echo "state=$(cat "$out/state")" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=fresh" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.build.outputs.state != 'fresh'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: corpus-release-branch
+          path: ${{ runner.temp }}/corpus/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Writes what the jobs above built into the release branch: the
   # committed module copies and every tracked pin (tools/refresh-wasm-pins.sh
-  # copies files and writes hashes, nothing else), and php/SHA256SUMS: the
-  # two Linux binaries' hashes under the tag (sha256sum). One commit,
-  # pushed to the release branch. No build code runs here, which is what
-  # lets it hold the pushing token.
+  # copies files and writes hashes, nothing else), php/SHA256SUMS: the
+  # two Linux binaries' hashes under the tag (sha256sum), and
+  # fixtures/corpus.json: the corpus release-branch-corpus built, which
+  # this job publishes as a prerelease first. One commit, pushed to the
+  # release branch. No build code runs here, which is what lets it hold the
+  # pushing token. It runs when release-branch-corpus failed too, so a
+  # corpus problem never holds the module pins back.
   refresh-wasm-copies:
-    needs: [release-please, release-branch-wasm, release-branch-server]
+    needs: [release-please, release-branch-wasm, release-branch-server, release-branch-corpus]
+    if: ${{ !cancelled() && needs.release-branch-server.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -308,9 +380,52 @@ jobs:
           pattern: aprv-server-release-branch-*
           path: ${{ runner.temp }}/server
           merge-multiple: true
+      - if: needs.release-branch-corpus.result == 'success' && needs.release-branch-corpus.outputs.state != 'fresh'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: corpus-release-branch
+          path: ${{ runner.temp }}/corpus
+      # A new archive becomes a prerelease before the pin names it. The tag
+      # goes on main's head rather than the release branch: GITHUB_TOKEN
+      # has no workflows permission, so it may not create a ref at a commit
+      # whose .github/workflows differ from the default branch's head (403,
+      # measured 2026-10-12), and the archive's README names the commit the
+      # rows were built from. Then the archives an earlier build of this
+      # release branch published for another module go: no commit that
+      # reaches main pins them.
+      - name: publish the corpus
+        if: needs.release-branch-corpus.result == 'success' && needs.release-branch-corpus.outputs.state != 'fresh'
+        working-directory: ${{ runner.temp }}/corpus
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STATE: ${{ needs.release-branch-corpus.outputs.state }}
+        run: |
+          set -euo pipefail
+          archive="$(basename "$(jq -er .url corpus.json)")"
+          name="${archive%.tar.gz}"
+          [[ "$name" =~ ^corpus-([0-9]+\.[0-9]+\.[0-9]+)-[0-9a-f]{8}$ ]]
+          version="${BASH_REMATCH[1]}"
+          if [ "$STATE" = built ]; then
+            sha256sum -c "$archive.sha256"
+            # No --clobber: an existing corpus tag or asset is immutable.
+            gh release create "$name" "$archive" "$archive.sha256" \
+              --target main --prerelease --latest=false \
+              --title "parity corpus $name" --notes-file README.md
+          fi
+          pinned="$(gh api "repos/$GH_REPO/contents/fixtures/corpus.json?ref=main" --jq .content | base64 -d | jq -r .url)"
+          gh release list --limit 200 --json tagName,isPrerelease \
+            --jq ".[] | select(.isPrerelease and (.tagName | startswith(\"corpus-$version-\"))) | .tagName" |
+            while read -r tag; do
+              if [ "$tag" != "$name" ] && [[ "$pinned" != */download/"$tag"/* ]]; then
+                echo "deleting $tag, superseded by $name"
+                gh release delete "$tag" --cleanup-tag --yes
+              fi
+            done
       - name: refresh the copies, the pins and SHA256SUMS
         env:
           BRANCH: ${{ needs.release-please.outputs.branch }}
+          CORPUS_STATE: ${{ needs.release-branch-corpus.result == 'success' && needs.release-branch-corpus.outputs.state || 'failed' }}
           BUILT_FROM: ${{ needs.release-branch-wasm.outputs.commit }}
           WASM_SHA256: ${{ needs.release-branch-wasm.outputs.wasm-sha256 }}
           COMPONENT_SHA256: ${{ needs.release-branch-wasm.outputs.component-sha256 }}
@@ -336,8 +451,21 @@ jobs:
             cp "$RUNNER_TEMP/SHA256SUMS" php/SHA256SUMS
             changed+=(php/SHA256SUMS)
           fi
+          corpus="corpus: fixtures/corpus.json already pins an archive of this module."
+          case "$CORPUS_STATE" in
+            built|reused)
+              if ! cmp -s "$RUNNER_TEMP/corpus/corpus.json" fixtures/corpus.json; then
+                cp "$RUNNER_TEMP/corpus/corpus.json" fixtures/corpus.json
+                changed+=(fixtures/corpus.json)
+              fi
+              corpus="corpus: $(jq -r .url fixtures/corpus.json)." ;;
+            fresh) ;;
+            *)
+              corpus="corpus: not refreshed (release-branch-corpus failed); fixtures/corpus.json still pins another module's archive."
+              echo "::warning::release-branch-corpus failed, so fixtures/corpus.json is not refreshed: the nightly corpus job fails after this release until refresh-corpus.yml runs" ;;
+          esac
           if [ "${#changed[@]}" -eq 0 ]; then
-            echo "the copies, pins and SHA256SUMS already name this build ($WASM_SHA256)"
+            echo "the copies, pins, SHA256SUMS and corpus pin already name this build ($WASM_SHA256)"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -345,5 +473,6 @@ jobs:
           git commit -m "chore(release): pin the module and the aprv binaries this branch builds" \
             -m "aprv.wasm $WASM_SHA256, component $COMPONENT_SHA256." \
             -m "$(cat php/SHA256SUMS)" \
+            -m "$corpus" \
             -- "${changed[@]}"
           git push origin "HEAD:$BRANCH"

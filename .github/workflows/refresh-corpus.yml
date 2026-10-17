@@ -1,16 +1,17 @@
-# R35: rows belong to a module. Refresh the public test corpus after a
-# release, then change fixtures/corpus.json in a separate reviewed PR.
+# R35: rows belong to a module. The release PR refreshes the parity corpus
+# and its pin itself (release-please.yml, release-branch-corpus), so a
+# release never leaves fixtures/corpus.json naming another module. This is
+# the hand-run fallback for a release whose PR could not (a flipped verdict
+# stopped it, or the run failed): it builds the archive from the release's
+# published assets with the same tools/build-corpus.sh, publishes it, and
+# prints the new pin for a reviewed PR that changes fixtures/corpus.json.
 name: refresh parity corpus
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Published module release (vX.Y.Z)
-        required: true
-        type: string
-      corpus_date:
-        description: New corpus date (YYYY-MM-DD)
+        description: Published module release (vX.Y.Z) whose aprv.wasm main pins
         required: true
         type: string
 
@@ -24,169 +25,57 @@ concurrency:
 jobs:
   # Runs only from main: the workflow file of the dispatched ref is the code
   # that builds and publishes the corpus, so a branch copy must not run it.
-  # On any other ref both jobs are skipped.
+  # On any other ref both jobs are skipped. The archive is for main's
+  # wrappers, so the release's module must be the one main pins.
   generate:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      state: ${{ steps.build.outputs.state }}
     steps:
       - name: validate inputs
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-          CORPUS_DATE: ${{ inputs.corpus_date }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$CORPUS_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-          [[ "$(date -u -d "$CORPUS_DATE" +%F)" = "$CORPUS_DATE" ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_tag }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-      - name: regenerate rows from public test inputs
+      - name: fetch the release's module and check it against main's pins
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          g1="$RUNNER_TEMP/g1"
-          mkdir -p "$g1"
-          url="$(jq -er '.url | select(startswith("https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/corpus-"))' fixtures/corpus.json)"
-          hash="$(jq -er '.sha256 | select(test("^[0-9a-f]{64}$"))' fixtures/corpus.json)"
-          curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/previous.tar.gz"
-          echo "$hash  $RUNNER_TEMP/previous.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/previous.tar.gz" -C "$g1"
-          # The previous rows are the baseline of the next step. Keep them
-          # before the loop below overwrites them in place.
-          cp -r "$g1/rows" "$RUNNER_TEMP/previous-rows"
+          dir="$RUNNER_TEMP/module"
+          mkdir -p "$dir"
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
           for file in aprv.wasm aprv.component.wasm aprv.wit; do
-            curl -fsSL --retry 3 "$base/$file" -o "$g1/$file"
+            curl -fsSL --retry 3 "$base/$file" -o "$dir/$file"
           done
-          cp rust/bindings/abi/wit/aprv.wit "$RUNNER_TEMP/expected.wit"
-          cmp "$RUNNER_TEMP/expected.wit" "$g1/aprv.wit"
-          cat go/internal/wasm/aprv.wasm.sha256 node/wasm/aprv.component.wasm.sha256 > "$g1/SHA256SUMS"
-          (cd "$g1" && sha256sum -c SHA256SUMS && sha256sum aprv.wit >> SHA256SUMS)
-          # The .err files hold the host's summary of the run that wrote the
-          # rows beside them. Drop the previous archive's, so none ships
-          # describing another module.
-          rm -f "$g1"/rows/module-*.err
-          for corpus in cases hostile algorithms substrate fuzz; do
-            rows="$g1/rows/module-$corpus.jsonl"
-            err="$g1/rows/module-$corpus.err"
-            if ! node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$rows" 2> "$err"; then
-              cat "$err" >&2
-              echo "::error::the trap host failed on the $corpus corpus (a trap, or an import other than random-get)"
-              exit 1
-            fi
-            cat "$err"
-            node tools/wasm-trap-host.mjs calls "$g1/aprv.wasm" "$g1/calls/$corpus.pinned.jsonl" > "$RUNNER_TEMP/repeat.jsonl"
-            cmp "$rows" "$RUNNER_TEMP/repeat.jsonl"
-          done
-      # The archive's own same.py counts rows and exits 1 on any difference,
-      # which a new module's richer payload legitimately causes. This step
-      # tells a payload change from a changed verdict instead: a row whose
-      # `verified` (verify-receipt, verify-signed-data) or `status`
-      # (verify-receipt-endpoint) differs from the previous archive's fails
-      # the run, and the counts go into the archive's README.
-      - name: compare the new rows with the previous archive's
-        run: |
-          set -euo pipefail
-          python3 -I - "$RUNNER_TEMP/previous-rows" "$RUNNER_TEMP/g1/rows" "$RUNNER_TEMP/compare.txt" cases hostile algorithms substrate fuzz <<'PY'
-          import json
-          import sys
-
-          previous_dir, new_dir, summary_path = sys.argv[1:4]
-          corpora = sys.argv[4:]
-
-
-          def load(path):
-              with open(path, encoding="utf-8") as f:
-                  return [json.loads(line) for line in f if line.strip()]
-
-
-          def verdict(row):
-              out = row.get("out")
-              if not isinstance(out, str):
-                  return (None, None)
-              try:
-                  answer = json.loads(out)
-              except ValueError:
-                  return (None, None)
-              if not isinstance(answer, dict):
-                  return (None, None)
-              return (answer.get("verified"), answer.get("status"))
-
-
-          def same(a, b):
-              return (a.get("out"), a.get("trap"), a.get("map")) == (b.get("out"), b.get("trap"), b.get("map"))
-
-
-          lines = []
-          totals = [0, 0, 0, 0]
-          flipped = []
-          for corpus in corpora:
-              old = load(f"{previous_dir}/module-{corpus}.jsonl")
-              new = load(f"{new_dir}/module-{corpus}.jsonl")
-              if [r["id"] for r in old] != [r["id"] for r in new]:
-                  print(f"::error::{corpus}: the rows are not the previous archive's calls in the same order")
-                  sys.exit(1)
-              identical = differing = flips = 0
-              for a, b in zip(old, new):
-                  if verdict(a) != verdict(b):
-                      flips += 1
-                      flipped.append(f"{corpus} {a['id']}: {verdict(a)} -> {verdict(b)}")
-                  elif same(a, b):
-                      identical += 1
-                  else:
-                      differing += 1
-              lines.append(f"{corpus}: {len(new)} rows: {identical} identical, {differing} differ, {flips} flipped")
-              for i, n in enumerate((len(new), identical, differing, flips)):
-                  totals[i] += n
-          lines.append(f"all: {totals[0]} rows: {totals[1]} identical, {totals[2]} differ, {totals[3]} flipped")
-          text = "\n".join(lines)
-          print(text)
-          with open(summary_path, "w", encoding="utf-8") as f:
-              f.write(text + "\n")
-          if flipped:
-              print("rows whose verified or status changed (first 20):")
-              for entry in flipped[:20]:
-                  print(f"  {entry}")
-              print("::error::a row's verified or status differs from the previous archive: this is a behavior change, not a refresh")
-              sys.exit(1)
-          PY
+          cat go/internal/wasm/aprv.wasm.sha256 node/wasm/aprv.component.wasm.sha256 > "$dir/SHA256SUMS"
+          (cd "$dir" && sha256sum -c SHA256SUMS)
       - name: build the archive
-        id: archive
+        id: build
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-          CORPUS_DATE: ${{ inputs.corpus_date }}
         run: |
           set -euo pipefail
-          g1="$RUNNER_TEMP/g1"
+          dir="$RUNNER_TEMP/module"
           out="$RUNNER_TEMP/corpus-release"
-          mkdir -p "$out"
-          source_sha="$(git rev-parse HEAD)"
-          {
-            echo "# corpus-$CORPUS_DATE: $RELEASE_TAG"
-            echo
-            echo "Source commit: $source_sha."
-            echo "Calls and clocks are unchanged from the previous pinned corpus."
-            echo "Reference rows and their .err summaries were regenerated by tools/wasm-trap-host.mjs, twice for the rows: identical, no traps or unexpected imports."
-            echo "Compared row by row with the previous pinned corpus (a flipped row has a different verified or status; none is allowed):"
-            echo
-            sed 's/^/- /' "$RUNNER_TEMP/compare.txt"
-            echo
-            echo "Only public repository fixtures and test keys; no production receipt."
-            echo
-            cat "$g1/SHA256SUMS"
-          } > "$g1/README.md"
-          archive="corpus-$CORPUS_DATE.tar.gz"
-          tar --sort=name --mtime="$CORPUS_DATE 00:00:00Z" --owner=0 --group=0 --numeric-owner -C "$g1" -cf - . | gzip -n > "$out/$archive"
-          (cd "$out" && sha256sum "$archive" > "$archive.sha256")
-          cp "$g1/README.md" "$out/README.md"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          tools/build-corpus.sh "$dir/aprv.wasm" "$dir/aprv.component.wasm" "$dir/aprv.wit" "${RELEASE_TAG#v}" "$out"
+          if [ ! -f "$out/state" ]; then
+            echo "::notice::fixtures/corpus.json already pins an archive of this module; nothing to do"
+            echo "state=fresh" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "state=$(cat "$out/state")" >> "$GITHUB_OUTPUT"
+      - if: steps.build.outputs.state != 'fresh'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: corpus-release
           path: ${{ runner.temp }}/corpus-release/
@@ -194,7 +83,7 @@ jobs:
           retention-days: 7
 
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.generate.outputs.state != 'fresh'
     needs: generate
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -206,27 +95,30 @@ jobs:
         with:
           name: corpus-release
           path: ${{ runner.temp }}/corpus-release/
-      - name: publish a new corpus prerelease
+      - name: publish the corpus prerelease and print the pin
         working-directory: ${{ runner.temp }}/corpus-release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          CORPUS_DATE: ${{ inputs.corpus_date }}
+          STATE: ${{ needs.generate.outputs.state }}
         run: |
           set -euo pipefail
-          archive="corpus-$CORPUS_DATE.tar.gz"
-          sha256sum -c "$archive.sha256"
-          # No --clobber: an existing corpus tag or asset is immutable.
-          # The tag sits on the dispatched head of main, not on the release
-          # commit the rows were built from (the archive's README names
-          # that one): GITHUB_TOKEN has no workflows permission, so it may
-          # not create a ref at a commit whose .github/workflows differ
-          # from the default branch's head, and GitHub answers 403
-          # "Resource not accessible by integration" (measured 2026-10-12).
-          gh release create "corpus-$CORPUS_DATE" "$archive" "$archive.sha256" \
-            --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "parity corpus $CORPUS_DATE" --notes-file README.md
-          hash="$(cut -c1-64 "$archive.sha256")"
-          jq -n --arg url "https://github.com/$GH_REPO/releases/download/corpus-$CORPUS_DATE/$archive" \
-            --arg sha256 "$hash" --arg generated "$CORPUS_DATE" \
-            '{url: $url, sha256: $sha256, generated: $generated}' >> "$GITHUB_STEP_SUMMARY"
+          # "reused": a release of this name already holds this module.
+          if [ "$STATE" = built ]; then
+            archive="$(basename "$(jq -er .url corpus.json)")"
+            name="${archive%.tar.gz}"
+            [[ "$name" =~ ^corpus-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{8}$ ]]
+            sha256sum -c "$archive.sha256"
+            # No --clobber: an existing corpus tag or asset is immutable.
+            # The tag sits on the dispatched head of main, not on the
+            # commit the rows were built from (the archive's README names
+            # that one): GITHUB_TOKEN has no workflows permission, so it
+            # may not create a ref at a commit whose .github/workflows
+            # differ from the default branch's head, and GitHub answers
+            # 403 "Resource not accessible by integration" (measured
+            # 2026-10-12).
+            gh release create "$name" "$archive" "$archive.sha256" \
+              --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "parity corpus $name" --notes-file README.md
+          fi
+          { echo '```json'; cat corpus.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
