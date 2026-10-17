@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
           rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
           echo "component-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-wasm
           path: |
@@ -83,7 +83,7 @@ jobs:
         env:
           COMPONENT_SHA256: ${{ needs.module.outputs.component-sha256 }}
         run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server/aprv-x86_64-unknown-linux-musl
@@ -106,7 +106,7 @@ jobs:
       # version.txt; passing version.txt keeps the two from ever disagreeing.
       - run: mvn -B -ntp -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" package
       - run: java -jar java-bench/target/benchmarks.jar -rf json -rff jmh-result.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jmh-result
           path: jmh-result.json
@@ -132,7 +132,7 @@ jobs:
       # Go's own benchmark format (ns/op), which benchstat reads.
       - run: go test -run '^$' -bench '^BenchmarkCrossPort$' -benchtime 1s -count 5 . | tee ../go-bench.txt
         working-directory: go
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-bench
           path: go-bench.txt
@@ -148,7 +148,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: cargo +stable run --release --locked --example bench > ../rust-bench.json
         working-directory: rust
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-bench
           path: rust-bench.json
@@ -175,7 +175,7 @@ jobs:
         working-directory: node
       - run: node bench/bench.mjs > ../node-bench.json
         working-directory: node
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: node-bench
           path: node-bench.json
@@ -202,7 +202,7 @@ jobs:
         working-directory: python
       - run: uv run --locked python bench/bench.py > ../python-bench.json
         working-directory: python
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-bench
           path: python-bench.json
@@ -234,7 +234,7 @@ jobs:
           BUNDLE_FROZEN: "true"
       - run: bundle exec ruby -Ilib bench/bench.rb > ../ruby-bench.json
         working-directory: ruby
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ruby-bench
           path: ruby-bench.json
@@ -265,7 +265,7 @@ jobs:
       # aprv; the JSON carries a transport field (php/CI-NOTES.md).
       - run: php bench/bench.php --aprv "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" > ../php-bench.json
         working-directory: php
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: php-bench
           path: php-bench.json
@@ -291,7 +291,7 @@ jobs:
       # out of the JSON the run step writes to stdout.
       - run: dotnet build -c Release dotnet/bench
       - run: dotnet run -c Release --no-build --project dotnet/bench > dotnet-bench.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dotnet-bench
           path: dotnet-bench.json
@@ -313,7 +313,7 @@ jobs:
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
       - run: swift build -c release --package-path swift/bench --force-resolved-versions
       - run: swift/bench/.build/release/bench > swift-bench.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swift-bench
           path: swift-bench.json
