@@ -76,7 +76,9 @@ where they overlap, they agree.
   `swift/Sources/ApplePurchaseReceiptVerifier/Resources/`; DECISIONS.md
   R14); every other package packs the file the release's `build-wasm` job
   built. On the release branch `release-please.yml` rewrites every copy
-  and every pin together (`tools/refresh-wasm-pins.sh`). Never copy a new
+  and every pin together (`tools/refresh-wasm-pins.sh`), and builds the
+  nightly parity corpus for that module and pins it in
+  `fixtures/corpus.json` (`tools/build-corpus.sh`). Never copy a new
   module into `go/` or `swift/` by hand and never edit a `.sha256` by
   hand; a pin that lags the core between releases is expected.
 - **No binary over 100 KB enters git** except those two committed module

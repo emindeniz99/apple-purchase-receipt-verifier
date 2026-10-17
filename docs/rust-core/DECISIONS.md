@@ -1781,6 +1781,19 @@ variables of OD-05 (STATUS.md).
   changes: run 38309656789 failed on 7 of 8 hosts for
   `receipt/accept-a-path-of-seven` after #355 dropped the core's
   path-length bound. The rest of this record is unchanged.
+- **Who refreshes it:** the release PR (owner, 2026-10-17, after 0.12.0
+  left the pin on 0.11.0's archive and every nightly corpus leg red).
+  `release-please.yml` builds the archive for the module the release
+  branch builds (`release-branch-corpus`, `tools/build-corpus.sh`),
+  publishes it as a prerelease named `corpus-<version>-<first 8 hex
+  digits of the module's SHA-256>`, and commits the new pin in
+  `fixtures/corpus.json` beside the module pins, so main never pins an
+  archive of another module. The pin gains a `module` field, the
+  archive's `aprv.wasm` SHA-256. A flipped `verified` or `status` still
+  stops the refresh; the module pins go in regardless, the nightly then
+  fails on its first step, and `refresh-corpus.yml`, run by hand with the
+  release tag, is the fallback. Archives an earlier build of the same
+  release branch published for another module are deleted.
 - **Later, perhaps:** a separate corpus repository. Nothing is decided.
 
 ---

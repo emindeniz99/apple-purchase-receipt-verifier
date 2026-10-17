@@ -358,25 +358,28 @@ The nightly `corpus` job runs every package's parity check over the
 generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
 They stay out of the repository; `fixtures/corpus.json` pins the archive
 by URL and SHA-256, so nothing is set in the repository settings. The
-current archive is a release asset of this repository
-(docs/rust-core/DECISIONS.md R35):
+archive is a prerelease asset of this repository, generated from
+`fixtures/` and the test keys only; it holds no production receipt
+(docs/rust-core/DECISIONS.md R35).
 
-| Tag | File | Size | SHA-256 |
-|---|---|---:|---|
-| `corpus-2026-10-07` | `corpus-2026-10-07.tar.gz` | 28,522,411 B | `43bbbc164b7d71d413650f6f560a417cb2afcd7bd4fbc5a43df8fd275bffc95a` |
+Nothing here needs the owner. The rows belong to one module, so the
+release PR refreshes the archive itself: `release-please.yml` builds it
+for the module the release branch builds, publishes it as
+`corpus-<version>-<module sha256 prefix>`, and commits the new pin beside
+the module pins. Merging the release PR moves both together.
 
-It was generated from `fixtures/` and the test keys only, and holds no
-production receipt. The repository variables `APRV_CORPUS_URL` and
-`APRV_CORPUS_SHA256` can be deleted now; nothing reads them. To refresh
-it after a release changes the module,
-since its rows belong to one module:
+If that job fails (the release-please run is red, and the release PR's
+pin commit says "corpus: not refreshed"), usually because a row's
+`verified` or `status` changed, the nightly `corpus` job fails after the
+release. Then:
 
-1. Build the archive (a `.tar.gz` with the layout `.github/CI-NOTES.md`
-   describes) from fixtures and test keys only, and attach it to a
-   GitHub release of this repository.
-2. Open a PR that changes `url`, `sha256` and `generated` in
-   `fixtures/corpus.json`. The job fails on a hash mismatch or a
-   missing or malformed file.
+1. Read the flipped rows in the failed job's log and decide whether the
+   change is intended (a reviewed behavior change with its shared cases)
+   or a bug.
+2. Once it is intended and released, run `refresh-corpus.yml` from
+   `main` with the release tag. It prints the new pin in its summary.
+3. Open a PR that replaces `fixtures/corpus.json` with that pin, then
+   dispatch nightly on main once it is merged.
 
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
 
