@@ -1207,6 +1207,24 @@ cRLDistributionPoints, 2026-10-06).
   all three sites, so it adds no divergence and turns the 33-deep
   `oneOf` cases into single answers. Revisit when a BouncyCastle release
   moves its 64-level bound or a host measures this cost as an incident.
+- **A bag certificate with an untagged RSASSA-PSS label** (recorded
+  2026-10-31, from the Rust port of the worst-case suites). The entry is
+  a garbage-signed stranger whose signature label is RSASSA-PSS with its
+  parameters in BouncyCastle's untagged form: a plain SEQUENCE of the
+  hash, the MGF1 algorithm and two INTEGERs, without RFC 8017's
+  `[0]` to `[3]` tags. Beside a genuine chain, Java refuses the whole
+  receipt as `MALFORMED`, because BouncyCastle's certificate converter
+  throws on those parameters
+  (`WorstCaseLegacyDeepTest.nonstandardPssParameterFormsAreRefusedCleanlyAtTheBagDecode`).
+  The core passes the entry over, since no pinned root vouches for it,
+  and the receipt verifies. As the receipt's signer, the entry is refused
+  by both: `MALFORMED` in Java and `UNTRUSTED_CHAIN` in the core. The
+  difference runs the safe way: the core accepts nothing unsigned, and
+  Java refuses a receipt whose signature is genuine because of unsigned
+  packaging Apple never writes. Apple's chains carry no PSS labels. By
+  the rule above it is recorded, not fixed.
+  `rust/tests/worst_case_legacy_deep.rs` prints the core's verdict for
+  the junk half, and no shared case pins it.
 
 ---
 
