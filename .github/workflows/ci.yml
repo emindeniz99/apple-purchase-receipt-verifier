@@ -627,12 +627,13 @@ jobs:
         python: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
         # macOS and Windows runners are the scarce ones. On a pull request
-        # this job runs Linux only: macos-wrappers runs 3.11 and 3.14 on
-        # Apple silicon and windows-wrappers runs them on windows-latest, in
-        # sequence on one runner each, and windows-11-arm and macos-15-intel
-        # sit out. A push to main, which every release is cut from, runs the
-        # whole grid here.
-        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"}]' || '[]') }}
+        # this job runs Linux only: every line on x86_64, the floor and the
+        # newest line (3.11, 3.14) on arm64. macos-wrappers runs 3.11 and
+        # 3.14 on Apple silicon and windows-wrappers runs them on
+        # windows-latest, in sequence on one runner each, and windows-11-arm
+        # and macos-15-intel sit out. A push to main, which every release is
+        # cut from, runs the whole grid here.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

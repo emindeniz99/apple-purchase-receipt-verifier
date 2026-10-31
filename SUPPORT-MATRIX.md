@@ -102,8 +102,8 @@ run built (`rust-wasm`), never one from an earlier run.
 for (Linux x86_64 and arm64, macOS arm64 and x86_64, Windows x86_64 and
 arm64), and again with a warm compile cache; `python-musl` runs them in
 Alpine images on x86_64 and arm64. That grid is a push to main's, which
-every release is cut from; a pull request runs every line on Linux and
-3.11 and 3.14 on macOS arm64 (`macos-wrappers`) and Windows x86_64
+every release is cut from; a pull request runs every line on Linux x86_64,
+and 3.11 and 3.14 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
 (`windows-wrappers`). Python 3.15 ships in October 2026.
 
 ### Java
