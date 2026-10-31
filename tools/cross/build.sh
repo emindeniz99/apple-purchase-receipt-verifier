@@ -109,7 +109,8 @@ log="$out/build.txt"
 run() { echo "+ $*" >> "$log"; echo "+ $*" >&2; "$@"; }
 now() { date +%s; }
 timed() { printf '%s\t%s\t%s\t%s\n' "$label" "$target" "$1" "$(( $(now) - $2 ))" | tee -a "$out/timings.tsv"; }
-# The JSON messages of a `--no-run` build name each test executable.
+# The JSON messages of a `--no-run` build name each test executable. On
+# Windows Python writes CRLF, so callers strip the CR before using a path.
 executables() { "$python" -c '
 import json, sys
 for line in sys.stdin:
@@ -135,7 +136,7 @@ echo "::endgroup::"
 echo "::group::server test executables for $target"
 start=$(now)
 run "${test[@]}" --no-run --locked --manifest-path "$server/Cargo.toml" --target "$target" --features compile --message-format=json \
-  | executables | while read -r f; do cp "$f" "$out/tests/server/"; done
+  | executables | tr -d '\r' | while IFS= read -r f; do cp "$f" "$out/tests/server/"; done
 timed server-tests "$start"
 echo "::endgroup::"
 
@@ -173,7 +174,7 @@ case "$target" in
       echo "::group::C ABI test executables for $target"
       start=$(now)
       run "${test[@]}" --no-run --locked --manifest-path "$ffi/Cargo.toml" --target "$target" --message-format=json \
-        | executables | while read -r f; do cp "$f" "$out/tests/ffi/"; done
+        | executables | tr -d '\r' | while IFS= read -r f; do cp "$f" "$out/tests/ffi/"; done
       timed ffi-tests "$start"
       echo "::endgroup::"
     else
