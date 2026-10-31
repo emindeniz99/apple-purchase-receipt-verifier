@@ -109,7 +109,10 @@ and 3.11 and 3.14 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86
 ### Java
 
 Dates are Oracle's. Eclipse Temurin and other vendors keep 8, 11 and 17 in
-support for longer; the floor stays regardless.
+support for longer; the floor stays regardless. `java-vendors` runs the
+suite on 8, 21 and 25 of every other HotSpot vendor setup-java ships
+(`.github/workflows/java-vendors.yml` lists them) on every push to main
+and nightly; a pull request runs Corretto 8 and GraalVM 25 only.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|

@@ -11,6 +11,9 @@
 #   java-wasm-s390x    the -wasm artifact's Endive cases on a big-endian JVM
 #                      (QEMU), the check java-wasm/CI-NOTES.md asks for
 #                      before each release;
+#   java-vendors       the Java suite on every JDK vendor and line
+#                      java-vendors.yml lists (ci.yml runs two legs on a
+#                      pull request);
 #   corpus             every host's corpus parity run over the generated
 #                      corpora (6,179 calls), each row compared byte for
 #                      byte with the module's own, and nothing else: the
@@ -425,13 +428,21 @@ jobs:
           composer install --working-dir=php --no-scripts --no-progress --no-interaction
           sh php/tools/rerun.sh "$RUNNER_TEMP/out/aprv-x86_64-unknown-linux-musl" "$G1"
 
+  # The Java suite on every JDK vendor and line java-vendors.yml lists, the
+  # same definition ci.yml calls (two legs on a pull request, the whole
+  # matrix on a push). Here a failed leg fails the run and reaches the
+  # nightly issue.
+  java-vendors:
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    uses: ./.github/workflows/java-vendors.yml
+
   # A scheduled run that fails opens one issue, or comments on the one
   # still open, so a red nightly reaches the owner's inbox instead of
   # waiting for someone to look (it was red from 2026-10-03 to 2026-10-07
   # unseen). A manual run reports to whoever started it, so it is left
   # out. Closing the issue once nightly is green again is the owner's.
   report-failure:
-    needs: [rust-fuzz-openssl, java-differential, java-wasm-s390x, corpus]
+    needs: [rust-fuzz-openssl, java-differential, java-wasm-s390x, corpus, java-vendors]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
