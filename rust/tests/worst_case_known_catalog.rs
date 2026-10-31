@@ -13,9 +13,10 @@ use common::pki::{
     self, basic_constraints, bc_sign, bc_signed, extension, key_usage, marker, name, now_rfc3339,
     payload_now, random_rsa_spki, receipt_payload, rsa_label, rsa_spki_with_parameters, timed,
     Attrs, CertSpec, Hash, Key, Pki, BUDGET, E65537, KEY_USAGE_DIGITAL_SIGNATURE,
-    KEY_USAGE_KEY_ENCIPHERMENT, MD5_WITH_RSA, SHA256_WITH_RSA, SIGNING_LEAF_OID, TRUE, WWDR_OID,
+    KEY_USAGE_KEY_ENCIPHERMENT, MD5_WITH_RSA, SHA256, SHA256_WITH_RSA, SIGNING_LEAF_OID, TRUE,
+    WWDR_OID,
 };
-use common::{der_oid, der_set};
+use common::{der, der_oid, der_seq, der_set, tag};
 use openssl::bn::BigNum;
 use std::sync::OnceLock;
 
@@ -149,11 +150,123 @@ fn genuine(content: &[u8], signer: &[u8], bag: &[&Vec<u8>]) -> Vec<u8> {
     )
 }
 
-// Java's `exponentOneCraftedChainCannotForgeAnything` has no port here.
-// Java refuses that chain only when BouncyCastle rejects the random
-// modulus for a small factor, so it passes by luck; the core verifies it
-// on a random modulus and on a product of two primes alike. Whether an
-// RSA exponent below 3 is refused is the owner's decision.
+// --- the textbook forgery ---------------------------------------------------------
+
+/// The suite's `craftPkcs1Block`: `00 01 FF.. 00 DigestInfo` for a
+/// 2048-bit key. Under e = 1 a signature IS the padded block.
+fn craft_pkcs1_block(digest: &[u8]) -> Vec<u8> {
+    let digest_info = der_seq(&[
+        der_seq(&[der_oid(SHA256), der(0x05, &[])]),
+        der(tag::OCTET_STRING, digest),
+    ]);
+    let mut block = vec![0u8; 256];
+    block[1] = 1;
+    for octet in &mut block[2..255 - digest_info.len()] {
+        *octet = 0xFF;
+    }
+    block[256 - digest_info.len()..].copy_from_slice(&digest_info);
+    block
+}
+
+/// The suite's `forgedCert`: a SHA256withRSA label and a crafted block,
+/// not any key's output, as the signature.
+fn forged(spec: &CertSpec) -> Vec<u8> {
+    spec.with_signature(&sha256_rsa(), |tbs| {
+        craft_pkcs1_block(&Hash::Sha256.digest(tbs))
+    })
+}
+
+/// A probable prime of `bits` bits.
+fn prime(bits: i32) -> BigNum {
+    let mut p = BigNum::new().unwrap();
+    p.generate_prime(bits, false, None, None).unwrap();
+    p
+}
+
+/// `factor` times a random odd number whose top bit is bit `bits - 1`.
+fn times_random(factor: u32, bits: i32) -> Vec<u8> {
+    let mut n = BigNum::new().unwrap();
+    n.rand(bits, openssl::bn::MsbOption::ONE, true).unwrap();
+    n.mul_word(factor).unwrap();
+    n.to_vec()
+}
+
+/// The four moduli Java's test runs under: two products of two 1024-bit
+/// primes (no small factor), then 3 and 5 times a random odd number.
+fn exponent_one_moduli() -> [(&'static str, Vec<u8>); 4] {
+    let mut context = pki::bn_context();
+    let mut two_primes = || {
+        let mut n = BigNum::new().unwrap();
+        n.checked_mul(&prime(1024), &prime(1024), &mut context)
+            .unwrap();
+        n.to_vec()
+    };
+    [
+        ("no small factor", two_primes()),
+        ("no small factor", two_primes()),
+        ("small factor 3", times_random(3, 2046)),
+        ("small factor 5", times_random(5, 2045)),
+    ]
+}
+
+/// The attack with no private key at all, on an e = 1 key over `modulus`:
+/// a CA under the pinned intermediate's name, a marker leaf under it and
+/// the receipt, every signature a crafted block.
+fn exponent_one_receipt(modulus: &[u8]) -> Vec<u8> {
+    let m = material();
+    let e1_key = pki::rsa_spki(modulus, &[1]);
+    let e1_ca = forged(&CertSpec::suite(
+        name("Exponent One CA"),
+        e1_key.clone(),
+        name(INTER),
+        true,
+        Some(WWDR_OID),
+    ));
+    let e1_leaf = forged(&CertSpec::suite(
+        name("Exponent One Signer"),
+        e1_key,
+        name("Exponent One CA"),
+        false,
+        Some(SIGNING_LEAF_OID),
+    ));
+    bc_signed(
+        &payload_now(),
+        true,
+        Hash::Sha256,
+        &sha256_rsa(),
+        &|signed| craft_pkcs1_block(&Hash::Sha256.digest(signed)),
+        &e1_leaf,
+        &chain(&[&e1_leaf, &e1_ca, &m.inter, &m.root]),
+        Attrs::Standard,
+        &[],
+    )
+}
+
+/// Mirrors `exponentOneCraftedChainCannotForgeAnything`: under an e = 1
+/// key any crafted PKCS#1 block is a valid signature, so an attacker with
+/// no private key crafts every signature on the path, the e = 1 CA's
+/// included. The intermediate's real key refuses the CA. A CA the
+/// intermediate really signed is trusted whatever its exponent, in Java
+/// and in the core alike (DECISIONS.md R20); issuing one takes that key.
+///
+/// The verdict must not rest on the modulus, so the attack runs under
+/// four: two with no small factor and two with one.
+#[test]
+fn exponent_one_crafted_chain_cannot_forge_anything() {
+    for (kind, modulus) in exponent_one_moduli() {
+        refused(
+            &format!("exponent-1 crafted chain, {kind}"),
+            &exponent_one_receipt(&modulus),
+            &[
+                Reason::Malformed,
+                Reason::InvalidCertificate,
+                Reason::UntrustedChain,
+                Reason::InvalidSignature,
+                Reason::InvalidCertificatePurpose,
+            ],
+        );
+    }
+}
 
 /// Mirrors `weakDigestLabelsAreAcceptedOnlyUnderAPinnedRoot`: the pinned
 /// PKI signing with MD5, SHA-1, SHA-384 and SHA-512 verifies; a
