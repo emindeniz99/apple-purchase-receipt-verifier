@@ -1,7 +1,7 @@
 {
   "$schema": "./cases.schema.json",
   "schemaVersion": 2,
-  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases.schema.json).\nIt replaced the 0.6 file of the same name (schema version 1, in git history before 0.7.0). Every 0.6 case is carried over and none is deleted: legacyId names the 0.6 case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from the 0.6 cases or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\",\"environment\":E} or {\"status\":\"error\",\"reason\":R}. On ok, environment is the environment the result states beside its payload, \"Production\", \"Sandbox\" or null, compared with ReceiptPayload.environment() or JsonPayload.environment() (in the module's answer, its top-level environment member): a receipt's comes from receipt_type (Production and ProductionVPP are Production, ProductionSandbox and ProductionVPPSandbox Sandbox, anything else null), a JWS's from the first of the top-level environment, data.environment and summary.environment that is present (Production and Sandbox map, anything else null), and null when none is (DECISIONS.md R42). Every ok case states it. fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is one valid output of toJson(): the runner parses it and the port's output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings), never the bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes as an RFC 3339 date-time (RFC 3339 §5.6; owner, Q68, 2026-10-06, widening the exact form YYYY-MM-DDTHH:MM:SSZ of 2026-09-27): year 0000 to 9999, T and Z in either case, a real calendar date, hours 00 to 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, a fraction of any length truncated to the millisecond, and Z or an offset ±hh:mm (hours 00 to 23) converted to UTC, the instant within 0000-01-01T00:00:00Z to 9999-12-31T23:59:59.999Z; any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status, unless the case lists its outcomes (below). 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nListed outcomes. expected {\"oneOf\":[...]} lists every outcome a port may give: \"ok\" (the call verified; no field is checked) or a reason. The port's outcome must be one of them. INTERNAL_ERROR is never listed and no exception or panic may escape the call, so both always fail; a case with maxMillis must also finish within it. It is used where the outcome is port-defined (owner, 2026-09-27): encoding oddities inside certificates the chain uses, and signer quirks where ports read the envelope differently (docs/design/0.7-api.md, Reading certificates and signed attributes). At the endpoint, whose call answers a body rather than a verdict, oneOf lists the /status values a port may answer and no other field is pinned. A case that lists \"ok\", or status 0, is tagged tolerant.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used, and on the tolerant cases. The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in the 0.6 file: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte, written by node tools/generate-limit-fixtures.mjs. The directory sits beside fixtures/generated/, which keeps the JWS fixtures and the 0.6 receipts that port unit tests, fuzz harnesses and smoke programs still read. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are the 0.6 files, unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture and VerificationOrderFixtures, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. LargeReceiptFixture and VerifierApiFixtures take fixtures/generated-0.7 and ReceiptBase64CapFixture takes fixtures, each its default when given no argument, and node tools/generate-limit-fixtures.mjs runs after ReceiptBase64CapFixture. None of the three is pointed at a generated/ directory: their outputs run to megabytes, and only generated-0.7/ and limits/ may hold a fixture over 100 KB. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*), CertificateDerFixtures (der-*) and ExpiredMarkerFixtures (expired-marker-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there. Asn1DepthFixtures (depth-*) also writes straight into fixtures/generated-0.7/, under its own root, so the ASN.1 depth inputs regenerate without re-keying anything else. SignedAttrsTypeFixtures (signed-attrs-*) does the same for the signedAttrs attribute whose type is not an OID. EnvironmentFixtures (environment-*) writes straight into fixtures/generated-0.7/ under its own root too: the JWS whose environment is at each of the three places, and one whose first place names neither. StandardShapeFixtures (standard-*) does the same for four shapes the standards allow in an Apple-signed input (owner Q69). UnknownKeyAlgorithmFixtures (unknown-key-*) does the same for a certificate whose key algorithm no implementation knows, once at each position (owner Q99).\n\ntoJson by value. toJson() must be valid UTF-8 JSON with the same value as the expected string; whitespace, key order and escaping style are free, so each port uses its language's standard JSON encoder (owner, 2026-09-27). The expected strings happen to be in the design's key order with JSON.stringify escaping, which a port need not match. Every key is present and a missing field is null, cancellation_reason included (an integer, or null when absent or undecodable). Bytes are padded standard base64, 64-bit ids are decimal strings, booleans are booleans, and there is no NaN or Infinity. Values are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, two escapes product ids and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
+  "comment": "Normative cross-language conformance vectors for the 0.7 API of apple-purchase-receipt-verifier (docs/design/0.7-api.md), schema version 2 (fixtures/cases.schema.json).\nIt replaced the 0.6 file of the same name (schema version 1, in git history before 0.7.0). Every 0.6 case is carried over and none is deleted: legacyId names the 0.6 case each one replaces, and a case without legacyId is new in 0.7 (tag new-in-0-7).\nNo expectation here was produced by running an implementation. Values were carried from the 0.6 cases or derived from the design, then checked against an independent decode of the fixture bytes written for this file. A vector that disagrees with a port is a bug report against one of the two until a human decides.\n\nOperations. verifyReceipt(base64), verifySignedData(jws) and verifyReceiptEndpoint(environment, requestJson) are the three public 0.7 methods. verifyReceipt: a text fixture is handed over verbatim; a raw or base64 fixture holds DER, which the runner encodes as canonical standard base64 with padding. verifySignedData: the fixture's logical bytes as a string (utf8 trims, text does not). verifyReceiptEndpoint: input.fixture is wrapped by the runner as {\"receipt-data\":\"<string>\"}, the string built as for verifyReceipt; input.requestBody names a text fixture that is the whole request body, handed over verbatim. decodeBase64 is the one internal hook: 0.7 exposes no decoder, but a valid-base64 string that is not a receipt fails as MALFORMED through verifyReceipt just as invalid base64 does, so the accept side of the base64 rule is only observable on the decoders themselves. Each port's test code calls its receipt-data decoder and its x5c-entry decoder directly; a refusal is MALFORMED from receipt-data and INVALID_CERTIFICATE from x5c (an error group states MALFORMED and the runner maps it for x5c).\n\nConfig. trustedRoots is {\"source\":\"defaults\"} for Config.defaults() (the three bundled, pinned Apple roots) or {\"source\":\"fixtures\",\"fixtures\":[...]} for roots read from registered trust-anchor fixtures. The endpoint takes environment PRODUCTION or SANDBOX. There is no bundle id, accepted environment set, appAppleId or device id anywhere: 0.7 takes none of them, and the eight 0.6 policy cases now verify and pin the value the caller judges (tag policy-flip).\n\nClock. When a case carries clock.now the runner builds its Config with a clock fixed at that instant; otherwise the default clock runs. 0.7 reads the clock in two places: the certificate-validity instant when the input states no usable date (a receipt whose first attribute 12 is missing or does not parse, a JWS whose signedDate is missing or is not a representable instant) and request_date at the endpoint. This reverses 0.6, where that fallback was the system clock and an injected clock could not move it, so the dateless and unreadable-date cases now pin a clock (2025-01-01 unless the case is about the clock) and two endpoint cases pin that the clock does move the verdict. A case whose verdict or asserted fields could move with the clock pins one.\n\nExpected. verifyReceipt and verifySignedData answer {\"status\":\"ok\",\"environment\":E} or {\"status\":\"error\",\"reason\":R}. On ok, environment is the environment the result states beside its payload, \"Production\", \"Sandbox\" or null, compared with ReceiptPayload.environment() or JsonPayload.environment() (in the module's answer, its top-level environment member): a receipt's comes from receipt_type (Production and ProductionVPP are Production, ProductionSandbox and ProductionVPPSandbox Sandbox, anything else null), a JWS's from the first of the top-level environment, data.environment and summary.environment that is present (Production and Sandbox map, anything else null), and null when none is (DECISIONS.md R42). Every ok case states it. fields maps a JSON Pointer (RFC 6901) to a value, evaluated on the verified payload as JSON: ReceiptPayload.toJson() for receipts, JsonPayload.json() for JWS. One extension: a reference token written [key=value] selects the single element of an array whose member key is the JSON string value, and a runner fails the case unless exactly one element matches. lengths maps a pointer to the length of the array there. toJson, when present, is one valid output of toJson(): the runner parses it and the port's output as JSON and compares the parsed values (deep equality; numbers as numbers, strings as strings), never the bytes. Receipt JSON uses the design's keys: snake_case, dates as *_ms epoch milliseconds (numbers), 64-bit ids as strings, bytes as standard base64 with padding, unknown_attributes as {\"<type>\": [\"<base64>\", ...]} with values in receipt order. Owner rules of 2026-09-27 the receipt vectors pin: the first occurrence of a known attribute wins, for the typed field and for the chain date; every attribute that does not end up in a typed field (a later copy of a known attribute, or a known attribute whose value does not parse, whose typed field is then null) goes raw into unknown_attributes, the in-app ones into that purchase's unknown_attributes. A date attribute whose string is empty means not set: its typed field is null and it is not kept raw; an empty non-date string is the value \"\". A date decodes as an RFC 3339 date-time (RFC 3339 §5.6; owner, Q68, 2026-10-06, widening the exact form YYYY-MM-DDTHH:MM:SSZ of 2026-09-27): year 0000 to 9999, T and Z in either case, a real calendar date, hours 00 to 23, minutes 00 to 59, seconds 00 to 60 with 60 read as 59, a fraction of any length truncated to the millisecond, and Z or an offset ±hh:mm (hours 00 to 23) converted to UTC, the instant within 0000-01-01T00:00:00Z to 9999-12-31T23:59:59.999Z; any other non-empty date string is null and kept raw, and an attribute 12 that does not decode leaves the chain instant to the clock. An IA5String holding a byte at or above 0x80, and an INTEGER that is not DER (empty or with a redundant leading octet), do not parse either: null and kept raw. verifyReceiptEndpoint always returns Apple's response body; expected.fields is evaluated on it and always pins /status, unless the case lists its outcomes (below). 0.7 exposes no failure reason beside the body, so the 0.6 failureReason is gone. Everywhere, null means absent or JSON null; numbers compare by value (1722945600000.0 equals 1722945600000) and integers exactly, so a runner parses without rounding (the endpoint's download_id is 2^63-1 as a JSON number). A field a case does not list is not pinned.\n\nFailure messages. An error expectation may carry messageMustNotContain, a list of code points the failure message must not contain; the runner checks the message the port exposes. It pins that input quoted in a message (a JWS alg with CR, LF, NEL, U+2028 and a bidi override) is neutralised before a caller logs it.\n\nListed outcomes. expected {\"oneOf\":[...]} lists every outcome a port may give: \"ok\" (the call verified; no field is checked) or a reason. The port's outcome must be one of them. INTERNAL_ERROR is never listed and no exception or panic may escape the call, so both always fail; a case with maxMillis must also finish within it. It is used where the outcome is port-defined (owner, 2026-09-27): encoding oddities inside certificates the chain uses, and signer quirks where ports read the envelope differently (docs/design/0.7-api.md, Reading certificates and signed attributes). At the endpoint, whose call answers a body rather than a verdict, oneOf lists the /status values a port may answer and no other field is pinned. A case that lists \"ok\", or status 0, is tagged tolerant.\n\nJSON reading. A JSON object with a duplicate member keeps the last one, in a JWS header, a JWS payload and an endpoint body; receipt attributes are the other way round (the first occurrence wins). A JWS header must be strict UTF-8 with no byte-order mark, and only whitespace may follow the header or payload object: trailing content after the header is MALFORMED, after the payload it is carried past the signature and is UNREADABLE_PAYLOAD when the signature verifies (lead, 2026-09-27). A runner parses what a port returns the same strict way, so a port that appended content to its output would fail.\n\nTime budget. A case may carry maxMillis, a wall-clock budget for the verify call. The runner measures the call after one warm-up call of the same case and fails if it exceeds the budget. It is set on the denial-of-service cases (tag dos), which pin that a certificate no pinned root vouches for is rejected, or ignored, without its key being parsed or used, and on the tolerant cases. The figure is 2000, one for every port: an honest verify never touches the untrusted key and finishes in a few milliseconds even on a slow CI box, while an implementation that decodes or verifies with the oversized key first spends seconds (a single 262144-bit modexp is about 5 s in Go; a 65536-bit key is expensive in every measured library). Timing is a coarse backstop; each port also asserts directly, in its own runner, that no verification used the stranger key.\n\nReasons. The 0.7 set: MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE, INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR. Carried per the design's mapping: INVALID_CHAIN is UNTRUSTED_CHAIN; INVALID_RECEIPT_FORMAT, INVALID_JWS_FORMAT and MALFORMED_REQUEST fold into MALFORMED; REQUEST_TOO_LARGE is TOO_LARGE. Where the design is more specific the specific rule wins: a certificate outside its validity window at the chain instant is INVALID_CERTIFICATE (owner, 2026-09-27; tag validity-window); every input over a size cap is TOO_LARGE (the Bounds table); and a JWS payload that is not a JSON object is carried past the signature (the parse-before-signature rule), so the two unsigned 0.6 payload cases are INVALID_SIGNATURE and their signed twins UNREADABLE_PAYLOAD. None of the twelve 0.6 INTERNAL_ERROR cases stays INTERNAL_ERROR: four receipts whose Apple-signed content does not parse as an attribute set are UNREADABLE_PAYLOAD; the unreadable creation date and the unparseable in-app purchase verify with their raw octets in unknown_attributes; the six JWS claim-type cases verify because 0.7 returns the payload untyped. No input can make a correct library answer INTERNAL_ERROR, so no case expects it.\n\nFixtures. The registry works as in the 0.6 file: codec and contentSha256 over the decoded logical bytes, re-hashed by every runner. 0.7 checks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 on the receipt intermediate, which no 0.6 synthetic receipt chain carried, so every generated receipt was re-minted for this file into fixtures/generated-0.7/ by the same generators with TestPki stamping the marker (fresh keys; same payloads), VerifierApiFixtures writes the inputs new in 0.7 (including the three base64 strings at and over the receipt cap), and HardeningParityFixtures writes the denial-of-service and signer-algorithm inputs of the hardening parity work. receipt-der-trailing-byte.der there is receipt.der plus one zero byte, written by node tools/generate-limit-fixtures.mjs. The directory sits beside fixtures/generated/, which keeps the JWS fixtures and the 0.6 receipts that port unit tests, fuzz harnesses and smoke programs still read. JWS fixtures, public receipts, Apple's files, the request-body limits and the one over-cap receipt string refused for size before anything is decoded are the 0.6 files, unchanged. Regenerate with: mvn -B -q -f java/pom.xml test-compile; mvn -B -q -f java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt; then java -cp \"java/target/test-classes:java/target/classes:$(cat /tmp/cp.txt)\" io.github.emindeniz99.applepurchasereceiptverifier.<Generator> <dir>/generated for PortDivergenceFixtures, HostileReceiptFixtures, AbsentSignerFixture, ReceiptCmsDefectFixtures, ReceiptIdsFixture and VerificationOrderFixtures, and mvn -B -q -f java/pom.xml surefire:test -Dtest=FixtureGeneratorTest -Dfixtures.generate=true -Daprv.fixtures.dir=<dir>; copy the receipt files and their roots into fixtures/generated-0.7/ and re-hash. LargeReceiptFixture and VerifierApiFixtures take fixtures/generated-0.7 and ReceiptBase64CapFixture takes fixtures, each its default when given no argument, and node tools/generate-limit-fixtures.mjs runs after ReceiptBase64CapFixture. None of the three is pointed at a generated/ directory: their outputs run to megabytes, and only generated-0.7/ and limits/ may hold a fixture over 100 KB. ReviewParityFixtures (review-*), OwnerDecisionFixtures (owner-*), IntermediateKeyUsageFixtures (keyusage-*), CertificateDerFixtures (der-*) and ExpiredMarkerFixtures (expired-marker-*) write straight into fixtures/generated-0.7/, after the generators above, because each derives a few inputs from files already there. Asn1DepthFixtures (depth-*) also writes straight into fixtures/generated-0.7/, under its own root, so the ASN.1 depth inputs regenerate without re-keying anything else. SignedAttrsTypeFixtures (signed-attrs-*) does the same for the signedAttrs attribute whose type is not an OID. EnvironmentFixtures (environment-*) writes straight into fixtures/generated-0.7/ under its own root too: the JWS whose environment is at each of the three places, and one whose first place names neither. StandardShapeFixtures (standard-*) does the same for four shapes the standards allow in an Apple-signed input (owner Q69). UnknownKeyAlgorithmFixtures (unknown-key-*) does the same for a certificate whose key algorithm no implementation knows, once at each position (owner Q99). ShapeCoverageFixtures (coverage-*) does the same for four shapes no other generator wrote: a high-S ES256 signature, a crit header naming an unknown parameter, an x5c whose intermediate is the root, and a receipt with no eContent.\n\ntoJson by value. toJson() must be valid UTF-8 JSON with the same value as the expected string; whitespace, key order and escaping style are free, so each port uses its language's standard JSON encoder (owner, 2026-09-27). The expected strings happen to be in the design's key order with JSON.stringify escaping, which a port need not match. Every key is present and a missing field is null, cancellation_reason included (an integer, or null when absent or undecodable). Bytes are padded standard base64, 64-bit ids are decimal strings, booleans are booleans, and there is no NaN or Infinity. Values are pinned for the shared receipt, the ids receipt, the web-order-zero receipt, a non-ASCII product id, two escapes product ids and the genuine public receipts that verify.\n\n\"fault\" names the one intentional defect of a negative case. It is documentation, not an assertion. Tags are free-form; owner-review marks a case whose expectation follows from an owner rule but deserves a second look.",
   "fixtures": {
     "device-guid": {
       "path": "generated/device-guid.hex",
@@ -1568,6 +1568,42 @@
       "role": "trust-anchor",
       "codec": "raw",
       "contentSha256": "ca6d9fa011fd24313c91ac59113dbfc0f3da3affe0f7cdcbf5ca6d061f07a71f"
+    },
+    "coverage-jws-root": {
+      "path": "generated-0.7/coverage-jws-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "1cba7e9cb09c8fb0f75600abeadefacabab3652ba3eda8618729b493f35a1eff"
+    },
+    "coverage-jws-high-s-signature": {
+      "path": "generated-0.7/coverage-jws-high-s-signature.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "800b278b8012b604f952e66d0711ae03e0340f2b257c71320b0f929bceafb210"
+    },
+    "coverage-jws-crit-names-an-unknown-parameter": {
+      "path": "generated-0.7/coverage-jws-crit-names-an-unknown-parameter.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "2782bf6ddc328b7d8c957303ae5d1e8d86e4fd642836b053fe2799c3b90d51a7"
+    },
+    "coverage-jws-x5c1-is-the-root": {
+      "path": "generated-0.7/coverage-jws-x5c1-is-the-root.jws",
+      "role": "input",
+      "codec": "utf8",
+      "contentSha256": "27510b12e90cc396ab49a7369c6212410c1ca2eb35ce9c510fc67334648ae6a3"
+    },
+    "coverage-receipt-root": {
+      "path": "generated-0.7/coverage-receipt-root.der",
+      "role": "trust-anchor",
+      "codec": "raw",
+      "contentSha256": "d609212035357cf4e29457d7263f816cd68e045d7f6a94946f0d0d3334bac906"
+    },
+    "coverage-receipt-without-econtent": {
+      "path": "generated-0.7/coverage-receipt-without-econtent.der",
+      "role": "input",
+      "codec": "raw",
+      "contentSha256": "600d4805d80e9c600116e7008630951b1f6c325252eb884cf96311631b53740c"
     },
     "standard-jws-root": {
       "path": "generated-0.7/standard-jws-root.der",
@@ -6321,6 +6357,34 @@
         "negative",
         "payload",
         "generated"
+      ]
+    },
+    {
+      "id": "receipt/reject-signed-data-without-econtent",
+      "description": "A receipt whose SignedData carries no eContent: its encapContentInfo names id-data and stops, the payload detached (RFC 5652 5.2). The chain, both marker OIDs and the signature over the detached payload are genuine. A receipt is its encapsulated content, so there is nothing to read or return: MALFORMED, before any chain or signature check. receipt/reject-empty-encapsulated-content differs: it carries an eContent of zero bytes, which is UNREADABLE_PAYLOAD.",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "coverage-receipt-without-econtent"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "coverage-receipt-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "error",
+        "reason": "MALFORMED"
+      },
+      "fault": "econtent-absent",
+      "tags": [
+        "receipt",
+        "pkcs7",
+        "negative",
+        "format",
+        "new-in-0-7"
       ]
     },
     {
@@ -11207,6 +11271,99 @@
         "negative",
         "format",
         "review",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/accept-a-high-s-signature",
+      "description": "A genuine JWS under a caller-supplied root whose ES256 signature is rewritten from (r, s) to (r, n - s), n being P-256's order, so that s is above n / 2; the header and payload are byte-identical and nothing else changed. Both pairs verify under the leaf key, and anyone holding a JWS can make the rewrite without a key. Apple documents no low-S rule and RFC 7518 asks for none, so refusing high S could refuse a genuine Apple JWS: both implementations accept it on purpose (DECISIONS.md R44), and a caller dedupes on a payload field such as transactionId, never on the JWS string.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "coverage-jws-high-s-signature"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "coverage-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "positive",
+        "signature",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/accept-a-crit-header-naming-an-unknown-parameter",
+      "description": "A genuine JWS whose signed header carries \"crit\":[\"com.example.unknown\"] with that parameter beside it, under a caller-supplied root; everything else is genuine. RFC 7515 4.1.11 has a recipient refuse a crit it does not understand, but both implementations read alg and x5c and nothing else from the header, so crit is ignored and the JWS verifies (owner Q70, DECISIONS.md R44). The header is inside the signing input, so only the leaf key's holder can set crit on a JWS that verifies, and refusing it could only refuse Apple-signed data.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "coverage-jws-crit-names-an-unknown-parameter"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "coverage-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "jws",
+        "positive",
+        "format",
+        "owner-decision",
+        "new-in-0-7"
+      ]
+    },
+    {
+      "id": "signed-data/reject-an-x5c-whose-intermediate-is-the-root",
+      "description": "x5c is leaf, root, root: the caller-supplied root issued the leaf directly and stands in x5c[1] as well as x5c[2]. The root carries the WWDR marker and the leaf its signing marker, both signatures are genuine and every certificate is valid at signedDate, so the shape of the path is the only defect. Port-defined (recorded 2026-10-31). The core answers UNTRUSTED_CHAIN: the path OpenSSL builds is leaf, root, two certificates, and validate_pair (rust/src/path.rs) accepts only leaf, x5c[1], pinned root. Java verifies: the root is signed by a pinned root (itself) and is a CA, it signed the leaf, PKIX validates [leaf, root] against the anchor, and both markers are there. Every certificate is signed under the pinned root, so nothing unsigned is accepted either way; Apple's roots carry no WWDR marker, so under the default roots both refuse this shape. DECISIONS.md R20.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "coverage-jws-x5c1-is-the-root"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "coverage-jws-root"
+          ]
+        }
+      },
+      "expected": {
+        "oneOf": [
+          "ok",
+          "UNTRUSTED_CHAIN"
+        ]
+      },
+      "fault": "x5c-intermediate-is-the-pinned-root",
+      "maxMillis": 2000,
+      "tags": [
+        "tolerant",
+        "port-defined",
+        "jws",
+        "chain",
         "new-in-0-7"
       ]
     },
