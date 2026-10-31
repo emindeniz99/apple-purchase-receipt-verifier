@@ -79,7 +79,11 @@ The eight fuzz jobs (`go-fuzz`, `rust-fuzz`, `dotnet-fuzz`, `php-fuzz`,
 their own, so a compile error stays readable, then fuzz with each
 target's output in a file on the runner (`.github/scripts/fuzz-quiet.sh`
 over the targets the harness's `run.sh list` names; `go-fuzz` writes the
-same list inline). On a failure, `.github/scripts/fuzz-report.sh`, the
+same list inline). Each target fuzzes for 60 s on a push and 10 s on a
+pull request (`FUZZ_SECONDS` on the fuzz step), so a pull request still
+replays the committed seeds through every target without paying the
+push's budget; `nightly.yml`'s `rust-fuzz-openssl` keeps its ten minutes
+per target. On a failure, `.github/scripts/fuzz-report.sh`, the
 only step that holds the Telegram secrets, hands each failed target to
 `fuzz-finding.sh`, which prints the target and the input's SHA-256 and
 seals the input and the log; the job uploads only
