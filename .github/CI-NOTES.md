@@ -62,17 +62,30 @@ second column is what it takes from other jobs.
 | server | `aprv-server` (x86_64 gnu, aarch64 musl with its own static build, macOS, Windows: fmt, both clippy feature sets, tests with `--include-ignored`), `aprv-server-contract` (Spectral, two Schemathesis runs), `aprv-server-image` (buildx from source per architecture, and the `prebuilt` stage on amd64, each through `docker-smoke.sh`) | `aprv-wasm`; `aprv-server-linux` for the contract and the prebuilt image |
 | node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm` | `aprv-wasm` (the component) |
 | python | `python` (Python 3.11 to 3.14 on the six runner images wasmtime-py ships wheels for, a second warm-cache run; on a pull request every line on Linux x86_64 and 3.11 and 3.14 on Linux arm64, with macOS and Windows in the wrapper jobs), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
-| go | `go`, `go-platforms`, `go-cross`, `go-scratch` (a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `go-lint`, `smoke-go` | `aprv-wasm` |
+| go | `go`, `go-platforms`, `go-cross`, `go-checks` (`go-lint`, then `go-scratch`: a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `smoke-go` | `aprv-wasm` |
 | swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-crypto-floor` (the same on 6.3 with swift-crypto moved to the manifest's 3.0.0 floor), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3; on a pull request both run in `swift-apple`, through `.github/scripts/swift-apple.sh`), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
 | ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
-| dotnet | `dotnet`, `dotnet-mono`, `dotnet-trim`, `dotnet-fuzz`, `dotnet-format`, `smoke-nuget` | `aprv-wasm` |
-| php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-symfony-process-8` (PHP 8.4 with symfony/process moved alone to the 8.0.5 floor and to an exact, cooled-down newest 8.x; the lock pins 7.4), `php-static`, `php-fuzz`, `php-format` | `aprv-server-x86_64-unknown-linux-musl` |
-| java | `java`, `java-runtime-8`, `java-jackson-floor` (the suite with `jackson.version` at the 2.16.1 floor), `java-hardened-policy`, `java-distroless`, `jvm-interop`, `java-spring-boot`, `java-fuzz`, `java-format`, `smoke-maven` (the pure-Java 0.7 artifact, which needs no module) | nothing |
+| dotnet | `dotnet`, `dotnet-checks` (`dotnet-format`, `dotnet-mono`, `dotnet-trim`, `smoke-nuget`), `dotnet-fuzz` | `aprv-wasm` |
+| php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-symfony-process-8` (PHP 8.4 with symfony/process moved alone to the 8.0.5 floor and to an exact, cooled-down newest 8.x; the lock pins 7.4), `php-checks` (`php-format`, then `php-static`), `php-fuzz` | `aprv-server-x86_64-unknown-linux-musl` |
+| java | `java`, `java-runtime-8`, `java-jackson-floor` (the suite with `jackson.version` at the 2.16.1 floor), `java-distroless`, `java-spring-boot`, `java-fuzz`, `java-checks` (`java-format`, `java-hardened-policy`, `jvm-interop`, and `smoke-maven`: the pure-Java 0.7 artifact, which needs no module) | nothing |
 | macOS on pull requests | `macos-wrappers` (`macos-latest`) runs the macOS legs of `go-platforms`, `ruby-macos`, `dotnet`, `python` (3.11 and 3.14 only), `rust-ffi` and `aprv-server` in sequence in one job, each port's steps after the first under `!cancelled()` so one failure does not hide the rest; its `aprv-server` steps restore the same target cache key as `aprv-server`'s macOS leg. `swift-apple` (`macos-26`, which Swift's Xcode needs) runs `swift-macos`'s suite and then `swift-ios`'s build, the build under `!cancelled()`. A pull request therefore takes exactly two macOS runners, `macos-wrappers` and `swift-apple`; it used to queue about 14 macOS jobs. A push to main runs every macOS leg in its own job, with `python` on both `macos-15` and `macos-15-intel` | `aprv-wasm` |
 | Windows on pull requests | `windows-wrappers` (`windows-latest`) runs the Windows legs of `go-platforms`, `dotnet` and `python` (3.11 and 3.14; `windows-11-arm` sits out) in sequence, the same way. `rust-ffi` and `aprv-server` keep their own Windows legs: `rust-ffi`'s is the longest job of a full run (about 10 minutes) and `aprv-server`'s runs 5 to 8 minutes on a cold target cache, so folding either would lengthen the critical path. A push to main runs every Windows leg in its own job | `aprv-wasm` |
 | shared suites | `.github/scripts/rust-ffi-suite.sh`, `aprv-server-suite.sh` and `python-suite.sh` hold the commands of `rust-ffi`, `aprv-server` and `python`, so the per-OS jobs and the two combined jobs run the same commands. The Linux-only steps (the 1.85.0 floor, the generated header, the aarch64 static binary) stay steps of their own job. Go, Ruby and .NET are one or two commands each and stay inline in both places; change them together | nothing |
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
 | always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |
+
+`go-checks`, `java-checks`, `dotnet-checks` and `php-checks` each hold
+what used to be two to four jobs of under a minute or two after about
+30 s of setup, on the same runner and toolchain. Each former job is a
+group of steps headed `# --- <old name> ---`, so a document that names
+`go-lint` or `dotnet-trim` means that group. Every group after the
+first runs under `!cancelled()`, so one check's failure does not hide
+the others. Not merged: jobs on another runner or in a container,
+matrices, jobs over about five minutes, and the pairs whose toolchains
+differ on purpose (`node-lint` on Node 22 and `smoke-npm` on the Node 20
+floor; `python-tools` on 3.13 and `smoke-pypi` on the 3.11 floor;
+`ruby-tools` on 3.4 and `smoke-rubygems` on the 3.3 floor; `smoke-go` on
+the Go 1.25 floor; `php-lowest` on PHP 8.2).
 
 The eight fuzz jobs (`go-fuzz`, `rust-fuzz`, `dotnet-fuzz`, `php-fuzz`,
 `ruby-fuzz`, `python-fuzz`, `swift-fuzz`, `java-fuzz`) build in a step of

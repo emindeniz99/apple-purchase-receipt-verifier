@@ -238,48 +238,6 @@ jobs:
           JUT: ${{ steps.jut.outputs.path }}
         run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"
 
-  # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
-  # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
-  # that disables SHA-1 outright (RHEL crypto policies, many enterprise
-  # images) makes the JDK refuse that chain. The Java port builds and
-  # validates chains with its own pinned BouncyCastle instance, which does not
-  # read that property (java/README.md, "One platform caveat"). This job pins
-  # that: under that policy the full conformance suite passes. Surefire names
-  # dynamic tests by index, so the discriminating case
-  # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
-  # ConformanceCasesTest's last test fails if any case in cases.json did not
-  # run, so 0 failures means it ran and passed (java-distroless asserts it by
-  # name). HostPolicyProbe then shows the premise on the same JDK: under the
-  # same policy the JDK's own PKIX refuses the chain the suite accepted.
-  java-hardened-policy:
-    needs: changes
-    if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Run the conformance suite with SHA-1 disabled for certpath
-        working-directory: java
-        run: |
-          set -euo pipefail
-          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
-          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
-          grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
-          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
-          mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
-          java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
-            -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
-            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/probe.log"
-          grep -F "premise: the JDK's own PKIX refuses the legacy chain" "$RUNNER_TEMP/probe.log"
-          grep -F 'legacy receipt verifies' "$RUNNER_TEMP/probe.log"
-
   # The deployment surface rather than the build surface: the suite on the
   # images the library is actually deployed on, with the image's own JVM and
   # its own java.security. The Java port builds and validates the genuine
@@ -540,37 +498,6 @@ jobs:
           npx --no-install playwright install --with-deps chromium firefox webkit
           npm run build
           npm run runtime:browser -- chromium firefox webkit
-
-  # Proves jvm-interop/README.md's claim: the published jar is usable from
-  # other JVM languages, not just Java. Builds java/ first with install,
-  # not package, so jvm-interop resolves it as a real Maven coordinate the
-  # way a consumer would from Central, then runs the Kotlin and Scala 3
-  # interop tests. Never part of the release: jvm-interop has no
-  # release-please entry and no <module> anywhere.
-  jvm-interop:
-    needs: changes
-    if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      - run: mvn -B install -DskipTests
-        working-directory: java
-      - run: mvn -B test
-        working-directory: jvm-interop
-      # java-bench/ is another consumer of that installed coordinate, and
-      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
-      # annotation processor over it, so an API change that breaks a
-      # benchmark fails here; compile stops short of packaging the JMH jar,
-      # and nothing is measured. version.txt as in benchmark.yml.
-      - run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
 
   # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
   # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
@@ -940,58 +867,6 @@ jobs:
           go build ./...
           go vet ./...
 
-  # The FROM-scratch claim without a container daemon: a static build of
-  # the package's own corpus runner, run by chroot in a directory that holds
-  # nothing else (no libc, no certificates, no /proc, an empty
-  # environment), must answer exactly what an ordinary run answers.
-  go-scratch:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: go/go.sum
-      - name: the same rows in an empty chroot
-        run: |
-          set -euo pipefail
-          D="$RUNNER_TEMP/scratch"
-          mkdir -p "$D"
-          (cd go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$D/corpusrun" ./internal/corpusrun)
-          if ldd "$D/corpusrun" 2>&1 | grep -qv 'not a dynamic executable'; then
-            ldd "$D/corpusrun" || true
-            echo "::error::corpusrun is not a static executable"; exit 1
-          fi
-          # Two calls: the genuine g5 receipt, and the same receipt with one
-          # signature bit flipped (a verdict each way).
-          python3 - "$D/calls.jsonl" <<'PY'
-          import base64, json, sys
-          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
-          der = bytearray(base64.b64decode(text))
-          der[-128] ^= 1
-          rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
-          with open(sys.argv[1], "w") as out:
-              for name, data in rows:
-                  out.write(json.dumps({"id": name, "fn": "verify-receipt", "env": 0, "config": "",
-                                        "now": 1790640000000, "b64": base64.b64encode(data).decode()}) + "\n")
-          PY
-          "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
-          sudo env -i "$(command -v chroot)" "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
-          diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
-          # Each row's "out" is the module's JSON as a string, so its
-          # quotes arrive escaped.
-          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
-          grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
-
   # -count=2 so a second run in the same process catches state left behind by
   # the first, which is what a cached buffer or a memoised location would be.
   # Slow: every call goes through wazero under the race detector.
@@ -1100,17 +975,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
-  # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
-  # v0.8.1's requirement) never becomes the library's. staticcheck cannot lint
-  # another module in place, so the binaries are built in go/tools and run
-  # from go/.
-  go-lint:
+  # gofmt, go vet, staticcheck and govulncheck (go-lint), then the corpus
+  # runner in an empty chroot (go-scratch). Both on Go 1.27.
+  # One job instead of 2: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  go-checks:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      # --- go-lint -----------------------------------------------------------
+      # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
+      # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
+      # v0.8.1's requirement) never becomes the library's. staticcheck cannot lint
+      # another module in place, so the binaries are built in go/tools and run
+      # from go/.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1155,6 +1036,52 @@ jobs:
             exit 1
           fi
         working-directory: go
+      # --- go-scratch --------------------------------------------------------
+      # The FROM-scratch claim without a container daemon: a static build of
+      # the package's own corpus runner, run by chroot in a directory that holds
+      # nothing else (no libc, no certificates, no /proc, an empty
+      # environment), must answer exactly what an ordinary run answers.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: ${{ !cancelled() }}
+        name: the same rows in an empty chroot
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/scratch"
+          mkdir -p "$D"
+          (cd go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$D/corpusrun" ./internal/corpusrun)
+          if ldd "$D/corpusrun" 2>&1 | grep -qv 'not a dynamic executable'; then
+            ldd "$D/corpusrun" || true
+            echo "::error::corpusrun is not a static executable"; exit 1
+          fi
+          # Two calls: the genuine g5 receipt, and the same receipt with one
+          # signature bit flipped (a verdict each way).
+          python3 - "$D/calls.jsonl" <<'PY'
+          import base64, json, sys
+          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
+          der = bytearray(base64.b64decode(text))
+          der[-128] ^= 1
+          rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
+          with open(sys.argv[1], "w") as out:
+              for name, data in rows:
+                  out.write(json.dumps({"id": name, "fn": "verify-receipt", "env": 0, "config": "",
+                                        "now": 1790640000000, "b64": base64.b64encode(data).decode()}) + "\n")
+          PY
+          "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
+          sudo env -i "$(command -v chroot)" "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
+          diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
+          # Each row's "out" is the module's JSON as a string, so its
+          # quotes arrive escaped.
+          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
+          grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
 
   # The gem has one runtime dependency, wasmtime, installed from the
   # committed Gemfile.lock (its prebuilt platform gems included, so no Rust
@@ -3016,64 +2943,6 @@ jobs:
       - run: vendor/bin/phpunit
         working-directory: php
 
-  php-static:
-    needs: [changes, aprv-server-linux]
-    if: needs.changes.outputs.php == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: aprv-server-x86_64-unknown-linux-musl
-          path: ${{ runner.temp }}/aprv-bin
-      - name: the aprv binary this tree builds
-        run: |
-          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
-          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: "8.4"
-          extensions: json, curl, posix
-          coverage: none
-      # The consumer smoke and the drift guard are Node, like the rest of
-      # tools/. They live in this job rather than in `conformance` because
-      # what they check is the PHP package, and because the smoke needs the
-      # PHP that setup-php just installed.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      - run: composer install --no-scripts --no-progress --no-interaction
-        working-directory: php
-      # --strict also reports a composer.lock that no longer matches
-      # composer.json, which is the drift this port's lockfile can suffer.
-      - run: composer validate --strict
-        working-directory: php
-      # The root manifest is what Packagist reads and what Composer installs;
-      # php/composer.json is only the development one. Both get validated.
-      - run: composer validate --strict --no-check-lock composer.json
-      # src, tests and bin/ (phpstan.neon).
-      - run: vendor/bin/phpstan analyse --no-progress
-        working-directory: php
-      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
-      # a syntax check and nothing more.
-      - run: php -l bench/bench.php
-        working-directory: php
-      # Two manifests for one package drift, and the .gitattributes allowlist
-      # silently decides what a PHP consumer unpacks. This reads the real
-      # `git archive` rather than the rules that produce it: the manifests
-      # agree on bin and suggest, and the archive carries bin/aprv-install
-      # and SHA256SUMS.
-      - run: node tools/check-php-package.mjs
-      # Then install that archive into a throwaway project and verify a
-      # receipt through vendor/autoload.php and the default CLI transport
-      # (APRV_BIN): the only check here that runs against what a stranger
-      # downloads rather than against a checkout.
-      - run: node tools/php-consumer-smoke.mjs
-
   # The matrix that matters here is OS, not SDK: the Wasmtime package ships
   # a native library per platform (linux-x64, osx-arm64, win-x64 here), and
   # each is what runs the module there. The netstandard2.0 floor gets its
@@ -3111,86 +2980,6 @@ jobs:
       # are the LTS runtimes consumers deploy on.
       - run: dotnet test -c Release
         working-directory: dotnet
-
-  # The netstandard2.0 asset is what a .NET Framework, Mono or Unity consumer
-  # loads. The dotnet job above runs the floor project on CoreCLR against that
-  # asset; this one loads it under Mono, the closest a hosted runner gets to
-  # Unity's scripting backend.
-  dotnet-mono:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # 10.0.x, the newest line this workflow installs, is the SDK that wrote
-      # packages.lock.json. Each SDK band bundles its own implicit
-      # Microsoft.NET.ILLink.Tasks version for a given target, and they do
-      # not always agree (2026-09-18: 9.0.318 asked 8.0.30 for net8.0 while
-      # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
-      # locked mode with NU1004 on a lock file that is correct.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-      - name: Load the netstandard2.0 asset under Mono
-        working-directory: dotnet
-        run: |
-          set -euo pipefail
-          dotnet build -c Release src/ApplePurchaseReceiptVerifier
-          # Mono comes from a digest-pinned image rather than apt. Installing
-          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
-          # mirror on every run; when that mirror was slow the job spent 24
-          # minutes fetching and was cancelled at its timeout, with nothing
-          # wrong in the code. Same reasoning as the swift jobs, which have
-          # been digest-pinned containers all along.
-          #
-          # A Mono host that cannot even load the assembly is the failure
-          # this job exists to catch; the full suite stays on CoreCLR, and
-          # monop reflects rather than executes, so this proves loadability
-          # and not behaviour.
-          docker run --rm -v "$PWD:/work" -w /work \
-            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
-            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-              ApplePurchaseReceiptVerifier.Verifier
-
-  # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
-  # reflection-based serializer, an embedded resource or a dynamic code path
-  # would surface here as an IL2xxx warning or as a runtime failure. The
-  # sample verifies a receipt and asserts a foreign chain is still rejected,
-  # so a trimmer that silently removed a check fails the job.
-  dotnet-trim:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
-      # still targets net9.0, which this SDK builds and publishes.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-      - name: Publish fully trimmed and verify a receipt with it
-        working-directory: dotnet
-        run: |
-          set -euo pipefail
-          # No -r here: the sample's csproj pins RuntimeIdentifier itself.
-          # On the command line it becomes a global property and reaches the
-          # referenced library project too, whose packages.lock.json has no
-          # RID graph, so locked-mode restore fails with NU1004.
-          dotnet publish samples/TrimAotSmoke -c Release -o "$RUNNER_TEMP/trim" \
-            -warnaserror
-          "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
 
   # fixtures/cases.json is the normative cross-language contract: every
   # suite reads it, so a malformed vector file or an unregistered fixture
@@ -3367,20 +3156,27 @@ jobs:
           persist-credentials: false
       - run: swift format lint --strict --recursive swift/Sources swift/Tests
 
-  # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
-  # Performance and Usage analyzer categories are silenced there because
-  # `dotnet format` with them on rewrote 28 files -- switch expressions,
-  # collection expressions, a primary constructor, GeneratedRegex source
-  # generators -- and in one file two fixers collided and wrote a literal
-  # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
-  # formatter that can corrupt a file is not one to run in apply mode over
-  # this port; this job only ever verifies.
-  dotnet-format:
-    needs: changes
+  # dotnet format (dotnet-format), the netstandard2.0 asset under Mono
+  # (dotnet-mono), the trimmed and AOT consumer (dotnet-trim) and the packed
+  # NuGet package in a clean consumer (smoke-nuget).
+  # One job instead of 4: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  dotnet-checks:
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
+      # --- dotnet-format -----------------------------------------------------
+      # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
+      # Performance and Usage analyzer categories are silenced there because
+      # `dotnet format` with them on rewrote 28 files -- switch expressions,
+      # collection expressions, a primary constructor, GeneratedRegex source
+      # generators -- and in one file two fixers collided and wrote a literal
+      # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
+      # formatter that can corrupt a file is not one to run in apply mode over
+      # this port; this job only ever verifies.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3392,20 +3188,132 @@ jobs:
             10.0.x
       - run: dotnet format --verify-no-changes --severity info
         working-directory: dotnet
+      # --- dotnet-mono -------------------------------------------------------
+      # The netstandard2.0 asset is what a .NET Framework, Mono or Unity consumer
+      # loads. The dotnet job above runs the floor project on CoreCLR against that
+      # asset; this one loads it under Mono, the closest a hosted runner gets to
+      # Unity's scripting backend.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # 10.0.x, the newest line this workflow installs, is the SDK that wrote
+      # packages.lock.json. Each SDK band bundles its own implicit
+      # Microsoft.NET.ILLink.Tasks version for a given target, and they do
+      # not always agree (2026-09-18: 9.0.318 asked 8.0.30 for net8.0 while
+      # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
+      # locked mode with NU1004 on a lock file that is correct.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - if: ${{ !cancelled() }}
+        name: Load the netstandard2.0 asset under Mono
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          dotnet build -c Release src/ApplePurchaseReceiptVerifier
+          # Mono comes from a digest-pinned image rather than apt. Installing
+          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
+          # mirror on every run; when that mirror was slow the job spent 24
+          # minutes fetching and was cancelled at its timeout, with nothing
+          # wrong in the code. Same reasoning as the swift jobs, which have
+          # been digest-pinned containers all along.
+          #
+          # A Mono host that cannot even load the assembly is the failure
+          # this job exists to catch; the full suite stays on CoreCLR, and
+          # monop reflects rather than executes, so this proves loadability
+          # and not behaviour.
+          docker run --rm -v "$PWD:/work" -w /work \
+            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
+            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+              ApplePurchaseReceiptVerifier.Verifier
+      # --- dotnet-trim -------------------------------------------------------
+      # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
+      # reflection-based serializer, an embedded resource or a dynamic code path
+      # would surface here as an IL2xxx warning or as a runtime failure. The
+      # sample verifies a receipt and asserts a foreign chain is still rejected,
+      # so a trimmer that silently removed a check fails the job.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
+      # still targets net9.0, which this SDK builds and publishes.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - if: ${{ !cancelled() }}
+        name: Publish fully trimmed and verify a receipt with it
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          # No -r here: the sample's csproj pins RuntimeIdentifier itself.
+          # On the command line it becomes a global property and reaches the
+          # referenced library project too, whose packages.lock.json has no
+          # RID graph, so locked-mode restore fails with NU1004.
+          dotnet publish samples/TrimAotSmoke -c Release -o "$RUNNER_TEMP/trim" \
+            -warnaserror
+          "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
+      # --- smoke-nuget -------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
+      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - if: ${{ !cancelled() }}
+        run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
+        working-directory: dotnet
+      # The pack folder is added as a source beside nuget.org (the package's
+      # own dependencies come from there), and NUGET_PACKAGES is a scratch
+      # folder so a same-version package cached by an earlier restore on
+      # the runner cannot stand in for the one just packed.
+      - if: ${{ !cancelled() }}
+        name: restore the packed package outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/nuget-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
+          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
+          VERSION="${VERSION%.nupkg}"
+          export NUGET_PACKAGES="$SMOKE/packages"
+          dotnet restore "-p:SmokeVersion=$VERSION" \
+            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
+          dotnet run --no-restore "-p:SmokeVersion=$VERSION"
 
-  # Spotless with palantir-java-format. Deliberately not bound to a Maven
-  # lifecycle phase (see java/pom.xml), so `mvn test` and the
-  # java-runtime-8 job never invoke it; this job runs it explicitly.
-  # palantir's own classes are class-file major 55, so running the check
-  # needs Maven itself on JDK 11+ -- which is why it is not in the build.
-  # palantir over google-java-format because google forces 2-space indent
-  # on a 4-space codebase: 8690 changed lines against palantir's 1967.
-  java-format:
+  # Spotless (java-format), the suite under a hardened security policy
+  # (java-hardened-policy), the Kotlin and Scala consumers (jvm-interop) and
+  # the packaged 0.7 artifact in a clean consumer (smoke-maven). All on
+  # Temurin 21.
+  # One job instead of 4: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  java-checks:
     needs: changes
     if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
+      # --- java-format -------------------------------------------------------
+      # Spotless with palantir-java-format. Deliberately not bound to a Maven
+      # lifecycle phase (see java/pom.xml), so `mvn test` and the
+      # java-runtime-8 job never invoke it; this job runs it explicitly.
+      # palantir's own classes are class-file major 55, so running the check
+      # needs Maven itself on JDK 11+ -- which is why it is not in the build.
+      # palantir over google-java-format because google forces 2-space indent
+      # on a 4-space codebase: 8690 changed lines against palantir's 1967.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3416,20 +3324,113 @@ jobs:
           cache: maven
       - run: mvn -B spotless:check
         working-directory: java
+      # --- java-hardened-policy ----------------------------------------------
+      # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
+      # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
+      # that disables SHA-1 outright (RHEL crypto policies, many enterprise
+      # images) makes the JDK refuse that chain. The Java port builds and
+      # validates chains with its own pinned BouncyCastle instance, which does not
+      # read that property (java/README.md, "One platform caveat"). This job pins
+      # that: under that policy the full conformance suite passes. Surefire names
+      # dynamic tests by index, so the discriminating case
+      # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
+      # ConformanceCasesTest's last test fails if any case in cases.json did not
+      # run, so 0 failures means it ran and passed (java-distroless asserts it by
+      # name). HostPolicyProbe then shows the premise on the same JDK: under the
+      # same policy the JDK's own PKIX refuses the chain the suite accepted.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - if: ${{ !cancelled() }}
+        name: Run the conformance suite with SHA-1 disabled for certpath
+        working-directory: java
+        run: |
+          set -euo pipefail
+          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
+          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
+          grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
+          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
+          mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
+          java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
+            -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
+            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/probe.log"
+          grep -F "premise: the JDK's own PKIX refuses the legacy chain" "$RUNNER_TEMP/probe.log"
+          grep -F 'legacy receipt verifies' "$RUNNER_TEMP/probe.log"
+      # --- jvm-interop -------------------------------------------------------
+      # Proves jvm-interop/README.md's claim: the published jar is usable from
+      # other JVM languages, not just Java. Builds java/ first with install,
+      # not package, so jvm-interop resolves it as a real Maven coordinate the
+      # way a consumer would from Central, then runs the Kotlin and Scala 3
+      # interop tests. Never part of the release: jvm-interop has no
+      # release-please entry and no <module> anywhere.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - if: ${{ !cancelled() }}
+        run: mvn -B install -DskipTests
+        working-directory: java
+      - if: ${{ !cancelled() }}
+        run: mvn -B test
+        working-directory: jvm-interop
+      # java-bench/ is another consumer of that installed coordinate, and
+      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
+      # annotation processor over it, so an API change that breaks a
+      # benchmark fails here; compile stops short of packaging the JMH jar,
+      # and nothing is measured. version.txt as in benchmark.yml.
+      - if: ${{ !cancelled() }}
+        run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
+      # --- smoke-maven -------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # install puts the jar in ~/.m2, which Maven reads before any remote,
+      # so the smoke pom resolves this build and never Central's.
+      - if: ${{ !cancelled() }}
+        run: mvn -B install -DskipTests
+        working-directory: java
+      - if: ${{ !cancelled() }}
+        name: resolve the installed jar outside the checkout
+        run: |
+          set -euo pipefail
+          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
+          SMOKE="$RUNNER_TEMP/maven-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
+          cd "$SMOKE"
+          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
+          javac -cp "$(cat cp.txt)" Smoke.java -d .
+          java -cp ".:$(cat cp.txt)" Smoke
 
-  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-fuzz
-  # jobs so a formatting drift fails on its own instead of inside a
-  # functional job's log. This is also the first CI run of the fixer at
-  # all: the committed .php-cs-fixer.dist.php declared the risky
-  # declare_strict_types rule while setting setRiskyAllowed(false), a
-  # combination the resolver rejects outright, so the config could never
-  # have run wherever it was invoked from.
-  php-format:
-    needs: changes
+  # php-cs-fixer (php-format), then PHPStan and the rest of php-static.
+  # Both on PHP 8.4; the job waits for aprv-server-linux, which php-static
+  # needs.
+  # One job instead of 2: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  php-checks:
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
+      # --- php-format --------------------------------------------------------
+      # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-fuzz
+      # jobs so a formatting drift fails on its own instead of inside a
+      # functional job's log. This is also the first CI run of the fixer at
+      # all: the committed .php-cs-fixer.dist.php declared the risky
+      # declare_strict_types rule while setting setRiskyAllowed(false), a
+      # combination the resolver rejects outright, so the config could never
+      # have run wherever it was invoked from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3442,6 +3443,66 @@ jobs:
         working-directory: php
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
         working-directory: php
+      # --- php-static --------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - if: ${{ !cancelled() }}
+        name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
+      - if: ${{ !cancelled() }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: json, curl, posix
+          coverage: none
+      # The consumer smoke and the drift guard are Node, like the rest of
+      # tools/. They live in this job rather than in `conformance` because
+      # what they check is the PHP package, and because the smoke needs the
+      # PHP that setup-php just installed.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - if: ${{ !cancelled() }}
+        run: composer install --no-scripts --no-progress --no-interaction
+        working-directory: php
+      # --strict also reports a composer.lock that no longer matches
+      # composer.json, which is the drift this port's lockfile can suffer.
+      - if: ${{ !cancelled() }}
+        run: composer validate --strict
+        working-directory: php
+      # The root manifest is what Packagist reads and what Composer installs;
+      # php/composer.json is only the development one. Both get validated.
+      - if: ${{ !cancelled() }}
+        run: composer validate --strict --no-check-lock composer.json
+      # src, tests and bin/ (phpstan.neon).
+      - if: ${{ !cancelled() }}
+        run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
+      # a syntax check and nothing more.
+      - if: ${{ !cancelled() }}
+        run: php -l bench/bench.php
+        working-directory: php
+      # Two manifests for one package drift, and the .gitattributes allowlist
+      # silently decides what a PHP consumer unpacks. This reads the real
+      # `git archive` rather than the rules that produce it: the manifests
+      # agree on bin and suggest, and the archive carries bin/aprv-install
+      # and SHA256SUMS.
+      - if: ${{ !cancelled() }}
+        run: node tools/check-php-package.mjs
+      # Then install that archive into a throwaway project and verify a
+      # receipt through vendor/autoload.php and the default CLI transport
+      # (APRV_BIN): the only check here that runs against what a stranger
+      # downloads rather than against a checkout.
+      - if: ${{ !cancelled() }}
+        run: node tools/php-consumer-smoke.mjs
 
   # The consumer smoke programs under .github/smoke/, run against this
   # checkout. post-publish-smoke.yml runs the same programs after a release
@@ -3522,37 +3583,6 @@ jobs:
           "$SMOKE/venv/bin/pip" install "$GITHUB_WORKSPACE/python"
           cd "$SMOKE"
           venv/bin/python pypi-smoke.py
-
-  smoke-maven:
-    needs: changes
-    if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      # install puts the jar in ~/.m2, which Maven reads before any remote,
-      # so the smoke pom resolves this build and never Central's.
-      - run: mvn -B install -DskipTests
-        working-directory: java
-      - name: resolve the installed jar outside the checkout
-        run: |
-          set -euo pipefail
-          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
-          SMOKE="$RUNNER_TEMP/maven-smoke"
-          mkdir -p "$SMOKE"
-          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
-          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
-          cd "$SMOKE"
-          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
-          javac -cp "$(cat cp.txt)" Smoke.java -d .
-          java -cp ".:$(cat cp.txt)" Smoke
 
   smoke-swiftpm:
     needs: [changes, rust-wasm]
@@ -3690,44 +3720,3 @@ jobs:
           cd "$SMOKE"
           cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
           cargo +stable run
-
-  smoke-nuget:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
-      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
-      - run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
-        working-directory: dotnet
-      # The pack folder is added as a source beside nuget.org (the package's
-      # own dependencies come from there), and NUGET_PACKAGES is a scratch
-      # folder so a same-version package cached by an earlier restore on
-      # the runner cannot stand in for the one just packed.
-      - name: restore the packed package outside the checkout
-        run: |
-          set -euo pipefail
-          SMOKE="$RUNNER_TEMP/nuget-smoke"
-          mkdir -p "$SMOKE"
-          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
-          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
-          cd "$SMOKE"
-          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
-          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
-          VERSION="${VERSION%.nupkg}"
-          export NUGET_PACKAGES="$SMOKE/packages"
-          dotnet restore "-p:SmokeVersion=$VERSION" \
-            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
-          dotnet run --no-restore "-p:SmokeVersion=$VERSION"
