@@ -32,7 +32,7 @@ contracts below; each item says whether that job changes.
    the component's interface, read back with `wasm-tools component wit`,
    matched it. That is what `tools/check-wasm.sh` check 5 compares byte for
    byte. The raw read-back (`package root:component; ...`) is not shipped.
-3. **Doc comments are not part of the read-back.** wit-bindgen 0.62.0
+3. **Doc comments are not part of the read-back.** wit-bindgen 0.63.0
    embeds none in the component, and `wasm-tools component embed --dummy`
    renders none from the committed file either, so `check-wasm.sh` check 4
    compares names and types. Its header comment says doc comments count;
