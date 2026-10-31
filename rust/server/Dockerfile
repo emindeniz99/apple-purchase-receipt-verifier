@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends binutils musl-t
 # gcr.io/distroless/static-debian13:nonroot: no shell, no package manager,
 # no libc (the binary needs none), uid 65532. Shared by the two final
 # stages below, which differ only in where the binary comes from.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime
 ARG VERSION=unknown
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="aprv-server" \
