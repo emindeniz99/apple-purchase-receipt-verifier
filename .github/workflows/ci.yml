@@ -644,8 +644,8 @@ jobs:
       - run: .github/scripts/swift-apple.sh ios
 
   # On a pull request swift-macos and swift-ios share one macos-26 runner,
-  # so a pull request takes two macOS runners in all (this and
-  # macos-wrappers). The iOS build runs under !cancelled(), so a test
+  # so a pull request takes at most two macOS runners (this and
+  # macos-wrappers, when its areas are selected too). The iOS build runs under !cancelled(), so a test
   # failure does not hide its result. A push to main runs the two jobs.
   swift-apple:
     needs: [changes, rust-wasm]
