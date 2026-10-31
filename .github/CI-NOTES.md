@@ -55,6 +55,13 @@ the same run.
 selects every area. Each job below runs when its area is selected; the
 second column is what it takes from other jobs.
 
+`ci-ok`, the last job, needs every other job in `ci.yml` and runs with
+`always()`: it fails when any of them failed or was cancelled and passes
+when each passed or was skipped. **Branch protection should require
+`ci-ok` alone**, not the individual checks, which come and go with the
+area filter, the pull-request tier and every merge or rename of a job.
+Its first step fails when a job in `ci.yml` is missing from its `needs:`.
+
 | Area | Jobs | Consumes |
 |---|---|---|
 | module | `rust-wasm`; `rust-wasm-checks` (tools' tests, `check-wasm.sh`, the ABI tests, the cases, the wire schemas, wasm32 clippy, a reproduction in a fresh clone); `rust-wasm-abi` (`rust/bindings/abi/tests` with `APRV_WASM` and `APRV_COMPONENT`); `wasm-copies` (every committed copy and every pin; strict on `release-please--*` branches, warnings elsewhere) | `aprv-wasm` |
@@ -362,3 +369,6 @@ still points at the commit `release-branch-wasm` built.
   the pom reads the source in place.
 - The macOS x86_64 runner label is `macos-15-intel`; check that GitHub
   still offers it before the first 0.8.0 tag.
+- Branch protection (or the ruleset) on `main` should require the one
+  status check `ci-ok` from GitHub Actions and drop every other `ci.yml`
+  check from the required list. An agent cannot change that setting.

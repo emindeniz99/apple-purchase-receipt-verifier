@@ -3660,3 +3660,64 @@ jobs:
           cd "$SMOKE"
           cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
           cargo +stable run
+
+  # The one check branch protection should require. Every other job in this
+  # file is in its `needs:`, and it runs whatever they did (always()): it
+  # fails when any of them failed or was cancelled, and passes when each
+  # passed or was skipped, which is what a pull request's area filter and
+  # the event conditions do to the jobs that do not apply. Requiring the
+  # individual checks instead breaks whenever a job is renamed, merged or
+  # skipped. A job added to this file must join the list; the first step
+  # fails until it does.
+  ci-ok:
+    needs:
+      [changes, java, java-runtime-8, java-jackson-floor, java-vendors,
+       java-distroless, node, node-runtimes, node-browsers,
+       java-spring-boot, python, python-musl, swift, swift-macos,
+       swift-ios, swift-apple, swift-crypto-floor, go, go-platforms,
+       go-cross, go-race, go-fuzz, go-checks, ruby, ruby-gem,
+       macos-wrappers, windows-wrappers, ruby-macos, ruby-tools, rust,
+       rust-lint, rust-ffi, elixir-ffi, rust-fuzz, dotnet-fuzz,
+       php-fuzz, ruby-fuzz, python-fuzz, swift-fuzz, java-fuzz,
+       rust-supply-chain, rust-wasm, rust-wasm-checks, rust-wasm-abi,
+       wasm-copies, one-implementation, aprv-server-linux,
+       aprv-server, aprv-server-contract, aprv-server-image,
+       java-wasm-endive, java-wasm-runtime-8, java-wasm-consumers,
+       java-classpath-guard, php, php-lowest, php-symfony-process-8,
+       dotnet, conformance, zizmor, node-lint, python-tools,
+       swift-format, dotnet-checks, java-checks, php-checks,
+       smoke-npm, smoke-pypi, smoke-swiftpm, smoke-go, smoke-rubygems,
+       smoke-crates]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows/ci.yml
+          sparse-checkout-cone-mode: false
+      - name: every job in ci.yml is in ci-ok's needs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          declared=$(awk '/^jobs:$/ { j = 1; next } j && /^  [a-z0-9_-]+:$/ { sub(/^  /, ""); sub(/:$/, ""); print }' .github/workflows/ci.yml | grep -vx ci-ok | sort)
+          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
+          if [ "$declared" != "$needed" ]; then
+            echo "::error::ci-ok's needs and the jobs in ci.yml differ:"
+            diff <(echo "$declared") <(echo "$needed") || true
+            exit 1
+          fi
+      - name: no needed job failed or was cancelled
+        if: always()
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS" | sort
+          bad=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "::error::failed or cancelled: $(echo $bad)"
+            exit 1
+          fi
