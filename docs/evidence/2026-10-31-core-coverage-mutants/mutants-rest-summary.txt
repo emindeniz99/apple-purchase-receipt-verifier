@@ -1,0 +1,18 @@
+file                               caught   missed  timeout unviable    total
+openssl/src/keys.rs                     1        1        0        4        6
+src/config.rs                           7        3        0        4       14
+src/datetime.rs                        67        0        0        0       67
+src/environment.rs                      8        1        0        2       11
+src/error.rs                           17        1        0        7       25
+src/lib.rs                             14        3        0        6       23
+TOTAL                                 114        9        0       23      146
+
+MISSED   openssl/src/keys.rs:38:13: replace keys_used_during::<impl Drop for Restore>::drop with ()
+MISSED   src/config.rs:30:9: replace Config::builder -> ConfigBuilder with Default::default()
+MISSED   src/config.rs:52:9: replace <impl fmt::Debug for Config>::fmt -> fmt::Result with Ok(Default::default())
+MISSED   src/config.rs:120:9: replace <impl fmt::Debug for ConfigBuilder>::fmt -> fmt::Result with Ok(Default::default())
+MISSED   src/environment.rs:58:9: replace <impl fmt::Display for Environment>::fmt -> fmt::Result with Ok(Default::default())
+MISSED   src/error.rs:154:9: replace <impl fmt::Debug for Failure>::fmt -> fmt::Result with Ok(Default::default())
+MISSED   src/lib.rs:106:10: replace > with >= in larger
+MISSED   src/lib.rs:162:9: replace __internal::openssl_version -> &'static str with ""
+MISSED   src/lib.rs:162:9: replace __internal::openssl_version -> &'static str with "xyzzy"
