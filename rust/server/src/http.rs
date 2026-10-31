@@ -52,6 +52,16 @@ pub struct App {
     /// ends, not until the request's future does: a client that disconnects
     /// drops the future while `spawn_blocking` keeps running.
     pub permits: Arc<tokio::sync::Semaphore>,
+    /// One permit per request body that is being received or is waiting
+    /// for a worker. A request takes one before it reads its body and
+    /// gives it back once a worker takes the call, so at most this many
+    /// bodies, each cut to `max_input_bytes`, are held in memory ahead of
+    /// the workers however many requests arrive.
+    pub uploads: Arc<tokio::sync::Semaphore>,
+    /// How long a body may take to arrive once admitted: a client that
+    /// stalls partway gets 408 and its connection closed, and gives its
+    /// upload permit back.
+    pub body_timeout: std::time::Duration,
     pub token: Option<Vec<u8>>,
     pub info: Value,
 }
@@ -192,6 +202,13 @@ async fn endpoint_sandbox(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response
 /// larger while it streams is answered and closed the same way.
 pub const MAX_DRAIN: usize = 16 << 20;
 
+/// `aprv serve`'s body deadline ([`App::body_timeout`]): 30 s lets the
+/// 3 MiB cap through at about 100 KB/s.
+pub const BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Request bodies admitted per worker ([`App::uploads`]).
+pub const UPLOADS_PER_WORKER: usize = 4;
+
 /// A request body as the module gets it: at most the `max_input_bytes` its
 /// `init` answer states, so an input over the cap still reaches the module
 /// over its cap and the module answers it (TOO_LARGE, 21002 at the
@@ -261,18 +278,43 @@ async fn run(
         Ok(n) => op(n),
         Err(p) => return *p,
     };
-    let body = match read_capped(headers, body, app.verifier.max_input_bytes()).await {
-        Ok(b) => b,
-        Err(p) => return *p,
-    };
-    let Ok(permit) = app.permits.clone().acquire_owned().await else {
-        return problem(
+    let shutting_down = || {
+        problem(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL_ERROR",
             "Internal Server Error",
             "shutting down",
-        );
+        )
     };
+    // The body is admitted before it is read, and the admission is held
+    // until a worker takes the call.
+    let Ok(upload) = app.uploads.clone().acquire_owned().await else {
+        return shutting_down();
+    };
+    let read = read_capped(headers, body, app.verifier.max_input_bytes());
+    let body = match tokio::time::timeout(app.body_timeout, read).await {
+        Ok(Ok(b)) => b,
+        Ok(Err(p)) => return *p,
+        Err(_) => {
+            let mut response = problem(
+                StatusCode::REQUEST_TIMEOUT,
+                "REQUEST_TIMEOUT",
+                "Request Timeout",
+                &format!(
+                    "the body did not arrive within {} ms",
+                    app.body_timeout.as_millis()
+                ),
+            );
+            response
+                .headers_mut()
+                .insert(header::CONNECTION, HeaderValue::from_static("close"));
+            return response;
+        }
+    };
+    let Ok(permit) = app.permits.clone().acquire_owned().await else {
+        return shutting_down();
+    };
+    drop(upload);
     let a = app.clone();
     let input = body.bytes;
     let res = tokio::task::spawn_blocking(move || {
