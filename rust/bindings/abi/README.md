@@ -1,7 +1,7 @@
 # aprv-abi: aprv.wasm
 
 The guest side of the canonical ABI (docs/rust-core/ARCHITECTURE.md §3 and
-§4). `wit/aprv.wit` is the contract every host binds; wit-bindgen 0.62.0
+§4). `wit/aprv.wit` is the contract every host binds; wit-bindgen 0.63.0
 generates the exports from it, and four bodies in `src/lib.rs` call
 `aprv-surface` and answer `aprv-wire`'s JSON. Nothing here parses,
 verifies or decides.
@@ -37,7 +37,7 @@ cleanup without building anything. It fails when:
   alias of it), `memory` and `_initialize`;
 - the interface read back from the component with `wasm-tools component
   wit` differs from `wit/aprv.wit` rendered the same way (names and
-  types; wit-bindgen 0.62.0 embeds no doc comments, so neither side
+  types; wit-bindgen 0.63.0 embeds no doc comments, so neither side
   carries them);
 - the module carries a path of the machine that built it.
 

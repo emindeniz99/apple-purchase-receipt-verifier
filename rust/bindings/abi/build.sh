@@ -20,7 +20,7 @@
 #
 #   WASI_SDK_DIR       wasi-sdk 34.0 (clang, the wasip1 sysroot)
 #   OPENSSL_WASM_DIR   OpenSSL 4.0.3 built for wasm32-wasip1 (lib/, include/)
-#   PATH               wasm-tools 1.261.0 and wit-bindgen 0.62.0, and the
+#   PATH               wasm-tools 1.262.0 and wit-bindgen 0.63.0, and the
 #                      cargo and rustc of rust/rust-toolchain.toml with the
 #                      wasm32-wasip1 target
 #

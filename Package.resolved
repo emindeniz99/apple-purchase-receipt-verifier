@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftwasm/WasmKit.git",
       "state" : {
-        "revision" : "a0471eaee817c523b8023d8ebb1c70ff70b7950a",
-        "version" : "0.4.1"
+        "revision" : "a7455cb8474b96b2c58f0adc1f70d0270b8010bf",
+        "version" : "0.4.2"
       }
     }
   ],
