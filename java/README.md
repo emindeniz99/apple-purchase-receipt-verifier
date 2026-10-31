@@ -669,6 +669,17 @@ sets the property below 9 would refuse every genuine receipt as
 the property after create is not caught by create; the
 [canary](#running-in-production) catches it.
 
+**What the nesting costs.** Measured 2026-10-31 on OpenJDK 21 with
+bcprov 1.86 in one shared 4-core container, by `WorstCaseDepthCostTest`'s
+shape after 30 warm-up calls: a receipt at the 3 MiB cap filled with
+nested SETs takes a median of 104, 177, 264 and 478 ms to refuse at 2,
+16, 32 and 59 levels. A genuine receipt at the cap verifies in about
+33 ms. The JIT barely helps: the first call at 59 levels took 457 ms. The
+cost grows with the bytes and the depth and stops at the bound, and the
+library has no depth guard of its own (DECISIONS.md R20 says why). A
+host that needs a lower ceiling bounds concurrent calls and the time per
+call, as `aprv-server` does.
+
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
 verifyReceipt URLs; counted in UTF-8 bytes, not characters). Any HTTP layer
