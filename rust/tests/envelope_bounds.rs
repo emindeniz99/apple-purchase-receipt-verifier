@@ -451,9 +451,15 @@ fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
     // grew from 21 to 146 MB. The junk is refused at its first header, so
     // what it costs is decoding 3 MiB of base64, which any reader of the
     // flood pays; the flood may add the walk of 100,000 values on top.
-    // Half the junk's cost again, plus ten genuine verifications, is
-    // headroom for that walk and for timing noise; a shallow decode of the
-    // 1.17 million entries costs several times more.
+    //
+    // The bound is three times the junk's cost plus ten genuine
+    // verifications. Measured in a debug build on 2026-10-31 (three calls
+    // each): junk 67 to 74 ms, each flood 87 to 101 ms, so a flood costs
+    // about 1.3 times the junk; on a loaded runner that ratio reached 1.5
+    // and failed the old bound of 1.5 times (178 ms against 174 ms). With
+    // the shallow decode put back ahead of the walk, the regression this
+    // pins, each flood cost 790 to 1,210 ms against 84 to 89 ms of junk,
+    // about ten times, and more than twice the new bound.
     let verifier = common::receipt_verifier();
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
     let floods: Vec<String> = ["certificates", "crls", "signerInfos"]
@@ -495,7 +501,7 @@ fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
         .zip(flood_costs)
     {
         assert!(
-            cost < junk_cost * 3 / 2 + genuine_cost * 10,
+            cost < junk_cost * 3 + genuine_cost * 10,
             "a flood of {TINY_ENTRIES} tiny {set} entries cost {cost:?}, against {junk_cost:?} \
              for junk of the same size and {genuine_cost:?} for a genuine receipt: the shallow \
              decode is building the set before the node budget refuses it"
