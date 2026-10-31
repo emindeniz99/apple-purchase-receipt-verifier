@@ -17,7 +17,7 @@ import re
 import sys
 import time
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apple_purchase_receipt_verifier import Config, Environment, Reason, Verifier
@@ -196,9 +196,8 @@ MISSING = object()
 
 
 def _iso_utc(value):
-    from datetime import timezone
 
-    text = value.astimezone(timezone.utc).isoformat()
+    text = value.astimezone(UTC).isoformat()
     return text.replace("+00:00", "Z")
 
 

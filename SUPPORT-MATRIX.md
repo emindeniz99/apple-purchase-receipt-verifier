@@ -49,7 +49,7 @@ does not track Swift.
 | Java, main artifact | Java 8 | Java 8 | unchanged; the independent implementation |
 | Java, `-wasm` artifact | Java 8; the Endive engine needs Java 11 | new | Endive 1.1.0 needs Java 11; on Java 8 the default engine is `aprv-server` |
 | Node | 20 | 20 | unchanged |
-| Python | 3.10 | 3.10 | unchanged; wasmtime-py `>=49` |
+| Python | 3.11 | 3.10 | platformdirs 4.13 needs 3.11 (owner, 2026-10-31; DECISIONS.md R30) |
 | Go | 1.25 | 1.22 | wazero v1.12.0 needs Go 1.25 |
 | Ruby | 3.3 (3.4 on Windows arm64) | 3.3 | the `wasmtime` gem's prebuilt native gems |
 | Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit 0.4.1 declares tools 6.3 and those platforms |
@@ -93,8 +93,7 @@ run built (`rust-wasm`), never one from an earlier run.
 
 | Line | Status | Ends | CI |
 |---|---|---|---|
-| 3.10 | floor, security | 2026-10-31 | `python`, `python-musl`, `smoke-pypi` |
-| 3.11 | security | 2027-10-31 | `python`, `python-musl` |
+| 3.11 | floor, security | 2027-10-31 | `python`, `python-musl`, `smoke-pypi` |
 | 3.12 | security | 2028-10-31 | `python`, `python-musl` |
 | 3.13 | active | 2029-10-31 | `python`, `python-musl`, `python-tools`, `python-fuzz` |
 | 3.14 | active | 2030-10-31 | `python`, `python-musl` |
@@ -318,5 +317,5 @@ against a SHA-256 pinned in the jar.
 | March 2027 | Java 28 replaces 27 in `jdk:` | ci.yml `java` and `java-wasm-endive` jobs |
 
 Vendor ends that change nothing here, because floors stay: Java 17 at Oracle
-on 2026-09-30, Python 3.10 on 2026-10-31, .NET 8 and 9 on 2026-11-10, PHP 8.2
+on 2026-09-30, .NET 8 and 9 on 2026-11-10, PHP 8.2
 on 2026-12-31.

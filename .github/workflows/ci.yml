@@ -622,9 +622,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every supported line (endoflife.date/python); 3.10 is the
+        # Every supported line (endoflife.date/python); 3.11 is the
         # requires-python floor and stays tested while claimed.
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -634,13 +634,13 @@ jobs:
         with:
           host: python
       # setup-uv provisions the interpreter too (uv python install), from
-      # python-build-standalone, including the 3.10 floor.
+      # python-build-standalone, including the 3.11 floor.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
       # python/uv.lock is committed and every leg installs from it, so no
       # push resolves a version range. uv forks the resolution on the
-      # interpreter and records a version per marker, so one file covers 3.10
+      # interpreter and records a version per marker, so one file covers 3.11
       # through 3.14 without pinning the whole matrix to what the floor can
       # take. `uv sync` installs the project editable, which keeps this a
       # test of the SOURCE TREE rather than of a built wheel.
@@ -672,9 +672,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
         include:
-          - { python: "3.10", image: "ghcr.io/astral-sh/uv:python3.10-alpine@sha256:e2d2f86302f7afee240296e03124cf2337cfba1e517addecdd1e5667c29862d9" } # python3.10-alpine
           - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:97c6d480e7b214e5d7e8bf6db85a101078554de11cd6e677451a6174486a52a9" } # python3.11-alpine
           - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:262abc719041a446c354092e6b7730c9066de499089e16ef4edcb1a2e5d7b8b9" } # python3.12-alpine
           - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:8265a34ae4034f7f6d3f4146f97cf7ec8de6de803b0698f560df63b9a8dadd38" } # python3.13-alpine
@@ -1159,7 +1158,7 @@ jobs:
         # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3). 3.3 is
         # also the gemspec's required_ruby_version floor since 0.7 (for
         # Data), so it stays tested while it is claimed, even past its EOL:
-        # the java-runtime-8 / python-3.10 rule.
+        # the java-runtime-8 rule.
         ruby: ["3.3", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1822,7 +1821,7 @@ jobs:
   # base64 form, the JWS, the endpoint JSON), 60 s each -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
-  # library's: the `python` matrix above is what proves 3.10 through 3.14, and
+  # library's: the `python` matrix above is what proves 3.11 through 3.14, and
   # every crasher these targets found is pinned as a test under python/tests/
   # so it runs on all of them. atheris stays out of the package's dependency
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
@@ -2728,8 +2727,7 @@ jobs:
   #
   # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
   # readonly class); it stays here for exactly as long as the manifest claims
-  # it, even past its own security-support end, the same rule as node 20 and
-  # python 3.10.
+  # it, even past its own security-support end, the same rule as node 20.
   php:
     needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
@@ -3123,10 +3121,10 @@ jobs:
           '
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
-  # language level with target-version = "py310" and mypy is told
-  # python_version = "3.10" in pyproject, so the interpreter this runs on
+  # language level with target-version = "py311" and mypy is told
+  # python_version = "3.11" in pyproject, so the interpreter this runs on
   # does not change either verdict. The floor's runtime behaviour is
-  # proven by the `python` job's 3.10 leg above, not by this one.
+  # proven by the `python` job's 3.11 leg above, not by this one.
   #
   # Installs the package rather than just the tools: mypy needs wasmtime
   # importable to resolve its types.
@@ -3347,7 +3345,7 @@ jobs:
           host: python
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       # pip builds a wheel from python/ (aprv.wasm included, as package data)
       # with the setuptools backend tools/build_dist.py drives for the
       # release, and installs that wheel, not the source tree.

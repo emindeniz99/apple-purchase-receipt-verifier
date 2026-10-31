@@ -260,9 +260,8 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   Ruby 4.1 in December 2026; Go 1.28 in February 2027; Java 28 in March 2027,
   replacing 27 as the feature-release leg. Java 27 replaced 26 in the `java`
   job on 2026-09-28 (done ✅; 26 reached EOL on 2026-09-18). Floors stay when a
-  vendor line ends, so Java 17 (Oracle, 2026-09-30), Python 3.10
-  (2026-10-31), .NET 8 and 9 (2026-11-10) and PHP 8.2 (2026-12-31) change
-  nothing.
+  vendor line ends, so Java 17 (Oracle, 2026-09-30), .NET 8 and 9
+  (2026-11-10) and PHP 8.2 (2026-12-31) change nothing.
 - **Floor policy (owner decision, 2026-09-21)**: a floor moves when it
   blocks a dependency refresh or a security fix, never because a newer
   line exists. Applied the same day: Python 3.9 to 3.10 (#89, the uv
@@ -276,7 +275,9 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   2026-09-30; the `go` matrix drops its 1.22 to 1.24 legs). **Restated
   2026-09-30:** a floor moves only when a dependency, a security fix or CI
   forces it. Node 20, Python 3.10, PHP 8.2, Ruby 3.3, .NET 8, Swift 6.3 and
-  Java 8 stay (docs/rust-core/DECISIONS.md R30).
+  Java 8 stay (docs/rust-core/DECISIONS.md R30). Python moved from 3.10 to
+  3.11 on 2026-10-31 (owner): platformdirs 4.13 needs 3.11, and CPython
+  3.10's support had ended.
 - **Model the receipt attributes Apple's verifyReceipt echoes and we held
   as raw bytes** — done ✅ (2026-09-21, measured against Apple's own answer
   for a genuine production receipt, which stays out of the repository):

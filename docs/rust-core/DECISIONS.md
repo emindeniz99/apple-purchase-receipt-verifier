@@ -1610,7 +1610,7 @@ owner chose neither.
 ## R30. Floors
 
 **Status: accepted** (owner, 2026-09-28; Q54). Amended 2026-09-30: the
-policy and Go's floor, below.
+policy and Go's floor, below; 2026-10-31: Python's floor.
 
 Java 8 (both artifacts); Python 3.10; Swift 6.3 with macOS 15 and iOS 18;
 Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
@@ -1627,6 +1627,12 @@ does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
 8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
 Go change (the `go` directive, wazero and the CI legs) landed with the
 dependency sweep (#204).
+
+**2026-10-31 (owner).** Python moves from 3.10 to 3.11. platformdirs, one
+of the package's two runtime dependencies, needs 3.11 from 4.13, so the
+3.10 floor held it at 4.12; CPython 3.10's support had also ended. The
+`python` and `python-musl` matrices drop their 3.10 legs, and the
+install-failure and post-publish smoke jobs move to 3.11.
 
 ---
 
