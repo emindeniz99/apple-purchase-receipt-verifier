@@ -1258,11 +1258,12 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOFLAGS: -mod=readonly
-      - if: needs.changes.outputs.ruby == 'true'
+      # !cancelled(): a Go failure must not hide the Ruby and .NET results.
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
         uses: ./.github/actions/place-module
         with:
           host: ruby
-      - if: needs.changes.outputs.ruby == 'true'
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
         uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.4"
@@ -1270,23 +1271,23 @@ jobs:
           working-directory: ruby
         env:
           BUNDLE_FROZEN: "true"
-      - if: needs.changes.outputs.ruby == 'true'
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
         run: bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION' && bundle exec rake test
         working-directory: ruby
         env:
           BUNDLE_FROZEN: "true"
-      - if: needs.changes.outputs.dotnet == 'true'
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
         uses: ./.github/actions/place-module
         with:
           host: dotnet
-      - if: needs.changes.outputs.dotnet == 'true'
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
             8.0.x
             9.0.x
             10.0.x
-      - if: needs.changes.outputs.dotnet == 'true'
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
         run: dotnet test -c Release
         working-directory: dotnet
 
