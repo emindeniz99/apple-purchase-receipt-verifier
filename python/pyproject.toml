@@ -18,7 +18,7 @@ requires-python = ">=3.10"
 # relative "~/..." path (since 4.12.0); see
 # docs/evidence/2026-10-04-python-platformdirs-floor.md.
 dependencies = [
-    "wasmtime>=49",
+    "wasmtime>=50.0.1",
     "platformdirs>=4.12.0",
 ]
 
