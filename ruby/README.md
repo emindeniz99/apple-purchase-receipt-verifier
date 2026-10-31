@@ -50,7 +50,7 @@ types are built on `Data.define`, a Ruby 3.2 feature that needs 3.3 for
 keyword-only construction with defaults to behave the way this library
 depends on. The `wasmtime` gem's prebuilt native gems need 3.3 as well.
 
-Installing pulls in `wasmtime` 48.0.1 or newer as a prebuilt native gem, so no
+Installing pulls in `wasmtime` 50.0.0 or newer as a prebuilt native gem, so no
 Rust toolchain is needed on Linux (glibc and musl), macOS or Windows, on x86_64
 and arm64 (Windows arm64 needs Ruby 3.4). On a platform with no prebuilt gem
 RubyGems builds `wasmtime` from source, which needs Rust and a Cranelift

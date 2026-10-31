@@ -10,7 +10,7 @@ sets `APRV_WASM` for them (only `tests/_support.py`, `tests/corpus_rows.py` and
 `tools/build_dist.py` read it; the package never does, and a test greps for that).
 A missing or mismatched file is an error at the first `Verifier`.
 The file to copy is the release build's `aprv.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has two runtime dependencies,
-`wasmtime>=49` and `platformdirs>=4.12.0` (the compile cache's default
+`wasmtime>=50.0.1` and `platformdirs>=4.12.0` (the compile cache's default
 directory); the `dev` extra adds ruff, mypy and setuptools (the
 install-failure test builds this source tree with it).
 
