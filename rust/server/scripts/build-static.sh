@@ -31,6 +31,11 @@ component=${1:?usage: build-static.sh COMPONENT.wasm [TARGET] [OUTDIR]}
 target=${2:-x86_64-unknown-linux-musl}
 out=${3:-$here/dist}
 host=$(rustc -vV | sed -n 's/^host: //p')
+# A binary runs here only when both the architecture and the OS match: an
+# aarch64 Linux binary does not run on an aarch64 Mac.
+os() { case "$1" in *-linux-*) echo linux ;; *-darwin*) echo darwin ;; *-windows-*) echo windows ;; *) echo "$1" ;; esac; }
+native=
+[ "${target%%-*}" = "${host%%-*}" ] && [ "$(os "$target")" = "$(os "$host")" ] && native=1
 targetdir=${CARGO_TARGET_DIR:-$here/target}
 mkdir -p "$out"
 exe=
@@ -53,7 +58,7 @@ echo "component: $component, sha256 $got"
 case "$target" in
 *-linux-musl*)
   ccvar="CC_$(echo "$target" | tr - _)"
-  if [ "${target%%-*}" = "${host%%-*}" ] && [ -z "$(eval "echo \${$ccvar:-}")" ] \
+  if [ -n "$native" ] && [ -z "$(eval "echo \${$ccvar:-}")" ] \
     && command -v musl-gcc >/dev/null 2>&1; then
     export "$ccvar=musl-gcc"
   fi
@@ -78,15 +83,20 @@ cp "$targetdir/$target/release/aprv$exe" "$bin"
 echo "binary: $bin, $(wc -c < "$bin") bytes, gzip -9 $(gzip -9c "$bin" | wc -c) bytes, sha256 $(sha256 "$bin")"
 case "$target" in
 *-linux-musl*)
-  interp=$(readelf -l "$bin" | grep -c INTERP || true)
-  needed=$(readelf -d "$bin" 2>/dev/null | grep -c NEEDED || true)
-  echo "readelf: $interp INTERP, $needed NEEDED; $(readelf -h "$bin" | sed -n 's/^ *Type: *//p')"
+  # readelf runs on its own first, so a readelf that fails stops the
+  # script (set -e): in a pipeline its failure would read as 0 INTERP.
+  headers=$(readelf -l "$bin")
+  dynamic=$(readelf -d "$bin")
+  elf=$(readelf -h "$bin")
+  interp=$(printf '%s\n' "$headers" | grep -c INTERP || true)
+  needed=$(printf '%s\n' "$dynamic" | grep -c NEEDED || true)
+  echo "readelf: $interp INTERP, $needed NEEDED; $(printf '%s\n' "$elf" | sed -n 's/^ *Type: *//p')"
   if [ "$interp" != 0 ] || [ "$needed" != 0 ]; then
     echo "not a static binary" >&2
     exit 1
   fi
   ;;
 esac
-if [ "${target%%-*}" = "${host%%-*}" ]; then
+if [ -n "$native" ]; then
   "$bin" info
 fi

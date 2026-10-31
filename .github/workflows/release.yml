@@ -413,8 +413,13 @@ jobs:
         run: |
           set -euo pipefail
           bin="$RUNNER_TEMP/server/aprv-$TARGET"
-          if readelf -lW "$bin" | grep -q INTERP; then echo "::error::$bin has a program interpreter"; exit 1; fi
-          if readelf -dW "$bin" | grep -q NEEDED; then echo "::error::$bin needs a shared library"; exit 1; fi
+          # readelf runs on its own first, so a readelf that fails fails the
+          # step: inside an `if` pipeline its failure would read as "no
+          # INTERP" and pass.
+          headers=$(readelf -lW "$bin")
+          dynamic=$(readelf -dW "$bin")
+          if grep -q INTERP <<<"$headers"; then echo "::error::$bin has a program interpreter"; exit 1; fi
+          if grep -q NEEDED <<<"$dynamic"; then echo "::error::$bin needs a shared library"; exit 1; fi
       # On x86_64 the fresh clone rebuilds the component too. The wasm
       # toolchain's pinned archives are x86_64 only (tools/wasm-toolchain.sh),
       # so the aarch64 leg hands the script build-wasm's component, which that
