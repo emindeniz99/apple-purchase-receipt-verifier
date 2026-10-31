@@ -42,7 +42,7 @@ class PackagingTest < Minitest::Test
     spec = Gem::Specification.load(File.join(root, "apple-purchase-receipt-verifier.gemspec"))
     refute_nil spec, "the gemspec does not load"
     REQUIRED_FILES.each { |path| assert_includes spec.files, path }
-    assert_equal ["wasmtime (>= 48.0.1)"], spec.runtime_dependencies.map(&:to_s),
+    assert_equal ["wasmtime (>= 50.0.0)"], spec.runtime_dependencies.map(&:to_s),
                  "wasmtime is the one runtime dependency"
     assert_equal APRV::VERSION, spec.version.to_s
     assert_equal Gem::Requirement.new(">= 3.3.0"), spec.required_ruby_version

@@ -54,7 +54,7 @@
     "licenses"
   ],
   "devDependencies": {
-    "@bytecodealliance/jco": "1.35.0",
+    "@bytecodealliance/jco": "1.39.0",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.19.43",
     "oxlint": "^1.85.0",

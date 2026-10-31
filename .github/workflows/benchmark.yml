@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
           rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
           echo "component-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-wasm
           path: |
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -83,7 +83,7 @@ jobs:
         env:
           COMPONENT_SHA256: ${{ needs.module.outputs.component-sha256 }}
         run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server/aprv-x86_64-unknown-linux-musl
@@ -106,7 +106,7 @@ jobs:
       # version.txt; passing version.txt keeps the two from ever disagreeing.
       - run: mvn -B -ntp -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" package
       - run: java -jar java-bench/target/benchmarks.jar -rf json -rff jmh-result.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jmh-result
           path: jmh-result.json
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -132,7 +132,7 @@ jobs:
       # Go's own benchmark format (ns/op), which benchstat reads.
       - run: go test -run '^$' -bench '^BenchmarkCrossPort$' -benchtime 1s -count 5 . | tee ../go-bench.txt
         working-directory: go
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-bench
           path: go-bench.txt
@@ -148,7 +148,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: cargo +stable run --release --locked --example bench > ../rust-bench.json
         working-directory: rust
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-bench
           path: rust-bench.json
@@ -162,12 +162,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -175,7 +175,7 @@ jobs:
         working-directory: node
       - run: node bench/bench.mjs > ../node-bench.json
         working-directory: node
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: node-bench
           path: node-bench.json
@@ -189,12 +189,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" python
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -202,7 +202,7 @@ jobs:
         working-directory: python
       - run: uv run --locked python bench/bench.py > ../python-bench.json
         working-directory: python
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-bench
           path: python-bench.json
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -224,7 +224,7 @@ jobs:
       # The bundle, for the wasmtime gem the library runs the module on.
       # bundler-cache is off like every cache here; bundle install runs
       # from the committed Gemfile.lock.
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.4"
           bundler-cache: false
@@ -234,7 +234,7 @@ jobs:
           BUNDLE_FROZEN: "true"
       - run: bundle exec ruby -Ilib bench/bench.rb > ../ruby-bench.json
         working-directory: ruby
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ruby-bench
           path: ruby-bench.json
@@ -248,7 +248,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/aprv-bin
@@ -265,7 +265,7 @@ jobs:
       # aprv; the JSON carries a transport field (php/CI-NOTES.md).
       - run: php bench/bench.php --aprv "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" > ../php-bench.json
         working-directory: php
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: php-bench
           path: php-bench.json
@@ -279,7 +279,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -291,7 +291,7 @@ jobs:
       # out of the JSON the run step writes to stdout.
       - run: dotnet build -c Release dotnet/bench
       - run: dotnet run -c Release --no-build --project dotnet/bench > dotnet-bench.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dotnet-bench
           path: dotnet-bench.json
@@ -306,14 +306,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
       - run: .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" swift
       - run: swift build -c release --package-path swift/bench --force-resolved-versions
       - run: swift/bench/.build/release/bench > swift-bench.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swift-bench
           path: swift-bench.json
