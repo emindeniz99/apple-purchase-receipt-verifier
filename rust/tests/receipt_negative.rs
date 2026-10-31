@@ -174,6 +174,70 @@ fn a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict
     assert!(verifier().verify(&builder.build()).is_ok());
 }
 
+/// The bag is unsigned, so a relay can repeat the signer certificate up to
+/// the bag cap. Byte-identical copies are one certificate: each SignerInfo
+/// tries it once, so the content is digested, and the signer's key used,
+/// once per SignerInfo rather than once per copy (round 4 review: four
+/// SignerInfos and nine copies cost 36 content digests). The verdict is the
+/// one without the copies, genuine or not.
+#[test]
+fn byte_identical_copies_of_the_signer_are_tried_once_per_signer_info() {
+    use apple_purchase_receipt_verifier::__internal::keys_used_during;
+    let shared = common::CmsBuilder::from_shared();
+    let signer = shared
+        .certificates
+        .iter()
+        .find(|raw| {
+            common::certificate_identity(raw)
+                == Some((shared.signer_serial.clone(), shared.signer_issuer.clone()))
+        })
+        .expect("the shared receipt embeds its signer")
+        .clone();
+    let signer_key = openssl::x509::X509::from_der(&signer)
+        .unwrap()
+        .public_key()
+        .unwrap()
+        .public_key_to_der()
+        .unwrap();
+    // Four SignerInfos, the cap; the bag filled to its cap of ten with
+    // copies of the signer, or left as it is.
+    let build = |copies: bool, content: Vec<u8>| {
+        let mut builder = common::CmsBuilder::from_shared();
+        builder.signer_info_copies = 4;
+        builder.content = Some(content);
+        while copies && builder.certificates.len() < 10 {
+            builder.certificates.push(signer.clone());
+        }
+        builder.build()
+    };
+    let genuine = shared.content.clone().unwrap();
+    // A product id byte flipped: the payload still parses and the signature
+    // over the signed attributes holds, so every SignerInfo reaches the
+    // content digest, and fails it.
+    let mut tampered = genuine.clone();
+    let needle = b"com.example.app.vip";
+    let at = tampered
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("the shared receipt names the product");
+    tampered[at] = b'C';
+
+    let verifier = verifier();
+    assert_eq!(
+        verifier.verify(&build(true, genuine.clone())).unwrap(),
+        verifier.verify(&build(false, genuine)).unwrap()
+    );
+    let (with_copies, used) = keys_used_during(|| verifier.verify(&build(true, tampered.clone())));
+    let without = verifier.verify(&build(false, tampered)).unwrap_err();
+    assert_eq!(with_copies.unwrap_err(), without);
+    assert_eq!(without.reason(), Reason::InvalidSignature);
+    assert_eq!(
+        used.iter().filter(|key| **key == signer_key).count(),
+        4,
+        "the signer's key checks each of the four SignerInfos once"
+    );
+}
+
 #[test]
 fn an_unparseable_embedded_certificate_is_rejected() {
     let mut builder = common::CmsBuilder::from_shared();

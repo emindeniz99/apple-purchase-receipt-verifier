@@ -429,6 +429,132 @@ fn a_trust_anchors_own_expiry_is_not_checked() {
     assert!(common::verify_der(&verifier, &historical).is_ok());
 }
 
+/// An anchor is trusted by fiat, as a PKIX trust anchor is: its own
+/// validity window, CA flag and path length constraint are not judged
+/// (the adapter's `waived`, which clears what OpenSSL reports for a store
+/// certificate). The test above judges its expired root at an instant
+/// inside the root's window; each anchor here is outside its window, not a
+/// CA, or exceeded by the path at the instant the chain below it is judged.
+/// A genuine receipt and a genuine JWS under each still verify. Without the
+/// waiver the receipt would read `INVALID_CERTIFICATE` (the window) or
+/// `UNTRUSTED_CHAIN` (the CA flag, the path length), and the JWS
+/// `UNTRUSTED_CHAIN` for all four.
+#[test]
+fn an_anchor_is_trusted_by_fiat_whatever_its_window_ca_flag_or_path_length() {
+    use common::{der, der_int, der_oid, der_seq, mint, tag, CmsBuilder};
+    const INSTANT: i64 = 1_735_689_600_000;
+    let (root_key, intermediate_key, leaf_key) = (mint::key(81), mint::key(82), mint::key(83));
+    let basic_constraints = |path_length: Option<u64>| {
+        let mut fields = vec![der(0x01, &[0xFF])];
+        fields.extend(path_length.map(der_int));
+        der_seq(&[
+            der_oid("2.5.29.19"),
+            der(0x01, &[0xFF]),
+            der(tag::OCTET_STRING, &der_seq(&fields)),
+        ])
+    };
+    // A self-signed "Fiat Root" with the validity and extensions given.
+    let anchor = |validity: Vec<u8>, extensions: Vec<Vec<u8>>| {
+        let algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+        let mut tbs = vec![
+            der(tag::CONTEXT_0, &der_int(2)),
+            der_int(1),
+            algorithm.clone(),
+            mint::name("Fiat Root"),
+            validity,
+            mint::name("Fiat Root"),
+            mint::spki(&root_key),
+        ];
+        if !extensions.is_empty() {
+            tbs.push(der(tag::CONTEXT_3, &der_seq(&extensions)));
+        }
+        let tbs = der_seq(&tbs);
+        let signature = root_key.sign_der(&tbs);
+        mint::assemble(tbs, algorithm, &signature)
+    };
+    let window = |not_before: &[u8], not_after: &[u8]| {
+        der_seq(&[
+            der(tag::UTC_TIME, not_before),
+            der(tag::UTC_TIME, not_after),
+        ])
+    };
+    let inside = || window(b"200101000000Z", b"491231000000Z");
+    let anchors = [
+        (
+            "expired before the instant",
+            anchor(
+                window(b"000101000000Z", b"191231000000Z"),
+                vec![basic_constraints(None)],
+            ),
+        ),
+        (
+            "not yet valid at the instant",
+            anchor(
+                window(b"490101000000Z", b"491231000000Z"),
+                vec![basic_constraints(None)],
+            ),
+        ),
+        ("not a CA", anchor(inside(), Vec::new())),
+        (
+            "a path length of 0 above an intermediate",
+            anchor(inside(), vec![basic_constraints(Some(0))]),
+        ),
+    ];
+
+    let intermediate = mint::certificate(
+        "Fiat WWDR",
+        &intermediate_key,
+        "Fiat Root",
+        &root_key,
+        2,
+        true,
+        Some(mint::WWDR_MARKER),
+    );
+    let leaf = mint::certificate(
+        "Fiat Leaf",
+        &leaf_key,
+        "Fiat WWDR",
+        &intermediate_key,
+        3,
+        false,
+        Some(mint::RECEIPT_SIGNER_MARKER),
+    );
+    let mut builder = CmsBuilder::from_shared();
+    builder.certificates = vec![leaf.clone(), intermediate.clone()];
+    builder.signer_issuer = mint::name("Fiat WWDR");
+    builder.signer_serial = vec![3];
+    builder.signed_attrs = None;
+    builder.signature_algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
+    builder.signature = leaf_key.sign_der(builder.content.as_deref().unwrap());
+    let receipt = builder.build();
+
+    let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
+    let mut refused = Vec::new();
+    for (what, root) in anchors {
+        let verifier = common::verifier_at([TrustAnchor::from_der(&root).unwrap()], INSTANT);
+        if let Err(failure) = common::verify_der(&verifier, &receipt) {
+            refused.push(format!("a receipt under an anchor {what}: {failure}"));
+        }
+        let header = format!(
+            r#"{{"alg":"ES256","x5c":["{}","{}","{}"]}}"#,
+            encode(&leaf),
+            encode(&intermediate),
+            encode(&root)
+        );
+        let signing_input = format!(
+            "{}.{}",
+            common::base64url(header.as_bytes()),
+            common::base64url(format!(r#"{{"signedDate":{INSTANT}}}"#).as_bytes())
+        );
+        let signature = leaf_key.sign_raw(signing_input.as_bytes());
+        let jws = format!("{signing_input}.{}", common::base64url(&signature));
+        if let Err(failure) = verifier.verify_signed_data(&jws) {
+            refused.push(format!("a JWS under an anchor {what}: {failure}"));
+        }
+    }
+    assert!(refused.is_empty(), "{refused:#?}");
+}
+
 /// A chain verifies when its root is anywhere in the configured set, in
 /// any order, even beside another pinned root with the same subject name.
 /// OpenSSL's issuer lookup takes the first store certificate whose name

@@ -530,3 +530,30 @@ impl Drop for DigestBio<'_> {
         unsafe { ffi::BIO_free_all(self.chain) };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::DigestBio;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+
+    /// MD4 is a digest OpenSSL 4.0 still resolves by NID
+    /// (`EVP_get_digestbynid`, which `signer_md` calls) but implements only
+    /// in the legacy provider, which this crate never loads. `BIO_set_md`
+    /// then fails, and `DigestBio::over` must refuse rather than hand on a
+    /// BIO that passes the content through undigested. OpenSSL's content
+    /// check would fail on such a BIO too, so a verdict cannot pin this;
+    /// only the BIO can.
+    #[test]
+    fn a_digest_openssl_cannot_initialise_makes_no_digest_bio() {
+        crate::init();
+        let md4 = MessageDigest::from_nid(Nid::MD4);
+        assert!(md4.is_some(), "OpenSSL no longer resolves MD4 by NID");
+        if let Some(md4) = md4 {
+            assert!(DigestBio::over(b"content", md4.as_ptr()).is_none());
+        }
+        // The control: a digest the default provider implements.
+        assert!(DigestBio::over(b"content", MessageDigest::sha256().as_ptr()).is_some());
+        crate::drain_errors();
+    }
+}
