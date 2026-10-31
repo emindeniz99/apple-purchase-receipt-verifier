@@ -364,7 +364,10 @@ class WorstCaseKnownCatalogTest {
 
     /** An SPKI for an RSA key nobody holds: any modulus, any exponent. */
     private static SubjectPublicKeyInfo rawRsaKey(int bits, BigInteger exponent) throws IOException {
-        BigInteger modulus = new BigInteger(bits, RANDOM).setBit(bits - 1).setBit(0);
+        return rawRsaKey(new BigInteger(bits, RANDOM).setBit(bits - 1).setBit(0), exponent);
+    }
+
+    private static SubjectPublicKeyInfo rawRsaKey(BigInteger modulus, BigInteger exponent) throws IOException {
         return new SubjectPublicKeyInfo(
                 new AlgorithmIdentifier(PKCSObjectIdentifiers.rsaEncryption, DERNull.INSTANCE),
                 new RSAPublicKey(modulus, exponent));
@@ -372,38 +375,62 @@ class WorstCaseKnownCatalogTest {
 
     @Test
     void exponentOneCraftedChainCannotForgeAnything() throws Exception {
-        // The strongest forge-without-a-key attack: a CA certificate genuinely
-        // signed by the pinned intermediate but carrying an e = 1 key, a
-        // marker leaf under it, and a receipt, every signature a crafted
-        // block. If any layer refuses, the forgery dies there; if none does,
-        // the receipt would verify with no private key at all.
-        X509CertificateHolder e1Ca = craftedSubjectCert(
-                new X500Name("CN=Exponent One CA"),
-                rawRsaKey(2048, BigInteger.ONE),
-                INTER_NAME,
-                interKey,
-                true,
-                WWDR_OID);
-        X509v3CertificateBuilder leafBuilder = new X509v3CertificateBuilder(
-                new X500Name("CN=Exponent One CA"),
-                serial(),
-                new Date(),
-                yearOut(),
-                new X500Name("CN=Exponent One Signer"),
-                rawRsaKey(2048, BigInteger.ONE));
-        leafBuilder.addExtension(
-                new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE);
-        X509CertificateHolder e1Leaf = forgedCert(leafBuilder);
-        byte[] receipt = sign(
-                payload(), true, new CraftingSigner(), e1Leaf, Arrays.asList(e1Leaf, e1Ca, interHolder, rootHolder));
-        refused(
-                "exponent-1 crafted chain",
-                b64(receipt),
-                Reason.MALFORMED,
-                Reason.INVALID_CERTIFICATE,
-                Reason.UNTRUSTED_CHAIN,
-                Reason.INVALID_SIGNATURE,
-                Reason.INVALID_CERTIFICATE_PURPOSE);
+        // The strongest forge-without-a-key attack: under an e = 1 key any
+        // crafted PKCS#1 block is a valid signature, so an attacker holding
+        // no private key crafts every signature on the path: an e = 1 CA
+        // under the pinned intermediate, a marker leaf under that CA, and
+        // the receipt. The intermediate's real key refuses it: the CA's
+        // crafted signature does not verify under that key. A CA the
+        // intermediate really signed is trusted whatever its exponent, in
+        // Java and in the core alike (DECISIONS.md R20); issuing one takes the
+        // intermediate's private key, which can issue any certificate.
+        //
+        // The verdict must not rest on BouncyCastle refusing a modulus with
+        // a small prime factor, which a random odd number has on most draws
+        // but not all. So the attack runs once per modulus: two with no
+        // small factor (a product of two primes) and two with one.
+        List<BigInteger> moduli = Arrays.asList(
+                BigInteger.probablePrime(1024, RANDOM).multiply(BigInteger.probablePrime(1024, RANDOM)),
+                BigInteger.probablePrime(1024, RANDOM).multiply(BigInteger.probablePrime(1024, RANDOM)),
+                BigInteger.valueOf(3)
+                        .multiply(new BigInteger(2046, RANDOM).setBit(2045).setBit(0)),
+                BigInteger.valueOf(5)
+                        .multiply(new BigInteger(2045, RANDOM).setBit(2044).setBit(0)));
+        for (BigInteger modulus : moduli) {
+            SubjectPublicKeyInfo e1Key = rawRsaKey(modulus, BigInteger.ONE);
+            X509v3CertificateBuilder caBuilder = new X509v3CertificateBuilder(
+                    INTER_NAME, serial(), new Date(), yearOut(), new X500Name("CN=Exponent One CA"), e1Key);
+            caBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+            caBuilder.addExtension(new ASN1ObjectIdentifier(WWDR_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE);
+            X509CertificateHolder e1Ca = forgedCert(caBuilder);
+            X509v3CertificateBuilder leafBuilder = new X509v3CertificateBuilder(
+                    new X500Name("CN=Exponent One CA"),
+                    serial(),
+                    new Date(),
+                    yearOut(),
+                    new X500Name("CN=Exponent One Signer"),
+                    e1Key);
+            leafBuilder.addExtension(
+                    new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE);
+            X509CertificateHolder e1Leaf = forgedCert(leafBuilder);
+            byte[] receipt = sign(
+                    payload(),
+                    true,
+                    new CraftingSigner(),
+                    e1Leaf,
+                    Arrays.asList(e1Leaf, e1Ca, interHolder, rootHolder));
+            refused(
+                    "exponent-1 crafted chain, "
+                            + (modulus.gcd(BigInteger.valueOf(15)).equals(BigInteger.ONE)
+                                    ? "no small factor"
+                                    : "small factor"),
+                    b64(receipt),
+                    Reason.MALFORMED,
+                    Reason.INVALID_CERTIFICATE,
+                    Reason.UNTRUSTED_CHAIN,
+                    Reason.INVALID_SIGNATURE,
+                    Reason.INVALID_CERTIFICATE_PURPOSE);
+        }
     }
 
     @Test
