@@ -1175,16 +1175,22 @@ compiled tests sit in. So an IDE run with `fixtures/` at your project root,
 or beside your project directory, needs no runner setting. Maven always
 passes the property (the pom defaults it to `fixtures/` beside the project
 directory), so under Maven any other layout needs `-Daprv.fixtures.dir=...`.
-The subset they
+A vendored copy that keeps the data inside its own module can put
+`fixtures/` and `certs/` under `src/test/resources/`: the build copies them
+beside the compiled tests, where the lookup finds them, and its own build
+then passes no property. The subset they
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
 fixtures directory. If either directory is missing, the tests that read it
 fail with one message that names the path expected and points here; they do
 not skip. Two tests read the build itself, relative to the working
-directory. `TrustStoreIsolationTest` scans whichever of `src/main/java`
-and `src/shared/java` exists, so step 1's merged root passes when it is
-`src/main/java`, and fails only when neither is there.
+directory. `TrustStoreIsolationTest` scans the library's package
+directory, the test's own package, under whichever of `src/main/java` and
+`src/shared/java` exists. So step 1's merged root passes when it is
+`src/main/java`, a relocated copy scans its own package and not the rest
+of the host's sources, and the test fails only when neither root holds
+the package.
 `BouncyCastleFloorTest` has one method that reads `./pom.xml` for
 `<bouncycastle.version>X.Y[.Z]</bouncycastle.version>` and compares it with
 the bcprov loaded; it is the one test to adapt to your own build. Declare
