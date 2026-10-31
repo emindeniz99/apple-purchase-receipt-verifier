@@ -1154,11 +1154,17 @@ the `parse(...)` call, and add the fingerprint Apple lists on its PKI page
 (check it with `sha256sum` on the DER file) to `AppleRootCertsTest`, which
 pins the set against both.
 
-**The tests need the shared fixtures.** They read `../fixtures`
-relative to the test JVM's working directory (Maven: the project basedir),
-which is `fixtures/` beside your project directory, or the directory
+**The tests need the shared fixtures.** They read the directory
 `-Daprv.fixtures.dir=...` names. Maven forwards that property to the tests;
-Gradle needs `test { systemProperty 'aprv.fixtures.dir', '...' }`. The subset they
+Gradle needs `test { systemProperty 'aprv.fixtures.dir', '...' }`. With the
+property unset, as under an IDE's own JUnit runner, they read `../fixtures`
+relative to the test JVM's working directory if it holds `cases.json`, else
+the nearest `fixtures/` holding `cases.json` at or above the directory the
+compiled tests sit in. So an IDE run with `fixtures/` at your project root,
+or beside your project directory, needs no runner setting. Maven always
+passes the property (the pom defaults it to `fixtures/` beside the project
+directory), so under Maven any other layout needs `-Daprv.fixtures.dir=...`.
+The subset they
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
