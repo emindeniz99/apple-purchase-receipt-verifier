@@ -484,11 +484,11 @@ fn hostile_certificate_labels_are_refused_before_any_work() {
 /// certificate converter crashes on the parameters) and the core passes
 /// it over and verifies (measured 2026-10-31).
 ///
-/// STOPPED, the junk half: that difference is not recorded in
-/// DECISIONS.md R20. It runs the safe way round (the core accepts a
-/// genuinely signed receipt that Java refuses for an unsigned bag entry,
-/// and accepts nothing unsigned), but the rule says it must be recorded,
-/// so the half only prints its verdict until the owner decides.
+/// DECISIONS.md R20 records that difference ("A bag certificate with an
+/// untagged RSASSA-PSS label"). It runs the safe way round: the core
+/// accepts a genuinely signed receipt that Java refuses for an unsigned
+/// bag entry, and accepts nothing unsigned. The junk half prints its
+/// verdict and pins neither answer.
 #[test]
 fn nonstandard_pss_parameter_forms_are_refused_cleanly_at_the_bag_decode() {
     let m = material();
