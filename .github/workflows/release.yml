@@ -226,7 +226,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -324,7 +324,7 @@ jobs:
         env:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
         run: cp "$BUNDLE" "$RUNNER_TEMP/aprv/aprv-wasm.provenance.sigstore.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv/
@@ -362,7 +362,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
@@ -440,7 +440,7 @@ jobs:
           BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
           TARGET: ${{ matrix.target }}
         run: cp "$BUNDLE" "$RUNNER_TEMP/server/aprv-$TARGET.provenance.sigstore.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-${{ matrix.target }}
           path: ${{ runner.temp }}/server/
@@ -464,11 +464,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: aprv-*
           path: ${{ runner.temp }}/in
@@ -544,7 +544,7 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/in/aprv-server-aarch64-pc-windows-msvc/aprv-aarch64-pc-windows-msvc.exe
           sbom-path: ${{ runner.temp }}/sbom/aprv-aarch64-pc-windows-msvc.exe.cdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-sboms
           path: ${{ runner.temp }}/sbom/
@@ -569,7 +569,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: aprv-*
           path: ${{ runner.temp }}/in
@@ -593,7 +593,7 @@ jobs:
           for s in rust/bindings/wire/schema/*.schema.json; do cp "$s" "$a/"; done
           (cd "$a" && sha256sum -- * > SHA256SUMS)
           cat "$a/SHA256SUMS"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run }}
         with:
           name: dry-run-release-assets
@@ -648,11 +648,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: aprv-server-*-linux-musl
           path: ${{ runner.temp }}/in
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-sboms
           path: ${{ runner.temp }}/sbom
@@ -717,7 +717,7 @@ jobs:
           echo "amd64=$(awk '$1 == "amd64" { print $2 }' "$RUNNER_TEMP/platforms.txt")" >> "$GITHUB_OUTPUT"
           echo "arm64=$(awk '$1 == "arm64" { print $2 }' "$RUNNER_TEMP/platforms.txt")" >> "$GITHUB_OUTPUT"
           echo "pushed $image:$version at $digest"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run }}
         with:
           name: dry-run-image
@@ -805,7 +805,7 @@ jobs:
       # The one aprv.wasm build-wasm made and attested, checked by hash; the
       # package build reads it from APRV_WASM / APRV_COMPONENT and never
       # compiles the module itself (.github/CI-NOTES.md).
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
@@ -858,7 +858,7 @@ jobs:
           python3 tools/build_dist.py --out dist
           python3 tools/build_dist.py --check dist
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-pypi
@@ -886,7 +886,7 @@ jobs:
       # The one aprv.wasm build-wasm made and attested, checked by hash; the
       # package build reads it from APRV_WASM / APRV_COMPONENT and never
       # compiles the module itself (.github/CI-NOTES.md).
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
@@ -901,7 +901,7 @@ jobs:
           { echo "APRV_WASM=$RUNNER_TEMP/aprv/aprv.wasm"; echo "APRV_COMPONENT=$RUNNER_TEMP/aprv/aprv.component.wasm"; } >> "$GITHUB_ENV"
 
       # npm's OIDC trusted publishing needs npm >= 11.5; Node 24 ships it.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -941,7 +941,7 @@ jobs:
             npm publish
           fi
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run }}
         with:
           name: dry-run-npm
@@ -1088,12 +1088,12 @@ jobs:
             mvn -B -P central deploy
           fi
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.gate-wasm.outputs.publish == 'true'
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.gate-wasm.outputs.publish == 'true'
         with:
           pattern: aprv-server-*-linux-musl
@@ -1162,7 +1162,7 @@ jobs:
 
       # The jars Central would have received (the -wasm ones only when its
       # gate let them build), unsigned: skipPublishing writes no bundle.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && (steps.gate.outputs.publish == 'true' || steps.gate-wasm.outputs.publish == 'true') }}
         with:
           name: dry-run-maven
@@ -1195,7 +1195,7 @@ jobs:
       # The one aprv.wasm build-wasm made and attested, checked by hash; the
       # package build reads it from APRV_WASM / APRV_COMPONENT and never
       # compiles the module itself (.github/CI-NOTES.md).
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
@@ -1234,7 +1234,7 @@ jobs:
               exit 1 ;;
           esac
 
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.4"
           bundler-cache: false
@@ -1335,7 +1335,7 @@ jobs:
             abort("refusing to publish: gem is missing #{missing.join(", ")}") unless missing.empty?
             puts "gem carries #{files.size} files, entry points and module included"'
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-rubygems
@@ -1466,7 +1466,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           DRY_RUN: ${{ inputs.dry_run }}
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-crates
@@ -1493,7 +1493,7 @@ jobs:
       # The one aprv.wasm build-wasm made and attested, checked by hash; the
       # package build reads it from APRV_WASM / APRV_COMPONENT and never
       # compiles the module itself (.github/CI-NOTES.md).
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
@@ -1575,7 +1575,7 @@ jobs:
               || { echo "::error::the package is missing $entry"; exit 1; }
           done
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
         with:
           name: dry-run-nuget
@@ -1691,7 +1691,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: aprv-server-*
           path: ${{ runner.temp }}/in
