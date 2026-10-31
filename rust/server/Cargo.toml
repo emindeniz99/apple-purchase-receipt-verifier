@@ -54,7 +54,7 @@ base64 = { version = "0.23", default-features = false, features = ["std"] }
 pem = { version = "4", default-features = false, features = ["std"] }
 serde_json = "1"
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "sync", "macros", "time"] }
 # Reads a request body frame by frame, to cap it (src/http.rs, read_capped).
 http-body-util = "0.1"
 # The command line (src/main.rs). No `color` (anstream and terminal

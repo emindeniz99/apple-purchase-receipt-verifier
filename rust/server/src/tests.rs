@@ -55,6 +55,8 @@ fn app(verifier: Arc<Verifier>, token: Option<&str>) -> axum::Router {
     http::router(Arc::new(App {
         verifier,
         permits: Arc::new(tokio::sync::Semaphore::new(2)),
+        uploads: Arc::new(tokio::sync::Semaphore::new(8)),
+        body_timeout: http::BODY_TIMEOUT,
         token: token.map(|t| t.as_bytes().to_vec()),
         info,
     }))
@@ -817,6 +819,91 @@ async fn a_hostile_component_ends_in_500s_and_the_server_survives_pool() {
     hostile_round(&r).await;
 }
 
+#[test]
+fn a_token_file_that_holds_no_token_stops_the_server() {
+    let dir = std::env::temp_dir().join(format!("aprv-token-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = |name: &str, bytes: &[u8]| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p.to_str().unwrap().to_owned()
+    };
+    for (name, bytes) in [("empty", &b""[..]), ("blank", b" \n\t\r\n")] {
+        let p = file(name, bytes);
+        let e = crate::token_from_file(&p).expect_err(name);
+        assert!(e.contains("holds no token"), "{name}: {e}");
+    }
+    let missing = dir.join("missing");
+    assert!(crate::token_from_file(missing.to_str().unwrap()).is_err());
+    let p = file("token", b"  s3cret\n");
+    assert_eq!(crate::token_from_file(&p).unwrap(), b"s3cret");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Over a real connection: a body that stalls partway holds its upload
+/// permit only until the body deadline, then gets 408 and a closed
+/// connection, and the permit comes back. With one upload permit, the
+/// stalled body is also what every other request waits behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_body_gets_408_and_gives_its_upload_back() {
+    use std::io::{BufReader, Read, Write};
+    let uploads = Arc::new(tokio::sync::Semaphore::new(1));
+    let router = http::router(Arc::new(App {
+        verifier: hostile(true, 300),
+        permits: Arc::new(tokio::sync::Semaphore::new(1)),
+        uploads: uploads.clone(),
+        body_timeout: std::time::Duration::from_millis(500),
+        token: None,
+        info: serde_json::json!({}),
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let start = std::time::Instant::now();
+    let mut s = std::net::TcpStream::connect(addr).unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    s.write_all(b"POST /v1/receipt/verify HTTP/1.1\r\nHost: aprv\r\nContent-Length: 10\r\n\r\nx")
+        .unwrap();
+    let t = std::time::Instant::now();
+    while uploads.available_permits() == 1 {
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(5),
+            "the body was never admitted"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    let (status, headers, body) = tokio::task::spawn_blocking(move || {
+        let mut rd = BufReader::new(s);
+        let answer = read_response(&mut rd);
+        let mut rest = Vec::new();
+        assert_eq!(
+            rd.read_to_end(&mut rest).unwrap(),
+            0,
+            "the server closed the connection"
+        );
+        answer
+    })
+    .await
+    .unwrap();
+    assert!(
+        start.elapsed() >= std::time::Duration::from_millis(450),
+        "answered before the deadline"
+    );
+    assert!(status.starts_with("HTTP/1.1 408"), "{status}");
+    assert!(
+        headers.contains(&("connection".into(), "close".into())),
+        "{headers:?}"
+    );
+    let p = problem("application/problem+json", &body);
+    assert_eq!(p["code"], "REQUEST_TIMEOUT", "{p}");
+    assert_eq!(
+        uploads.available_permits(),
+        1,
+        "the upload permit came back"
+    );
+}
+
 #[tokio::test]
 async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
     // A client that disconnects drops the handler's future, but the guest
@@ -829,6 +916,8 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
     let router = http::router(Arc::new(App {
         verifier: hostile(true, 2_000),
         permits: permits.clone(),
+        uploads: Arc::new(tokio::sync::Semaphore::new(8)),
+        body_timeout: http::BODY_TIMEOUT,
         token: None,
         info: serde_json::json!({}),
     }));
