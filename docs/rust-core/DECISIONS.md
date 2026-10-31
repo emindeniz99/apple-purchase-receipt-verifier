@@ -1208,6 +1208,19 @@ cRLDistributionPoints, 2026-10-06).
   all three sites, so it adds no divergence and turns the 33-deep
   `oneOf` cases into single answers. Revisit when a BouncyCastle release
   moves its 64-level bound or a host measures this cost as an incident.
+- **Neither implementation refuses an RSA public exponent of 1** (owner,
+  2026-10-31). Under e = 1 any crafted PKCS#1 block is a valid
+  signature, so a CA certificate on such a key would let its holder
+  sign anything with no private key. Only a CA the pinned intermediate
+  really signed gets that far, and issuing one takes the intermediate's
+  private key, which can issue any certificate anyway. So Java and the
+  core both accept that chain and agree. The worst-case test that
+  claimed otherwise passed only when BouncyCastle refused its random
+  modulus for a small prime factor, which is most draws but not all.
+  It now crafts the CA's signature too: the attack with no key at all,
+  refused under every modulus it tries. Refusing exponents below 3 would
+  be a behavior change in both implementations with a shared case; Apple
+  issues 65537.
 
 ---
 
