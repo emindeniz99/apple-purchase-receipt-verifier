@@ -54,7 +54,7 @@ fn app(verifier: Arc<Verifier>, token: Option<&str>) -> axum::Router {
     });
     http::router(Arc::new(App {
         verifier,
-        permits: tokio::sync::Semaphore::new(2),
+        permits: Arc::new(tokio::sync::Semaphore::new(2)),
         token: token.map(|t| t.as_bytes().to_vec()),
         info,
     }))
@@ -815,6 +815,42 @@ async fn a_hostile_component_ends_in_500s_and_the_server_survives_pool() {
     let r = app(hostile(true, 300), None);
     hostile_round(&r).await;
     hostile_round(&r).await;
+}
+
+#[tokio::test]
+async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
+    // A client that disconnects drops the handler's future, but the guest
+    // call it started runs on. That call must hold its worker until it
+    // ends; otherwise "send, then close" requests run past --workers and
+    // the pool grows an instance for each.
+    let permits = Arc::new(tokio::sync::Semaphore::new(1));
+    let router = http::router(Arc::new(App {
+        verifier: hostile(true, 300),
+        permits: permits.clone(),
+        token: None,
+        info: serde_json::json!({}),
+    }));
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/receipt/verify")
+        .body(Body::from("x"))
+        .unwrap();
+    let dropped =
+        tokio::time::timeout(std::time::Duration::from_millis(100), router.oneshot(req)).await;
+    assert!(dropped.is_err(), "the looping call answered within 100 ms");
+    assert_eq!(
+        permits.available_permits(),
+        0,
+        "the worker was freed while its guest call still ran"
+    );
+    let t = std::time::Instant::now();
+    while permits.available_permits() == 0 {
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(10),
+            "the worker never came back"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }
 
 #[test]

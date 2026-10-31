@@ -48,7 +48,10 @@ pub const ROUTES: &[(&str, &str)] = &[
 
 pub struct App {
     pub verifier: Arc<Verifier>,
-    pub permits: tokio::sync::Semaphore,
+    /// One permit per worker. A call holds its permit until the guest call
+    /// ends, not until the request's future does: a client that disconnects
+    /// drops the future while `spawn_blocking` keeps running.
+    pub permits: Arc<tokio::sync::Semaphore>,
     pub token: Option<Vec<u8>>,
     pub info: Value,
 }
@@ -262,7 +265,7 @@ async fn run(
         Ok(b) => b,
         Err(p) => return *p,
     };
-    let Ok(permit) = app.permits.acquire().await else {
+    let Ok(permit) = app.permits.clone().acquire_owned().await else {
         return problem(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL_ERROR",
@@ -272,8 +275,11 @@ async fn run(
     };
     let a = app.clone();
     let input = body.bytes;
-    let res = tokio::task::spawn_blocking(move || a.verifier.invoke(op, &input)).await;
-    drop(permit);
+    let res = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        a.verifier.invoke(op, &input)
+    })
+    .await;
     let internal = |d: &str| {
         problem(
             StatusCode::INTERNAL_SERVER_ERROR,

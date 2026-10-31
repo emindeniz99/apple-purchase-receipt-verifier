@@ -464,7 +464,7 @@ fn serve(o: ServeArgs) -> i32 {
     let lifecycle = verifier.lifecycle_name();
     let app = Arc::new(http::App {
         verifier: Arc::new(verifier),
-        permits: tokio::sync::Semaphore::new(workers),
+        permits: Arc::new(tokio::sync::Semaphore::new(workers)),
         token,
         info,
     });
