@@ -196,7 +196,7 @@ jobs:
           tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
           echo "wasm-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
           echo "component-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-wasm-release-branch
           path: |
@@ -261,7 +261,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           COMPONENT_SHA256: ${{ needs.release-branch-wasm.outputs.component-sha256 }}
         run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$TARGET" "$RUNNER_TEMP/server"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-release-branch-${{ matrix.target }}
           path: ${{ runner.temp }}/server/aprv-${{ matrix.target }}
@@ -329,7 +329,7 @@ jobs:
             echo "state=fresh" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.build.outputs.state != 'fresh'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: corpus-release-branch
           path: ${{ runner.temp }}/corpus/
