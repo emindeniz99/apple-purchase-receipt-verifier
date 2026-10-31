@@ -4,7 +4,7 @@ For the integrator: lane D owns `.github/`, so nothing here is applied yet.
 Every job keeps its current name. Job names below are the ones in
 `.github/workflows/ci.yml` today.
 
-The gem now has one runtime dependency, `wasmtime` (>= 48.0.1). Every job
+The gem now has one runtime dependency, `wasmtime` (>= 50.0.0). Every job
 that loads the library needs it, so none of them can run without installing
 the bundle any more. `ruby/Gemfile.lock`, `gemfiles/tools.gemfile.lock` and
 `gemfiles/fuzz.gemfile.lock` are committed with `wasmtime` in them, prebuilt

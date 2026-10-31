@@ -30,4 +30,4 @@ aprv-wire = { path = "../wire", default-features = false }
 # The generator macro and cabi_realloc only: no async support, no bitflags,
 # no std-only helpers. Pinned exactly: the generated glue is part of the
 # module, and tools/wasm-toolchain.sh pins the CLI of the same version.
-wit-bindgen = { version = "=0.62.0", default-features = false, features = ["macros", "realloc"] }
+wit-bindgen = { version = "=0.63.0", default-features = false, features = ["macros", "realloc"] }

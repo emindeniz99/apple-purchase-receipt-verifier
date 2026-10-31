@@ -62,5 +62,5 @@ Gem::Specification.new do |spec|
   # install without a Rust toolchain. 48.0.1 is the release the module was
   # measured on; it has `Extern#to_func(gvl: false)`, which lets threads
   # verify in parallel.
-  spec.add_dependency "wasmtime", ">= 48.0.1"
+  spec.add_dependency "wasmtime", ">= 50.0.0"
 end
