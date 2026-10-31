@@ -823,9 +823,11 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
     // call it started runs on. That call must hold its worker until it
     // ends; otherwise "send, then close" requests run past --workers and
     // the pool grows an instance for each.
+    // A 2 s guest limit leaves a slow runner far more than the 100 ms the
+    // test needs before its first check.
     let permits = Arc::new(tokio::sync::Semaphore::new(1));
     let router = http::router(Arc::new(App {
-        verifier: hostile(true, 300),
+        verifier: hostile(true, 2_000),
         permits: permits.clone(),
         token: None,
         info: serde_json::json!({}),
@@ -835,6 +837,7 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
         .uri("/v1/receipt/verify")
         .body(Body::from("x"))
         .unwrap();
+    let start = std::time::Instant::now();
     let dropped =
         tokio::time::timeout(std::time::Duration::from_millis(100), router.oneshot(req)).await;
     assert!(dropped.is_err(), "the looping call answered within 100 ms");
@@ -851,6 +854,10 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+    assert!(
+        start.elapsed() >= std::time::Duration::from_millis(1_500),
+        "the worker came back before the guest call's 2 s limit"
+    );
 }
 
 #[test]
