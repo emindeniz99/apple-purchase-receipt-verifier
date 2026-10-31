@@ -37,6 +37,7 @@ const ECDSA_WITH_SHA224: &str = "1.2.840.10045.4.3.1";
 const RSASSA_PSS: &str = "1.2.840.113549.1.1.10";
 const MGF1: &str = "1.2.840.113549.1.1.8";
 const MD5: &str = "1.2.840.113549.2.5";
+const MD4: &str = "1.2.840.113549.2.4";
 /// `id-ecPublicKey` as a `signatureAlgorithm`: names no hash, so the
 /// `SignerInfo`'s digest is the one checked.
 const ID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
@@ -148,6 +149,43 @@ fn the_control_an_ec_signer_under_the_pinned_root_verifies() {
     assert_eq!(payload.bundle_id.as_deref(), Some("com.example.app"));
 }
 
+/// RFC 5280 section 4.2: no extension twice. A signer carrying Apple's
+/// receipt marker twice, issued by the pinned chain and signing genuinely,
+/// is a certificate a strict reader does not decode. Nothing but
+/// `Certificate::is_readable`'s duplicate check refuses it: OpenSSL reads
+/// the marker's first copy, and no decoder reads the marker at all.
+#[test]
+fn a_signer_carrying_its_marker_twice_is_an_invalid_certificate() {
+    use common::mint::{assemble, spki};
+    let mut pki = pki();
+    let marker = der_seq(&[der_oid(RECEIPT_SIGNER_MARKER), der(0x04, &[0x05, 0x00])]);
+    let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
+    // `common::mint::tbs` for the signer, with the marker written twice.
+    let tbs = der_seq(&[
+        der(0xA0, &der_int(2)),
+        der_int(3),
+        algorithm.clone(),
+        name("Test WWDR"),
+        der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
+        name("Test Signer"),
+        spki(&pki.signer_key),
+        der(0xA3, &der_seq(&[marker.clone(), marker])),
+    ]);
+    let signature = key(2).sign_der(&tbs);
+    pki.certificates[0] = assemble(tbs, algorithm, &signature);
+    let der = receipt(
+        &pki,
+        SHA256,
+        ECDSA_WITH_SHA256,
+        &pki.signer_key.sign_der(&content()),
+    );
+    let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        "INVALID_CERTIFICATE: receipt signer certificate does not decode"
+    );
+}
+
 #[test]
 fn a_digest_apple_does_not_use_today_verifies_when_the_signature_holds() {
     let pki = pki();
@@ -218,6 +256,25 @@ fn a_digest_openssl_does_not_implement_is_an_invalid_signature() {
     let der = receipt(&pki, NO_SUCH_DIGEST, ID_EC_PUBLIC_KEY, &signature);
     let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
     assert_eq!(failure.reason(), Reason::InvalidSignature, "{failure}");
+}
+
+#[test]
+fn a_digest_openssl_names_but_cannot_initialise_is_an_invalid_signature() {
+    // MD4: OpenSSL 4.0 still resolves its OID to a method, but only the
+    // legacy provider implements it, and the adapter loads none, so the
+    // digest cannot be initialised. The signer fails closed, as a
+    // signature. The adapter's own unit test
+    // (`cms::tests::a_digest_openssl_cannot_initialise_makes_no_digest_bio`)
+    // pins where: OpenSSL would refuse the content check later too, so the
+    // verdict alone cannot tell.
+    let pki = pki();
+    let signature = pki.signer_key.sign_der(&content());
+    let der = receipt(&pki, MD4, ID_EC_PUBLIC_KEY, &signature);
+    let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        "INVALID_SIGNATURE: CMS signature check failed"
+    );
 }
 
 #[test]
@@ -327,6 +384,35 @@ fn a_content_type_attribute_with_two_values_is_an_invalid_signature() {
 fn a_message_digest_attribute_with_two_values_is_an_invalid_signature() {
     let pki = pki();
     assert_invalid_signature(&pki, &[content_type(&[ID_DATA]), message_digest(2)]);
+}
+
+/// The core's own rule (section 11.1): the `contentType` value must be an
+/// OBJECT IDENTIFIER naming the eContentType. OpenSSL counts the values but
+/// never reads their type, so the core checks the type before it reads the
+/// value as an `ASN1_OBJECT`. A NULL value holds a null pointer there, and
+/// a BOOLEAN an integer, so without that check the comparison would
+/// dereference one (the test binary dies); an INTEGER holds an
+/// `ASN1_STRING`, read as an object of another layout. Each set is signed
+/// genuinely, so the refusal is the type check's and not the signature's.
+#[test]
+fn a_content_type_attribute_whose_value_is_not_an_oid_is_an_invalid_signature() {
+    let pki = pki();
+    for value in [
+        der(0x05, &[]),
+        der(0x01, &[0xFF]),
+        der_int(1),
+        der(0x04, &der_oid(ID_DATA)),
+    ] {
+        let der = receipt_with_signed_attrs(
+            &pki,
+            &[attribute(CONTENT_TYPE, &[value]), message_digest(1)],
+        );
+        let failure = common::verify_der(&pki.verifier, &der).unwrap_err();
+        assert_eq!(
+            failure.to_string(),
+            "INVALID_SIGNATURE: contentType attribute differs from the eContentType"
+        );
+    }
 }
 
 /// An empty signedAttrs (`A0 00`), genuinely signed. OpenSSL's attribute
