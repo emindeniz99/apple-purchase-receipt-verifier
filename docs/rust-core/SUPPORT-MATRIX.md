@@ -15,14 +15,14 @@ Owner, 2026-09-28 (DECISIONS.md R30).
 |---|---|---|---|
 | Java, main artifact | Java 8 | Java 8 | unchanged |
 | Java, `-wasm` artifact | Java 8; the Endive engine needs Java 11 | new | Endive requires Java 11 ([Endive §2][endive]); on Java 8 the default engine is `aprv-server` |
-| Python | 3.10 | 3.10 | unchanged; wasmtime-py 49.0.0 declares `>=3.9` ([Python wasmtime][pywt]) |
+| Python | 3.10 | 3.10 | unchanged; wasmtime-py 50.0.1 declares `>=3.9` ([Python wasmtime][pywt]) |
 | Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit declares `swift-tools-version:6.3` and `.macOS(.v15), .iOS(.v18)` ([Swift WasmKit][swift]); the package needs WasmKit 0.4.1, which fixes a use-after-free under software bounds checking that 0.4.0 has when a host function re-enters the guest (STATUS.md, lane Swift) |
 | Ruby | 3.3 | 3.3 | the `wasmtime` gem's prebuilt native gems need Ruby ≥ 3.3 (≥ 3.4 on Windows arm64) ([Ruby][ruby]) |
 | .NET | netstandard2.0, tested on net8 and later | netstandard2.0, net8.0 | the `Wasmtime` package reaches netstandard2.0; the spike ran .NET 8 and 10, and netstandard2.0 compiled but was not run on .NET Framework ([.NET][dotnet]) |
 | Node | 20 | 20 | unchanged |
 | Go | as today (1.22 in `go.mod`) | 1.22 | kept if the wazero release we need builds on it; wazero 1.12.0 fetched a Go 1.25 toolchain in the spikes ([rust-core spikes][spikes], Method), so Phase 4 checks and raises the floor only if it must |
 | PHP | 8.2 | 8.2 | unchanged |
-| Rust crate | the core's `rust-version` | 1.85.0 | the workspace's; `wasmtime` 49.0.1 in the server declares MSRV 1.96 ([aprv-server][server]), which binds only the server |
+| Rust crate | the core's `rust-version` | 1.85.0 | the workspace's; `wasmtime` 50.0.1 in the server declares MSRV 1.97 ([aprv-server][server]), which binds only the server |
 
 **Java 8 in CI.** Temurin's Java 8 builds end in late 2026 (0.7-api.md,
 "The other ports"). The `java-runtime-8` leg, which runs the server engine
