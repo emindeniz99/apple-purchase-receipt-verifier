@@ -224,6 +224,13 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 
 ## Next
 
+- **OpenSSL 4.1 (owner, 2026-10-31): held.** The core stays on 4.0.x, which
+  is supported to 2027-05-14, and takes its patches as they come; a security
+  fix skips the cooldown. Revisit around 2026-12-01 or at 4.1.1, whichever is
+  later, or at once if a security fix reaches 4.1 alone. Three things come
+  before the move: a shared case for the CMS digest-OID refusal, a trial wasm
+  build, and ARCHITECTURE.md's `random-get` line
+  (docs/evidence/2026-10-31-openssl-4.1-review.md).
 - **Endpoint result API, base64 fast path and input caps: done ✅**
   (2026-09-22, #114 to #133; the 0.6 endpoint result object this added is
   gone in 0.7, which returns the response JSON). Every port decodes canonical base64
