@@ -18,8 +18,11 @@ import java.security.CodeSource;
  * surefire's properties, the directory is {@code ../fixtures} relative to the
  * working directory if that holds {@code cases.json}, else the nearest
  * {@code fixtures/} holding {@code cases.json} in a directory at or above the
- * one this class was loaded from. A vendored copy with {@code fixtures/} at
- * its project root, or beside it, therefore needs no runner setting.</p>
+ * one this class was loaded from. So an IDE run of a vendored copy with
+ * {@code fixtures/} at its project root, or beside it, needs no runner
+ * setting. Maven always passes the property, so there a layout other than
+ * {@code fixtures/} beside the project directory needs
+ * {@code -Daprv.fixtures.dir=...}.</p>
  *
  * <p>A missing directory fails here, once and with the fix named, rather than
  * as a {@code NoSuchFileException} from each of the test classes that read it.
@@ -46,23 +49,31 @@ public final class TestFixtures {
             return root;
         }
         Path beside = Paths.get("..", "fixtures");
-        if (Files.isRegularFile(beside.resolve(CASES))) {
-            return beside;
-        }
         Path loadedFrom = classLocation();
-        Path found = loadedFrom == null ? null : findUpward(loadedFrom);
+        Path found = withoutProperty(beside, loadedFrom);
         if (found != null) {
             return found;
         }
-        throw new IllegalStateException(
-                "No shared fixtures directory was found: -D" + PROPERTY + " is not set, "
-                        + beside.toAbsolutePath().normalize() + " holds no " + CASES + ", and "
-                        + (loadedFrom == null
-                                ? "the runtime does not say where this class was loaded from"
-                                : "no directory at or above " + loadedFrom + " has a fixtures/" + CASES)
-                        + ". The tests read the repository's fixtures/ (and certs/, its sibling). Copy them beside"
-                        + " java/ or your project, or set the property; java/README.md, section \"Vendoring\", lists"
-                        + " the subdirectories the tests use.");
+        throw new IllegalStateException("No shared fixtures directory was found: -D" + PROPERTY + " is not set, "
+                + beside.toAbsolutePath().normalize() + " holds no " + CASES + ", and "
+                + (loadedFrom == null
+                        ? "the runtime does not say where this class was loaded from"
+                        : "no directory at or above " + loadedFrom + " has a fixtures/" + CASES)
+                + ". The tests read the repository's fixtures/ (and certs/, its sibling). Copy them beside"
+                + " java/ or your project, or set the property; java/README.md, section \"Vendoring\", lists"
+                + " the subdirectories the tests use.");
+    }
+
+    /**
+     * The lookup with the property unset: {@code beside} if it holds
+     * {@code cases.json}, else the nearest marked {@code fixtures/} at or
+     * above {@code loadedFrom} (which may be null); null if neither.
+     */
+    static Path withoutProperty(Path beside, Path loadedFrom) {
+        if (Files.isRegularFile(beside.resolve(CASES))) {
+            return beside;
+        }
+        return loadedFrom == null ? null : findUpward(loadedFrom);
     }
 
     /** The file that marks a fixtures directory. */
@@ -83,7 +94,9 @@ public final class TestFixtures {
     static Path classLocation() {
         try {
             CodeSource source = TestFixtures.class.getProtectionDomain().getCodeSource();
-            return source == null || source.getLocation() == null ? null : Paths.get(source.getLocation().toURI());
+            return source == null || source.getLocation() == null
+                    ? null
+                    : Paths.get(source.getLocation().toURI());
         } catch (URISyntaxException | RuntimeException e) {
             return null;
         }
