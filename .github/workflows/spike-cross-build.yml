@@ -176,7 +176,7 @@ jobs:
           {
             grep -o 'Finished `release` profile.*' "$RUNNER_TEMP/a-build.log" | sed -n '1s/^/stage1\t/p;2s/^/stage2\t/p'
             printf 'total\t%s s\n' "$total"
-            printf 'ccwasm-file\t%s\n' "$( (sha256sum "$RUNNER_TEMP/a/aprv.$TARGET.ccwasm" 2>/dev/null || shasum -a 256 "$RUNNER_TEMP/a/aprv.$TARGET.ccwasm") | cut -c1-64)"
+            printf 'ccwasm-file\t%s\n' "$( (sha256sum 2>/dev/null || shasum -a 256) < "$RUNNER_TEMP/a/aprv.$TARGET.ccwasm" | cut -c1-64)"
           } | sed "s/^/a\t$TARGET\t/" | tee "$RUNNER_TEMP/a/a-timings.tsv"
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -228,7 +228,9 @@ jobs:
           set -euo pipefail
           py=python3; command -v python3 >/dev/null 2>&1 || py=python
           want="$("$py" -c 'import json, os; print(json.loads(os.environ["SUMS"]).get("aprv." + os.environ["TARGET"] + ".ccwasm", ""))')"
-          got="$( (sha256sum "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" 2>/dev/null || shasum -a 256 "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm") | cut -c1-64)"
+          # Read from stdin: GNU sha256sum on Windows prefixes a backslash to the
+          # hash when the file name holds one, and $RUNNER_TEMP does there.
+          got="$( (sha256sum 2>/dev/null || shasum -a 256) < "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" | cut -c1-64)"
           echo "want $want, got $got"
           [ -n "$want" ] && [ "$want" = "$got" ]
       - name: the pinned Rust toolchain with the target
