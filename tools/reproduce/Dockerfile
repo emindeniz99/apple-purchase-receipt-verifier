@@ -16,9 +16,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git make perl xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
-# rustup 1.29.1; the hash is the one static.rust-lang.org publishes beside it.
-ARG RUSTUP_VERSION=1.29.1
-ARG RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+# rustup 1.29.2; the hash is the one static.rust-lang.org publishes beside it.
+ARG RUSTUP_VERSION=1.29.2
+ARG RUSTUP_SHA256=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
 RUN curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
  && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c - \
