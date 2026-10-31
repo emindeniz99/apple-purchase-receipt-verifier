@@ -1196,6 +1196,17 @@ cRLDistributionPoints, 2026-10-06).
   1,000), which the size caps make sufficient. The three inputs nested
   65 deep now read in both, so the group names only the member name and
   the integer.
+- **Java keeps no ASN.1 depth guard of its own** (owner, 2026-10-31). A
+  receipt at the 3 MiB cap filled with nested SETs costs Java about
+  480 ms warm at 59 levels against 33 ms for a genuine receipt at the cap
+  (java/README.md, "Resource bounds"). A guard at the core's 32 would
+  roughly halve that, but it needs one at each of the three parses Java
+  makes before trust (the envelope, the payload read for the creation
+  date, the JWS chain) and leaves the stack figures unchanged. If one is
+  ever added, it refuses past 32 levels, counted as the core counts, at
+  all three sites, so it adds no divergence and turns the 33-deep
+  `oneOf` cases into single answers. Revisit when a BouncyCastle release
+  moves its 64-level bound or a host measures this cost as an incident.
 
 ---
 
