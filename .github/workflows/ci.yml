@@ -626,10 +626,13 @@ jobs:
         # requires-python floor and stays tested while claimed.
         python: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
-        # macOS runners are the scarce ones. On a pull request macOS runs the
-        # floor and the newest line on Apple silicon only; a push to main,
-        # which every release is cut from, runs the whole grid.
-        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15-intel"},{"os":"macos-15","python":"3.12"},{"os":"macos-15","python":"3.13"}]' || '[]') }}
+        # macOS and Windows runners are the scarce ones. On a pull request
+        # this job runs Linux only: macos-wrappers runs 3.11 and 3.14 on
+        # Apple silicon and windows-wrappers runs them on windows-latest, in
+        # sequence on one runner each, and windows-11-arm and macos-15-intel
+        # sit out. A push to main, which every release is cut from, runs the
+        # whole grid here.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -642,25 +645,12 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
-      # python/uv.lock is committed and every leg installs from it, so no
-      # push resolves a version range. uv forks the resolution on the
-      # interpreter and records a version per marker, so one file covers 3.11
-      # through 3.14 without pinning the whole matrix to what the floor can
-      # take. `uv sync` installs the project editable, which keeps this a
-      # test of the SOURCE TREE rather than of a built wheel.
-      - run: uv sync --locked --extra dev
-        working-directory: python
-      # APRV_WASM_CACHE_DIR stays unset: test_cache.py sets it where it
-      # needs it, and the default cache directory under HOME is part of
-      # what it tests.
-      - run: uv run --locked --extra dev python -m unittest discover -s tests
-        working-directory: python
-      # Again with the compile cache warm: the second run is the one a
-      # deployment sees after its first start, and test_cache.py prints the
-      # cold and warm start times for the README's numbers.
-      - name: the suite again, with the compile cache warm
-        run: uv run --locked --extra dev python -m unittest discover -s tests
-        working-directory: python
+      # uv sync from the committed lock, the suite, and the suite again with
+      # the compile cache warm; the script says why each one is there.
+      - shell: bash
+        env:
+          PYTHON_LINE: ${{ matrix.python }}
+        run: .github/scripts/python-suite.sh "$PYTHON_LINE"
 
   # The musl legs: the uv image for each Python line, digest-pinned (the
   # comments name the tags), run with docker on the runner rather than as a
@@ -867,16 +857,17 @@ jobs:
   # earns its place because wazero compiles to a different ISA there. One Go
   # version each, not a cross product; CGO off, as a consumer's static
   # build has it.
+  # On a pull request the macOS leg runs in macos-wrappers and the Windows
+  # leg in windows-wrappers instead, so the job runs on a push only.
   go-platforms:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' && github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # On a pull request the macOS leg runs in macos-wrappers instead.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["windows-latest"]' || '["macos-latest","windows-latest"]') }}
+        os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1223,21 +1214,26 @@ jobs:
       - run: APRV_PACKAGING=1 bundle exec rake test TEST=test/packaging_test.rb
         working-directory: ruby
 
-  # The arm64-darwin platform gem of wasmtime, which the Linux legs never
-  # load. One current-Ruby leg is enough.
-  # On a pull request the macOS legs of the Go, Ruby and .NET ports share
-  # one macOS runner here instead of taking three: macOS runners are the
-  # scarce ones, and each leg runs for a minute or two. A push to main runs
-  # each leg in its own job (go-platforms, ruby-macos, dotnet), so every
-  # release is cut from a tree that passed them separately. The commands
-  # are those jobs' commands; change them together.
+  # On a pull request every macOS leg except Swift's runs here, in sequence
+  # on one macos-latest runner: go-platforms, ruby-macos, dotnet, python
+  # (3.11 and 3.14 on Apple silicon), rust-ffi and aprv-server. macOS
+  # runners are the scarce ones (five at a time on this plan), and each leg
+  # runs for one to six minutes. swift-macos and swift-ios stay separate:
+  # they need Xcode on macos-26. A push to main runs each leg in its own job,
+  # so every release is cut from a tree that passed them separately. Each
+  # port's steps after the first carry `!cancelled()`, so one port's failure
+  # does not hide the others. The commands are those jobs' commands: Go,
+  # Ruby and .NET inline (change them together), Python, rust-ffi and
+  # aprv-server through the scripts their own jobs call.
   macos-wrappers:
     needs: [changes, rust-wasm]
     if: >-
       github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true'
-      || needs.changes.outputs.ruby == 'true' || needs.changes.outputs.dotnet == 'true')
+      || needs.changes.outputs.ruby == 'true' || needs.changes.outputs.dotnet == 'true'
+      || needs.changes.outputs.python == 'true' || needs.changes.outputs.rust == 'true'
+      || needs.changes.outputs.server == 'true')
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1290,8 +1286,115 @@ jobs:
       - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
         run: dotnet test -c Release
         working-directory: dotnet
+      # python: the floor and the newest line, not the python job's
+      # macos-15 and macos-15-intel grid.
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: python
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: python 3.11
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        run: .github/scripts/python-suite.sh 3.11
+      - name: python 3.14
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        run: .github/scripts/python-suite.sh 3.14
+      # rust-ffi: needs no module, only Node for the vector manifest.
+      - if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: rust-ffi, the C ABI suite
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: .github/scripts/rust-ffi-suite.sh
+      # aprv-server: the component from this run's rust-wasm, and the same
+      # target cache key as aprv-server's macOS leg on main, so a pull
+      # request restores main's build. Like every actions/cache step it
+      # saves only when the whole job succeeds.
+      - if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/server/target
+          key: aprv-server-aarch64-apple-darwin-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
+      - name: aprv-server, lint and tests
+        if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        run: .github/scripts/aprv-server-suite.sh aarch64-apple-darwin "$RUNNER_TEMP/aprv/aprv.component.wasm"
 
-  # On a pull request this leg runs in macos-wrappers instead.
+  # On a pull request the Windows legs of go-platforms, dotnet and python
+  # share one windows-latest runner here, as macos-wrappers does for macOS:
+  # Go, .NET, then Python 3.11 and 3.14 (windows-11-arm sits out). Not
+  # folded: rust-ffi's Windows leg (about 10 minutes, the longest job of a
+  # full run) and aprv-server's (5 to 8 minutes with a cold target cache);
+  # either would make this the critical path. A push to main runs every
+  # leg in its own job. Go and .NET are those jobs' commands inline (change
+  # them together); Python is the script the python job calls.
+  windows-wrappers:
+    needs: [changes, rust-wasm]
+    if: >-
+      github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true'
+      || needs.changes.outputs.dotnet == 'true' || needs.changes.outputs.python == 'true')
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.changes.outputs.go == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: needs.changes.outputs.go == 'true'
+        run: go test ./...
+        working-directory: go
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+      # !cancelled(): a Go failure must not hide the .NET and Python results.
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        run: dotnet test -c Release
+        working-directory: dotnet
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: python
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: python 3.11
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        shell: bash
+        run: .github/scripts/python-suite.sh 3.11
+      - name: python 3.14
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        shell: bash
+        run: .github/scripts/python-suite.sh 3.14
+
+  # The arm64-darwin platform gem of wasmtime, which the Linux legs never
+  # load. One current-Ruby leg is enough. On a pull request this leg runs in
+  # macos-wrappers instead.
   ruby-macos:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true' && github.event_name != 'pull_request'
@@ -1478,7 +1581,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # On a pull request the macOS leg runs in macos-wrappers instead.
+        # The Windows leg stays here on every event: at about 10 minutes it
+        # is the longest job of a full run, and folding it into
+        # windows-wrappers would lengthen the critical path.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1487,13 +1594,13 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      # rust/ffi is a member of the rust/ workspace: rust/Cargo.lock is its
-      # lockfile and the library lands in rust/target/<profile>. --locked
-      # turns "cargo quietly rewrote the lockfile" into a failed job rather
-      # than an unnoticed bump.
-      - run: cargo build --locked
-        working-directory: rust/ffi
+      # Build, fmt, clippy, the Rust tests (layer 1), fixtures/cases.json
+      # through the ABI from C++17 (layer 2) and from Python's ctypes
+      # (layer 3), and both README examples. The script says what each
+      # layer proves; macos-wrappers runs the same script.
+      - name: the C ABI suite
+        shell: bash
+        run: .github/scripts/rust-ffi-suite.sh
       # The floor this crate's manifest claims, proven rather than asserted —
       # once, because a Rust version floor is not platform-specific. A `check`
       # rather than a `test`: the tests need no older toolchain to be honest,
@@ -1504,54 +1611,6 @@ jobs:
         run: |
           rustup toolchain install 1.85.0 --profile minimal
           cargo +1.85.0 check --locked --all-targets
-      - run: cargo fmt --check
-        working-directory: rust/ffi
-      - run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: rust/ffi
-      # Layer 1: null pointers, non-UTF-8 input, rejected configurations, and
-      # the panic guard every exported symbol runs its body inside.
-      - run: cargo test --locked
-        working-directory: rust/ffi
-
-      # Layer 2, the primary one: fixtures/cases.json driven through the
-      # ABI from C++17. A passing run is the evidence that the compiled-toolchain
-      # path works: header compiles as C++, symbols link, answers match the
-      # vectors every other port answers.
-      - name: flatten the shared vectors for a compiler
-        run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
-      - name: build the C++ consumers
-        shell: bash
-        run: |
-          cmake -S rust/ffi/examples/cpp -B rust/ffi/target/cppbuild
-          cmake --build rust/ffi/target/cppbuild --config Debug
-      - name: C++ conformance over the C ABI
-        shell: bash
-        run: rust/ffi/target/cppbuild/bin/aprv_conformance rust/ffi/target/manifest
-      - name: the README example
-        shell: bash
-        run: |
-          rust/ffi/target/cppbuild/bin/aprv_example \
-            fixtures/generated/jws-root.der \
-            fixtures/generated/transaction.jws \
-            fixtures/generated/receipt-b64/01-genuine.txt
-
-      # Layer 3: the same vectors again from a language with no compiler in
-      # the loop, checking the nested field paths the C++ harness cannot
-      # reach. This is what "any FFI-capable language" means, tested.
-      - name: ctypes conformance over the C ABI
-        shell: bash
-        working-directory: rust/ffi
-        run: |
-          interpreter=python3
-          command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" tests/conformance.py ../target/debug
-      - name: the README example, from Python
-        shell: bash
-        working-directory: rust/ffi
-        run: |
-          interpreter=python3
-          command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" examples/python/example.py ../target/debug
 
       # include/apple_purchase_receipt_verifier.h is generated from
       # src/lib.rs; a change that forgets to regenerate it ships a header
@@ -2458,11 +2517,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
-          - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+        # On a pull request the macOS leg runs in macos-wrappers instead, so
+        # its entry joins the list on a push only. A conditional `exclude`
+        # cannot drop it: GitHub applies `include` after `exclude`. The
+        # Windows leg stays here on every event: with a cold target cache it
+        # runs 5 to 8 minutes, enough to make windows-wrappers the longest
+        # job of a pull request.
+        include: >-
+          ${{ fromJSON(format('[{0}{1}]',
+          '{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},{"os":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-musl"},{"os":"windows-latest","target":"x86_64-pc-windows-msvc"}',
+          github.event_name != 'pull_request' && ',{"os":"macos-latest","target":"aarch64-apple-darwin"}' || '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2471,38 +2535,26 @@ jobs:
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
-      - name: install the pinned Rust toolchain and the target
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
-          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy --target "$TARGET"
-          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: rust/server/target
           key: aprv-server-${{ matrix.target }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
-      - run: cargo fmt --check
-        working-directory: rust/server
-      - run: cargo clippy --locked --all-targets --features compile -- -D warnings
-        working-directory: rust/server
-      # The runtime-only feature set, which is what ships.
-      - run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: rust/server
-      # --include-ignored: the WIT and wire-schema comparisons with
-      # rust/bindings run too.
-      - name: the tests, with this tree's component
+      # The pinned toolchain with the target, cargo fmt, clippy over both
+      # feature sets, and the tests with this tree's component
+      # (--include-ignored); macos-wrappers runs the same script.
+      - name: lint and tests
         shell: bash
-        working-directory: rust/server
-        run: APRV_TEST_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm" cargo test --locked --features compile -- --include-ignored
+        env:
+          TARGET: ${{ matrix.target }}
+        run: .github/scripts/aprv-server-suite.sh "$TARGET" "$RUNNER_TEMP/aprv/aprv.component.wasm"
       - name: the aarch64 static binary
         if: matrix.target == 'aarch64-unknown-linux-musl'
         env:
           COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
         run: |
           set -euo pipefail
+          RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          export RUSTUP_TOOLCHAIN
           sudo apt-get update && sudo apt-get install -y musl-tools
           rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" aarch64-unknown-linux-musl "$RUNNER_TEMP/server"
           bin="$RUNNER_TEMP/server/aprv-aarch64-unknown-linux-musl"
@@ -3000,8 +3052,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # On a pull request the macOS leg runs in macos-wrappers instead.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+        # On a pull request the macOS leg runs in macos-wrappers and the
+        # Windows leg in windows-wrappers instead.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
