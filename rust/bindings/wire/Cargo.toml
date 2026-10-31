@@ -33,7 +33,7 @@ vendored = ["aprv-surface/vendored"]
 # result in fixtures/cases.json, against schema/ (JSON Schema 2020-12). No
 # network: `resolve-http` and `resolve-file` stay off, the schemas are
 # registered in memory.
-jsonschema = { version = "0.59.0", default-features = false }
+jsonschema = { version = "0.60.1", default-features = false }
 
 [lints.clippy]
 cast_possible_truncation = "deny"
