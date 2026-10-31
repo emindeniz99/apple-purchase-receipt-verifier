@@ -36,6 +36,7 @@ import os
 import ssl
 import tempfile
 import tokenize
+import tomllib
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
@@ -503,27 +504,14 @@ def non_docstring_strings(tree: ast.Module) -> "list[str]":
 
 
 def declared_dependencies(pyproject: str) -> "list[str]":
-    """The distribution names in ``[project] dependencies``.
-
-    Hand-parsed rather than read with ``tomllib``: this suite runs on the
-    3.10 floor the package claims, where ``tomllib`` does not exist and no
-    TOML parser is a dependency.
-    """
-    section = pyproject.split("\n[project]\n", 1)
-    if len(section) != 2:
+    """The distribution names in ``[project] dependencies``."""
+    project = tomllib.loads(pyproject).get("project")
+    if not isinstance(project, dict):
         raise AssertionError("pyproject.toml has no [project] section")
-    body = section[1].split("\n[", 1)[0]
-    marker = "\ndependencies = ["
-    if marker not in body:
+    listing = project.get("dependencies")
+    if not isinstance(listing, list) or not listing:
         raise AssertionError("pyproject.toml declares no [project] dependencies")
-    listing = body.split(marker, 1)[1].split("]", 1)[0]
-    names: list[str] = []
-    for line in listing.splitlines():
-        entry = line.strip().strip(",").strip('"')
-        if not entry:
-            continue
-        names.append(distribution_name(entry))
-    return names
+    return [distribution_name(entry) for entry in listing]
 
 
 def distribution_name(requirement: str) -> str:

@@ -11,7 +11,7 @@ pip install apple-purchase-receipt-verifier
 ```
 
 The import package is `apple_purchase_receipt_verifier`; the distribution is
-`apple-purchase-receipt-verifier`. Requires Python 3.10+.
+`apple-purchase-receipt-verifier`. Requires Python 3.11+.
 
 ## Before you deploy
 

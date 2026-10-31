@@ -16,7 +16,7 @@ install-failure test builds this source tree with it).
 
 ## 1. Test matrix (job `python`, replaces the current one)
 
-CPython 3.10, 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.10 floor and
+CPython 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.11 floor and
 the platform claims are legs and not sentences:
 
 | Leg | Runner | Why |
@@ -163,7 +163,7 @@ The wheels carry OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts
 (ARCHITECTURE.md §9, "Licences ship with the code"): add them to
 `package-data` and the sdist's `MANIFEST.in` when Phase 1 produces them.
 
-Post-publish smoke (gate G5): in a clean venv on Python 3.10,
+Post-publish smoke (gate G5): in a clean venv on Python 3.11,
 `pip install apple-purchase-receipt-verifier==$VERSION` from PyPI, then verify
 the genuine sandbox receipt as `check-install.sh` does.
 
