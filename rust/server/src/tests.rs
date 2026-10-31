@@ -910,11 +910,14 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
     // call it started runs on. That call must hold its worker until it
     // ends; otherwise "send, then close" requests run past --workers and
     // the pool grows an instance for each.
-    // A 2 s guest limit leaves a slow runner far more than the 100 ms the
-    // test needs before its first check.
+    // The guest limit counts 10 ms epoch ticks, each a thread::sleep: on a
+    // macOS runner a 2 s limit once took over 10 s of wall time. So the
+    // guest gets 1 s, which still leaves a slow runner far more than the
+    // 100 ms the test needs before its first check, and the wait for the
+    // worker to come back is bounded only loosely.
     let permits = Arc::new(tokio::sync::Semaphore::new(1));
     let router = http::router(Arc::new(App {
-        verifier: hostile(true, 2_000),
+        verifier: hostile(true, 1_000),
         permits: permits.clone(),
         uploads: Arc::new(tokio::sync::Semaphore::new(8)),
         body_timeout: http::BODY_TIMEOUT,
@@ -938,14 +941,14 @@ async fn a_dropped_request_keeps_its_worker_until_the_guest_call_ends() {
     let t = std::time::Instant::now();
     while permits.available_permits() == 0 {
         assert!(
-            t.elapsed() < std::time::Duration::from_secs(10),
+            t.elapsed() < std::time::Duration::from_secs(60),
             "the worker never came back"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     assert!(
-        start.elapsed() >= std::time::Duration::from_millis(1_500),
-        "the worker came back before the guest call's 2 s limit"
+        start.elapsed() >= std::time::Duration::from_millis(750),
+        "the worker came back before the guest call's 1 s limit"
     );
 }
 
