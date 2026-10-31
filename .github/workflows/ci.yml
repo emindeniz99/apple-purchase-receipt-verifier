@@ -743,9 +743,11 @@ jobs:
       - run: swift test -c release -Xswiftc -enable-testing --force-resolved-versions
   # macos-26: the package needs Swift tools 6.3, and macos-15's Xcode
   # carries Swift 6.1 (swift/CI-NOTES.md asks for 15+ with Swift 6.3+).
+  # On a pull request swift-apple runs this job's suite and swift-ios's
+  # build on one runner instead.
   swift-macos:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.swift == 'true'
+    if: needs.changes.outputs.swift == 'true' && github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -755,14 +757,13 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: swift
-      - run: swift --version && swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+      - run: .github/scripts/swift-apple.sh test
 
-  # The iOS 18 compile the manifest claims, which Linux cannot do: the
-  # package and WasmKit build for a generic iOS device with the software
-  # bounds checking the package selects there. Nothing runs on a device.
+  # The iOS 18 compile the manifest claims (the script says what it
+  # builds). On a pull request it runs in swift-apple instead.
   swift-ios:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.swift == 'true'
+    if: needs.changes.outputs.swift == 'true' && github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -772,12 +773,29 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: swift
-      - run: |
-          set -euo pipefail
-          xcodebuild -version
-          xcodebuild -list
-          xcodebuild build -scheme apple-purchase-receipt-verifier \
-            -destination 'generic/platform=iOS' -skipPackagePluginValidation
+      - run: .github/scripts/swift-apple.sh ios
+
+  # On a pull request swift-macos and swift-ios share one macos-26 runner,
+  # so a pull request takes two macOS runners in all (this and
+  # macos-wrappers). The iOS build runs under !cancelled(), so a test
+  # failure does not hide its result. A push to main runs the two jobs.
+  swift-apple:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.swift == 'true' && github.event_name == 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/place-module
+        with:
+          host: swift
+      - name: swift test (swift-macos)
+        run: .github/scripts/swift-apple.sh test
+      - name: the iOS build (swift-ios)
+        if: ${{ !cancelled() }}
+        run: .github/scripts/swift-apple.sh ios
 
   # The swift-crypto floor. The manifest admits "3.0.0" ..< "6.0.0" so the
   # package resolves next to app-store-server-library-swift (swift-crypto
@@ -1218,8 +1236,8 @@ jobs:
   # on one macos-latest runner: go-platforms, ruby-macos, dotnet, python
   # (3.11 and 3.14 on Apple silicon), rust-ffi and aprv-server. macOS
   # runners are the scarce ones (five at a time on this plan), and each leg
-  # runs for one to six minutes. swift-macos and swift-ios stay separate:
-  # they need Xcode on macos-26. A push to main runs each leg in its own job,
+  # runs for one to six minutes. Swift's two legs need Xcode on macos-26 and
+  # share swift-apple instead. A push to main runs each leg in its own job,
   # so every release is cut from a tree that passed them separately. Each
   # port's steps after the first carry `!cancelled()`, so one port's failure
   # does not hide the others. The commands are those jobs' commands: Go,
