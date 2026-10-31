@@ -259,8 +259,8 @@ fn verify_signer(
     verify_cms_signature(cms, index, signer)
 }
 
-/// The certificates `SignerInfo` `index` names as its signer, never empty,
-/// or the verdict for the bag. The signer's own entry not decoding is
+/// The certificates `SignerInfo` `index` names as its signer, each once and
+/// never empty, or the verdict for the bag. The signer's own entry not decoding is
 /// `INVALID_CERTIFICATE`, as an unreadable `x5c` entry is on the JWS path;
 /// any other entry not decoding is `MALFORMED`, because the bag is unsigned
 /// and bytes that cannot be read there are a defect of the receipt, not of a
@@ -285,12 +285,18 @@ fn signer_certificates(
             "an embedded certificate is not a valid certificate",
         ));
     }
-    let matches: Vec<Certificate> = embedded
-        .readable
-        .iter()
-        .filter(|certificate| cms.names_signer(index, certificate))
-        .cloned()
-        .collect();
+    // Byte-identical copies are one certificate, tried once: each try
+    // digests the whole content, and the bag is the sender's to repeat.
+    let mut matches: Vec<Certificate> = Vec::new();
+    for certificate in &embedded.readable {
+        if cms.names_signer(index, certificate)
+            && !matches
+                .iter()
+                .any(|kept: &Certificate| kept.same_as(certificate))
+        {
+            matches.push(certificate.clone());
+        }
+    }
     if matches.is_empty() {
         return Err(malformed("signer certificate not embedded"));
     }
