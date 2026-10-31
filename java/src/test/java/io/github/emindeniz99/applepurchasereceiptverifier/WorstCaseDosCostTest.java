@@ -25,10 +25,10 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.DLTaggedObject;
-import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
@@ -291,12 +291,7 @@ class WorstCaseDosCostTest {
                 new byte[20],
                 "2025-06-01T00:00:00Z",
                 Collections.singletonList(TestPki.inAppPurchase(
-                        1,
-                        productId.toString(),
-                        "70000000000001",
-                        "70000000000001",
-                        "2024-01-15T12:00:00Z",
-                        null)));
+                        1, productId.toString(), "70000000000001", "70000000000001", "2024-01-15T12:00:00Z", null)));
         ASN1EncodableVector signers = new ASN1EncodableVector();
         for (int i = 0; i < ReceiptCore.MAX_SIGNER_INFOS; i++) {
             signers.add(signer);
@@ -356,9 +351,8 @@ class WorstCaseDosCostTest {
             total += ms;
             worst = Math.max(worst, ms);
         }
-        System.out.println(
-                "200 distinct tampered receipts: first 50 avg " + first / 50.0 + " ms, all avg " + total / 200.0
-                        + " ms, worst " + worst + " ms");
+        System.out.println("200 distinct tampered receipts: first 50 avg " + first / 50.0 + " ms, all avg "
+                + total / 200.0 + " ms, worst " + worst + " ms");
         assertTrue(worst < 600, "an item took " + worst + " ms");
         assertTrue(total / 200 < 250, "the average rose to " + total / 200 + " ms");
         assertTrue(

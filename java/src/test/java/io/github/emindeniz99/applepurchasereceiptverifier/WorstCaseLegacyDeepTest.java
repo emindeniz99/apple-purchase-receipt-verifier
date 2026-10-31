@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -22,9 +21,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -102,7 +101,8 @@ class WorstCaseLegacyDeepTest {
     @BeforeAll
     static void mintTheAttackerGradePkiAndGenuineReceipts() throws Exception {
         pki = TestPki.receipt();
-        pkiVerifier = Verifier.create(Config.builder().roots(Collections.singleton(pki.root)).build());
+        pkiVerifier = Verifier.create(
+                Config.builder().roots(Collections.singleton(pki.root)).build());
         pkiGenuine = Base64.getEncoder().encodeToString(pki.signReceipt(payload()));
 
         KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA");
@@ -116,12 +116,21 @@ class WorstCaseLegacyDeepTest {
         myRootHolder = cert(ROOT_NAME, rootKp.getPublic(), ROOT_NAME, myRootKey, true, null);
         myInterHolder = cert(INTER_NAME, interKp.getPublic(), ROOT_NAME, myRootKey, true, WWDR_OID);
         myLeafHolder = cert(
-                new X500Name("CN=Deep Fake Receipt Signer"), leafKp.getPublic(), INTER_NAME, myInterKey, false,
+                new X500Name("CN=Deep Fake Receipt Signer"),
+                leafKp.getPublic(),
+                INTER_NAME,
+                myInterKey,
+                false,
                 SIGNING_LEAF_OID);
         myRoot = jca(myRootHolder);
-        myVerifier = Verifier.create(Config.builder().roots(Collections.singleton(myRoot)).build());
+        myVerifier = Verifier.create(
+                Config.builder().roots(Collections.singleton(myRoot)).build());
         myGenuineDer = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myLeafHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder));
         myGenuine = Base64.getEncoder().encodeToString(myGenuineDer);
     }
@@ -133,10 +142,13 @@ class WorstCaseLegacyDeepTest {
         long ms = (System.nanoTime() - start) / 1_000_000;
         Reason actual = result.verified() ? null : result.failure().reason();
         System.out.println("deep " + what + ": " + ms + " ms, "
-                + (result.verified() ? "VERIFIED" : actual + " (" + result.failure().message() + ")"));
+                + (result.verified()
+                        ? "VERIFIED"
+                        : actual + " (" + result.failure().message() + ")"));
         assertFalse(result.verified(), what + " verified");
         assertNotNull(actual);
-        assertTrue(Arrays.asList(expected).contains(actual),
+        assertTrue(
+                Arrays.asList(expected).contains(actual),
                 what + " refused as " + actual + ", expected one of " + Arrays.toString(expected));
         assertTrue(ms < BUDGET_MS, what + " took " + ms + " ms");
     }
@@ -153,7 +165,11 @@ class WorstCaseLegacyDeepTest {
     private static byte[] payload() throws Exception {
         String now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         return TestPki.receiptPayload(
-                "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8}, now,
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
+                now,
                 Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", now, null)));
     }
 
@@ -178,7 +194,9 @@ class WorstCaseLegacyDeepTest {
         if (marker != null) {
             builder.addExtension(new ASN1ObjectIdentifier(marker), false, ASN1Boolean.TRUE);
         }
-        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").setProvider(TestPki.BC).build(issuerKey));
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider(TestPki.BC)
+                .build(issuerKey));
     }
 
     private static X509Certificate jca(X509CertificateHolder holder) throws Exception {
@@ -195,7 +213,11 @@ class WorstCaseLegacyDeepTest {
             String subjectCn, AlgorithmIdentifier label, boolean ca, int modulusBits) {
         try {
             X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
-                    INTER_NAME, nextSerial(), new Date(), yearOut(), new X500Name("CN=" + subjectCn),
+                    INTER_NAME,
+                    nextSerial(),
+                    new Date(),
+                    yearOut(),
+                    new X500Name("CN=" + subjectCn),
                     rsaKey(modulusBits));
             if (ca) {
                 builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
@@ -212,7 +234,9 @@ class WorstCaseLegacyDeepTest {
         X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
                 INTER_NAME, nextSerial(), new Date(), yearOut(), new X500Name("CN=" + subjectCn), rsaKey(2048));
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
-        ContentSigner real = new JcaContentSignerBuilder("SHA256withRSA").setProvider(TestPki.BC).build(myInterKey);
+        ContentSigner real = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider(TestPki.BC)
+                .build(myInterKey);
         return builder.build(new MislabelingSigner(real, label));
     }
 
@@ -238,9 +262,11 @@ class WorstCaseLegacyDeepTest {
     /** RSASSA-PSS with a saltLength no RSA key can hold, in the RFC 8017 tagged form. */
     private static AlgorithmIdentifier taggedPssParams() {
         ASN1EncodableVector pss = new ASN1EncodableVector();
-        pss.add(new org.bouncycastle.asn1.DERTaggedObject(true, 0,
-                new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE)));
-        pss.add(new org.bouncycastle.asn1.DERTaggedObject(true, 1,
+        pss.add(new org.bouncycastle.asn1.DERTaggedObject(
+                true, 0, new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE)));
+        pss.add(new org.bouncycastle.asn1.DERTaggedObject(
+                true,
+                1,
                 new AlgorithmIdentifier(
                         PKCSObjectIdentifiers.id_mgf1,
                         new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256, DERNull.INSTANCE))));
@@ -321,20 +347,21 @@ class WorstCaseLegacyDeepTest {
     }
 
     private static int endpointStatus(Environment environment, String receipt) {
-        return statusOf(pkiVerifier.verifyReceiptEndpoint(
-                environment, "{\"receipt-data\":\"" + jsonEscaped(receipt) + "\"}"));
+        return statusOf(
+                pkiVerifier.verifyReceiptEndpoint(environment, "{\"receipt-data\":\"" + jsonEscaped(receipt) + "\"}"));
     }
 
     /** The endpoint answer of the same verifier the receipt verifies under. */
     private static int endpointStatusOf(Verifier v, String receipt) {
-        return statusOf(v.verifyReceiptEndpoint(
-                Environment.SANDBOX, "{\"receipt-data\":\"" + jsonEscaped(receipt) + "\"}"));
+        return statusOf(
+                v.verifyReceiptEndpoint(Environment.SANDBOX, "{\"receipt-data\":\"" + jsonEscaped(receipt) + "\"}"));
     }
 
     private static int statusOf(String answer) {
         Matcher status = STATUS.matcher(answer);
-        assertTrue(status.find(), "the endpoint answered no status: "
-                + answer.substring(0, Math.min(100, answer.length())));
+        assertTrue(
+                status.find(),
+                "the endpoint answered no status: " + answer.substring(0, Math.min(100, answer.length())));
         return Integer.parseInt(status.group(1));
     }
 
@@ -349,17 +376,29 @@ class WorstCaseLegacyDeepTest {
         Date past = iso("2026-01-01T00:00:00Z");
         Date future = iso("2027-01-01T00:00:00Z");
         TestPki noLeafMarker = TestPki.receipt(past, future, false, true);
-        refused("developer-cert-without-signing-marker",
-                Verifier.create(Config.builder().roots(Collections.singleton(noLeafMarker.root)).build()),
-                b64(noLeafMarker.signReceipt(payload())), Reason.INVALID_CERTIFICATE_PURPOSE);
+        refused(
+                "developer-cert-without-signing-marker",
+                Verifier.create(Config.builder()
+                        .roots(Collections.singleton(noLeafMarker.root))
+                        .build()),
+                b64(noLeafMarker.signReceipt(payload())),
+                Reason.INVALID_CERTIFICATE_PURPOSE);
         TestPki noInterMarker = TestPki.receipt(past, future, true, false);
-        refused("wwdr-intermediate-without-marker",
-                Verifier.create(Config.builder().roots(Collections.singleton(noInterMarker.root)).build()),
-                b64(noInterMarker.signReceipt(payload())), Reason.INVALID_CERTIFICATE_PURPOSE);
+        refused(
+                "wwdr-intermediate-without-marker",
+                Verifier.create(Config.builder()
+                        .roots(Collections.singleton(noInterMarker.root))
+                        .build()),
+                b64(noInterMarker.signReceipt(payload())),
+                Reason.INVALID_CERTIFICATE_PURPOSE);
         TestPki noMarkers = TestPki.receipt(past, future, false, false);
-        refused("both-markers-missing",
-                Verifier.create(Config.builder().roots(Collections.singleton(noMarkers.root)).build()),
-                b64(noMarkers.signReceipt(payload())), Reason.INVALID_CERTIFICATE_PURPOSE);
+        refused(
+                "both-markers-missing",
+                Verifier.create(Config.builder()
+                        .roots(Collections.singleton(noMarkers.root))
+                        .build()),
+                b64(noMarkers.signReceipt(payload())),
+                Reason.INVALID_CERTIFICATE_PURPOSE);
     }
 
     @Test
@@ -368,11 +407,14 @@ class WorstCaseLegacyDeepTest {
         rsa.initialize(2048);
         KeyPair leafKp = rsa.generateKeyPair();
         X509CertificateHolder leaf2 = cert(
-                new X500Name("CN=Deep Fake Root-Issued Signer"), leafKp.getPublic(), ROOT_NAME, myRootKey, false,
+                new X500Name("CN=Deep Fake Root-Issued Signer"),
+                leafKp.getPublic(),
+                ROOT_NAME,
+                myRootKey,
+                false,
                 SIGNING_LEAF_OID);
         byte[] receipt = TestPki.signReceiptAs(
-                payload(), new Date(), leafKp.getPrivate(), "SHA256withRSA", leaf2,
-                Arrays.asList(leaf2, myRootHolder));
+                payload(), new Date(), leafKp.getPrivate(), "SHA256withRSA", leaf2, Arrays.asList(leaf2, myRootHolder));
         refused("signer-issued-by-root-directly", myVerifier, b64(receipt), Reason.INVALID_CERTIFICATE_PURPOSE);
     }
 
@@ -380,7 +422,12 @@ class WorstCaseLegacyDeepTest {
     void receiptEnvironmentMismatchesAnswerApplesStatuses() throws Exception {
         String now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         byte[] prodPayload = TestPki.receiptPayload(
-                "Production", "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8}, now,
+                "Production",
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
+                now,
                 Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", now, null)));
         String prod = b64(pki.signReceipt(prodPayload));
         assertEquals(AppleStatus.OK, endpointStatus(Environment.PRODUCTION, prod));
@@ -394,11 +441,16 @@ class WorstCaseLegacyDeepTest {
     void expiredHistoricalReceiptInsideItsValidityStillVerifies() throws Exception {
         TestPki expired = TestPki.receipt(iso("2020-01-01T00:00:00Z"), iso("2020-12-31T00:00:00Z"));
         byte[] historicalPayload = TestPki.receiptPayload(
-                "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8},
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
                 "2020-06-15T12:00:00Z",
-                Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", "2020-06-15T12:00:00Z", null)));
+                Collections.singletonList(
+                        TestPki.inAppPurchase(1, "gems.small", "2001", "2001", "2020-06-15T12:00:00Z", null)));
         byte[] historical = expired.signReceipt(historicalPayload, iso("2020-06-15T12:00:00Z"));
-        Verifier v = Verifier.create(Config.builder().roots(Collections.singleton(expired.root)).build());
+        Verifier v = Verifier.create(
+                Config.builder().roots(Collections.singleton(expired.root)).build());
         verifies("expired-chain-historical-date (documented policy)", v, b64(historical), BUDGET_MS);
     }
 
@@ -406,21 +458,38 @@ class WorstCaseLegacyDeepTest {
     void expiredChainWithoutACreationDateIsJudgedAtTheClockAndRefused() throws Exception {
         TestPki expired = TestPki.receipt(iso("2020-01-01T00:00:00Z"), iso("2020-12-31T00:00:00Z"));
         byte[] noDatePayload = TestPki.receiptPayload(
-                "ProductionSandbox", "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8},
+                "ProductionSandbox",
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
                 "2020-06-15T12:00:00Z",
-                Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", "2020-06-15T12:00:00Z", null)),
-                false, null, null);
-        Verifier v = Verifier.create(Config.builder().roots(Collections.singleton(expired.root)).build());
-        refused("expired-chain-no-creation-date", v, b64(expired.signReceipt(noDatePayload)),
-                Reason.INVALID_CERTIFICATE, Reason.UNTRUSTED_CHAIN);
+                Collections.singletonList(
+                        TestPki.inAppPurchase(1, "gems.small", "2001", "2001", "2020-06-15T12:00:00Z", null)),
+                false,
+                null,
+                null);
+        Verifier v = Verifier.create(
+                Config.builder().roots(Collections.singleton(expired.root)).build());
+        refused(
+                "expired-chain-no-creation-date",
+                v,
+                b64(expired.signReceipt(noDatePayload)),
+                Reason.INVALID_CERTIFICATE,
+                Reason.UNTRUSTED_CHAIN);
     }
 
     @Test
     void notYetValidChainIsRefused() throws Exception {
         TestPki future = TestPki.receipt(iso("2027-01-01T00:00:00Z"), iso("2030-01-01T00:00:00Z"));
-        Verifier v = Verifier.create(Config.builder().roots(Collections.singleton(future.root)).build());
-        refused("not-yet-valid-chain", v, b64(future.signReceipt(payload())),
-                Reason.INVALID_CERTIFICATE, Reason.UNTRUSTED_CHAIN);
+        Verifier v = Verifier.create(
+                Config.builder().roots(Collections.singleton(future.root)).build());
+        refused(
+                "not-yet-valid-chain",
+                v,
+                b64(future.signReceipt(payload())),
+                Reason.INVALID_CERTIFICATE,
+                Reason.UNTRUSTED_CHAIN);
     }
 
     @Test
@@ -458,8 +527,12 @@ class WorstCaseLegacyDeepTest {
         assertTrue(at > 0, "the receipt carries no sha256WithRSAEncryption label");
         byte[] patched = myGenuineDer.clone();
         patched[at + combinedOid.length - 1] = 0x0A;
-        refused("signature-label-pss-null-params-surgery", myVerifier, b64(patched),
-                Reason.INVALID_SIGNATURE, Reason.MALFORMED);
+        refused(
+                "signature-label-pss-null-params-surgery",
+                myVerifier,
+                b64(patched),
+                Reason.INVALID_SIGNATURE,
+                Reason.MALFORMED);
 
         // The rsaEncryption OID lives only inside the certificates; the last
         // one is an embedded certificate's outer label, which pins no trust,
@@ -479,12 +552,24 @@ class WorstCaseLegacyDeepTest {
         for (int i = 0; i < labelIds.length; i++) {
             X509CertificateHolder hostile = hostileCert("Hostile " + names[i] + " signer", labelIds[i], false);
             byte[] asSigner = TestPki.signReceiptAs(
-                    payload(), new Date(), myLeafKey, "SHA256withRSA", hostile,
+                    payload(),
+                    new Date(),
+                    myLeafKey,
+                    "SHA256withRSA",
+                    hostile,
                     Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, hostile));
-            refused("label-bomb-" + names[i] + "-as-signer", myVerifier, b64(asSigner),
-                    Reason.UNTRUSTED_CHAIN, Reason.MALFORMED);
+            refused(
+                    "label-bomb-" + names[i] + "-as-signer",
+                    myVerifier,
+                    b64(asSigner),
+                    Reason.UNTRUSTED_CHAIN,
+                    Reason.MALFORMED);
             byte[] asJunk = TestPki.signReceiptAs(
-                    payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                    payload(),
+                    new Date(),
+                    myLeafKey,
+                    "SHA256withRSA",
+                    myLeafHolder,
                     Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, hostile));
             verifies("label-bomb-" + names[i] + "-as-bag-junk", myVerifier, b64(asJunk), BUDGET_MS);
         }
@@ -498,11 +583,19 @@ class WorstCaseLegacyDeepTest {
         // neither escapes as INTERNAL nor costs anything.
         X509CertificateHolder untagged = hostileCert("Untagged PSS pretender", hugeSaltPss(), false);
         byte[] asJunk = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myLeafHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, untagged));
         refused("untagged-pss-params-as-bag-junk", myVerifier, b64(asJunk), Reason.MALFORMED);
         byte[] asSigner = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", untagged,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                untagged,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, untagged));
         refused("untagged-pss-params-as-signer", myVerifier, b64(asSigner), Reason.MALFORMED);
     }
@@ -517,10 +610,19 @@ class WorstCaseLegacyDeepTest {
         for (int i = 0; i < labelIds.length; i++) {
             X509CertificateHolder vouched = mislabeledVouchedCert("Vouched " + names[i], labelIds[i]);
             X509CertificateHolder namee = new X509v3CertificateBuilder(
-                    new X500Name("CN=Vouched " + names[i]), nextSerial(), new Date(), yearOut(),
-                    new X500Name("CN=Namee of " + names[i]), rsaKey(2048)).build(new GarbageSigner(normalLabel()));
+                            new X500Name("CN=Vouched " + names[i]),
+                            nextSerial(),
+                            new Date(),
+                            yearOut(),
+                            new X500Name("CN=Namee of " + names[i]),
+                            rsaKey(2048))
+                    .build(new GarbageSigner(normalLabel()));
             byte[] receipt = TestPki.signReceiptAs(
-                    payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                    payload(),
+                    new Date(),
+                    myLeafKey,
+                    "SHA256withRSA",
+                    myLeafHolder,
                     Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, vouched, namee));
             verifies("leaked-key-mislabeled-" + names[i] + "-cannot-bomb", myVerifier, b64(receipt), BUDGET_MS);
         }
@@ -530,15 +632,23 @@ class WorstCaseLegacyDeepTest {
     void hugeModulusPretendersAreNeverDecoded() throws Exception {
         X509CertificateHolder pretender = hostileCert("Huge Modulus Pretender", normalLabel(), false, 16384);
         byte[] withPretender = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myLeafHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, pretender));
         verifies("16384-bit-pretender-never-decoded", myVerifier, b64(withPretender), BUDGET_MS);
 
         X509CertificateHolder intermediateClone = new X509v3CertificateBuilder(
-                INTER_NAME, nextSerial(), new Date(), yearOut(), INTER_NAME, rsaKey(16384))
+                        INTER_NAME, nextSerial(), new Date(), yearOut(), INTER_NAME, rsaKey(16384))
                 .build(new GarbageSigner(normalLabel()));
         byte[] withClone = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myLeafHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, intermediateClone));
         verifies("16384-bit-intermediate-name-clone-never-decoded", myVerifier, b64(withClone), BUDGET_MS);
     }
@@ -551,13 +661,27 @@ class WorstCaseLegacyDeepTest {
         X509CertificateHolder vouched1 = vouchedHugeCa("Vouched Huge 1");
         X509CertificateHolder vouched2 = vouchedHugeCa("Vouched Huge 2");
         X509CertificateHolder namee1 = new X509v3CertificateBuilder(
-                new X500Name("CN=Vouched Huge 1"), nextSerial(), new Date(), yearOut(),
-                new X500Name("CN=Namee 1"), rsaKey(2048)).build(new GarbageSigner(normalLabel()));
+                        new X500Name("CN=Vouched Huge 1"),
+                        nextSerial(),
+                        new Date(),
+                        yearOut(),
+                        new X500Name("CN=Namee 1"),
+                        rsaKey(2048))
+                .build(new GarbageSigner(normalLabel()));
         X509CertificateHolder namee2 = new X509v3CertificateBuilder(
-                new X500Name("CN=Vouched Huge 2"), nextSerial(), new Date(), yearOut(),
-                new X500Name("CN=Namee 2"), rsaKey(2048)).build(new GarbageSigner(normalLabel()));
+                        new X500Name("CN=Vouched Huge 2"),
+                        nextSerial(),
+                        new Date(),
+                        yearOut(),
+                        new X500Name("CN=Namee 2"),
+                        rsaKey(2048))
+                .build(new GarbageSigner(normalLabel()));
         byte[] receipt = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myLeafHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myLeafHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, vouched1, namee1, vouched2, namee2));
         long start = System.nanoTime();
         VerificationResult<ReceiptPayload> result = myVerifier.verifyReceipt(b64(receipt));
@@ -571,8 +695,9 @@ class WorstCaseLegacyDeepTest {
         X509v3CertificateBuilder builder = new X509v3CertificateBuilder(
                 INTER_NAME, nextSerial(), new Date(), yearOut(), new X500Name("CN=" + subjectCn), rsaKey(16384));
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
-        return builder.build(
-                new JcaContentSignerBuilder("SHA256withRSA").setProvider(TestPki.BC).build(myInterKey));
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider(TestPki.BC)
+                .build(myInterKey));
     }
 
     @Test
@@ -583,7 +708,10 @@ class WorstCaseLegacyDeepTest {
 
         X509CertificateHolder junk = hostileCert("Junk Signer", normalLabel(), false);
         byte[] junkFirst = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA",
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
                 Arrays.asList(junk, myLeafHolder),
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder, junk));
         verifies("junk-signer-injected-beside-genuine", myVerifier, b64(junkFirst), BUDGET_MS);
@@ -592,17 +720,24 @@ class WorstCaseLegacyDeepTest {
     @Test
     void signerNamedAsThePinnedRootIsRefused() throws Exception {
         byte[] receipt = TestPki.signReceiptAs(
-                payload(), new Date(), myLeafKey, "SHA256withRSA", myRootHolder,
+                payload(),
+                new Date(),
+                myLeafKey,
+                "SHA256withRSA",
+                myRootHolder,
                 Arrays.asList(myLeafHolder, myInterHolder, myRootHolder));
-        refused("signer-named-as-the-pinned-root", myVerifier, b64(receipt),
-                Reason.INVALID_CERTIFICATE_PURPOSE, Reason.UNTRUSTED_CHAIN);
+        refused(
+                "signer-named-as-the-pinned-root",
+                myVerifier,
+                b64(receipt),
+                Reason.INVALID_CERTIFICATE_PURPOSE,
+                Reason.UNTRUSTED_CHAIN);
     }
 
     @Test
     void undecodableBagEntriesAreRefused() throws Exception {
         byte[] undecodable = pki.signReceiptWithUndecodablePadding(payload(), 5);
-        refused("undecodable-bag-entries", pkiVerifier, b64(undecodable),
-                Reason.INVALID_CERTIFICATE, Reason.MALFORMED);
+        refused("undecodable-bag-entries", pkiVerifier, b64(undecodable), Reason.INVALID_CERTIFICATE, Reason.MALFORMED);
     }
 
     @Test
@@ -634,8 +769,13 @@ class WorstCaseLegacyDeepTest {
         byte[] patched = myGenuineDer.clone();
         int at = TestPki.indexOf(patched, intermediate);
         patched[at + intermediate.length / 2] ^= 0x01;
-        refused("tampered-intermediate-certificate", myVerifier, b64(patched),
-                Reason.UNTRUSTED_CHAIN, Reason.INVALID_CERTIFICATE, Reason.MALFORMED);
+        refused(
+                "tampered-intermediate-certificate",
+                myVerifier,
+                b64(patched),
+                Reason.UNTRUSTED_CHAIN,
+                Reason.INVALID_CERTIFICATE,
+                Reason.MALFORMED);
     }
 
     @Test
@@ -645,21 +785,33 @@ class WorstCaseLegacyDeepTest {
 
         ContentInfo inner = new ContentInfo(PKCSObjectIdentifiers.data, new DEROctetString(payload()));
         SignedData noSigners = new SignedData(new DERSet(), inner, null, null, new DERSet());
-        refused("signed-data-with-no-signers", myVerifier,
-                b64(new ContentInfo(CMSObjectIdentifiers.signedData, noSigners).getEncoded()), Reason.MALFORMED);
+        refused(
+                "signed-data-with-no-signers",
+                myVerifier,
+                b64(new ContentInfo(CMSObjectIdentifiers.signedData, noSigners).getEncoded()),
+                Reason.MALFORMED);
 
         SignedData garbageDigest = new SignedData(
                 new DERSet(new AlgorithmIdentifier(new ASN1ObjectIdentifier("1.2.3.4.5"), DERNull.INSTANCE)),
-                inner, null, null, new DERSet());
-        refused("garbage-digest-algorithm-set", myVerifier,
+                inner,
+                null,
+                null,
+                new DERSet());
+        refused(
+                "garbage-digest-algorithm-set",
+                myVerifier,
                 b64(new ContentInfo(CMSObjectIdentifiers.signedData, garbageDigest).getEncoded()),
                 Reason.MALFORMED);
 
-        refused("huge-der-length-claim", myVerifier,
+        refused(
+                "huge-der-length-claim",
+                myVerifier,
                 b64(needle(0x30, (byte) 0x84, 0x7F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x02, 0x01, 0x01)),
                 Reason.MALFORMED);
 
-        refused("high-tag-continuation-bytes", myVerifier,
+        refused(
+                "high-tag-continuation-bytes",
+                myVerifier,
                 b64(needle(0x1F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x7F)),
                 Reason.MALFORMED);
 
@@ -690,13 +842,18 @@ class WorstCaseLegacyDeepTest {
         }
         refused("mime-base64-with-line-breaks", myVerifier, mime.toString(), Reason.MALFORMED);
         refused("trailing-whitespace", myVerifier, myGenuine + " ", Reason.MALFORMED);
-        refused("nul-character-inside",
-                myVerifier, myGenuine.substring(0, 100) + "\0" + myGenuine.substring(100), Reason.MALFORMED);
+        refused(
+                "nul-character-inside",
+                myVerifier,
+                myGenuine.substring(0, 100) + "\0" + myGenuine.substring(100),
+                Reason.MALFORMED);
 
         String unpadded = myGenuine.substring(0, myGenuine.length() - 2);
         VerificationResult<ReceiptPayload> unpaddedResult = myVerifier.verifyReceipt(unpadded);
         System.out.println("deep unpadded-standard-base64: " + unpaddedResult.verified()
-                + (unpaddedResult.verified() ? "" : " " + unpaddedResult.failure().reason()));
+                + (unpaddedResult.verified()
+                        ? ""
+                        : " " + unpaddedResult.failure().reason()));
 
         String urlSafe = myGenuine.replace('+', '-').replace('/', '_').replaceAll("=+$", "");
         VerificationResult<ReceiptPayload> urlSafeResult = myVerifier.verifyReceipt(urlSafe);
@@ -737,12 +894,13 @@ class WorstCaseLegacyDeepTest {
         assertEquals(AppleStatus.MALFORMED_RECEIPT_DATA, endpointStatus("{\"receipt-data\":NaN}"));
         assertEquals(AppleStatus.MALFORMED_RECEIPT_DATA, endpointStatus("\uFEFF{\"receipt-data\":\"AAAA\"}"));
         assertEquals(AppleStatus.MALFORMED_RECEIPT_DATA, endpointStatus(null));
-        assertEquals(AppleStatus.OK, endpointStatus(
-                "{\"receipt-data\":\"AAAA\",\"receipt-data\":\"" + pkiGenuine + "\"}"));
+        assertEquals(
+                AppleStatus.OK, endpointStatus("{\"receipt-data\":\"AAAA\",\"receipt-data\":\"" + pkiGenuine + "\"}"));
         // The reader hands over top-level members only, so the last duplicate
         // wins and "@@@" is read as the receipt: refused as not base64.
-        assertEquals(AppleStatus.MALFORMED_RECEIPT_DATA, endpointStatus(
-                "{\"receipt-data\":\"" + pkiGenuine + "\",\"receipt-data\":\"@@@\"}"));
+        assertEquals(
+                AppleStatus.MALFORMED_RECEIPT_DATA,
+                endpointStatus("{\"receipt-data\":\"" + pkiGenuine + "\",\"receipt-data\":\"@@@\"}"));
         long ms = (System.nanoTime() - start) / 1_000_000;
         assertTrue(ms < BUDGET_MS, "the structured endpoint battery took " + ms + " ms");
     }
@@ -830,13 +988,16 @@ class WorstCaseLegacyDeepTest {
                 assertEquals(AppleStatus.OK, status, "a verified receipt answered " + status);
             } else {
                 assertTrue(status != AppleStatus.OK, "a refused receipt answered 0");
-                assertTrue(status != AppleStatus.INTERNAL_DATA_ACCESS_ERROR,
+                assertTrue(
+                        status != AppleStatus.INTERNAL_DATA_ACCESS_ERROR,
                         "a refused receipt answered 21009: " + result.failure().reason());
                 Reason reason = result.failure().reason();
                 if (reason == Reason.MALFORMED || reason == Reason.TOO_LARGE) {
                     assertEquals(AppleStatus.MALFORMED_RECEIPT_DATA, status);
-                } else if (reason == Reason.INVALID_SIGNATURE || reason == Reason.UNTRUSTED_CHAIN
-                        || reason == Reason.INVALID_CERTIFICATE || reason == Reason.INVALID_CERTIFICATE_PURPOSE) {
+                } else if (reason == Reason.INVALID_SIGNATURE
+                        || reason == Reason.UNTRUSTED_CHAIN
+                        || reason == Reason.INVALID_CERTIFICATE
+                        || reason == Reason.INVALID_CERTIFICATE_PURPOSE) {
                     assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, status);
                 }
             }
@@ -848,11 +1009,13 @@ class WorstCaseLegacyDeepTest {
         List<Object[]> pool = new ArrayList<>();
         pool.add(new Object[] {myVerifier, myGenuine, Boolean.TRUE, null});
         pool.add(new Object[] {pkiVerifier, pkiGenuine, Boolean.TRUE, null});
-        pool.add(new Object[] {myVerifier, b64(TestPki.corruptSignatures(myGenuineDer, 1)), Boolean.FALSE,
-                Reason.INVALID_SIGNATURE});
+        pool.add(new Object[] {
+            myVerifier, b64(TestPki.corruptSignatures(myGenuineDer, 1)), Boolean.FALSE, Reason.INVALID_SIGNATURE
+        });
         pool.add(new Object[] {myVerifier, "AAAA", Boolean.FALSE, Reason.MALFORMED});
-        pool.add(new Object[] {myVerifier, myGenuine.substring(0, myGenuine.length() / 2), Boolean.FALSE,
-                Reason.MALFORMED});
+        pool.add(new Object[] {
+            myVerifier, myGenuine.substring(0, myGenuine.length() / 2), Boolean.FALSE, Reason.MALFORMED
+        });
         ExecutorService threads = Executors.newFixedThreadPool(12);
         List<Callable<Boolean>> jobs = new ArrayList<>();
         long start = System.nanoTime();
@@ -884,8 +1047,8 @@ class WorstCaseLegacyDeepTest {
         List<Future<Boolean>> results = threads.invokeAll(jobs);
         threads.shutdown();
         long ms = (System.nanoTime() - start) / 1_000_000;
-        System.out.println("deep concurrency: " + 12 * 25 * pool.size() * 2
-                + " mixed ops on shared verifiers in " + ms + " ms");
+        System.out.println(
+                "deep concurrency: " + 12 * 25 * pool.size() * 2 + " mixed ops on shared verifiers in " + ms + " ms");
         for (Future<Boolean> result : results) {
             assertTrue(result.get(), "a worker saw a cross-contaminated verdict");
         }
@@ -898,16 +1061,15 @@ class WorstCaseLegacyDeepTest {
             int size = i < 50 ? 3_000_000 + RANDOM.nextInt(100_000) : RANDOM.nextInt(1_000_000);
             byte[] bytes = new byte[size];
             RANDOM.nextBytes(bytes);
-            String receipt = i % 10 == 0
-                    ? new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1)
-                    : b64(bytes);
+            String receipt = i % 10 == 0 ? new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1) : b64(bytes);
             long start = System.nanoTime();
             VerificationResult<ReceiptPayload> result = myVerifier.verifyReceipt(receipt);
             long ms = (System.nanoTime() - start) / 1_000_000;
             worst = Math.max(worst, ms);
             assertFalse(result.verified(), "random input " + i + " verified");
             assertNotNull(result.failure());
-            assertTrue(result.failure().reason() != Reason.INTERNAL_ERROR,
+            assertTrue(
+                    result.failure().reason() != Reason.INTERNAL_ERROR,
                     "random input " + i + " answered INTERNAL_ERROR");
         }
         System.out.println("deep 300 random inputs (up to 3.1 MB): worst " + worst + " ms");

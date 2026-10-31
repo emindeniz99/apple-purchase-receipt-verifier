@@ -1,6 +1,5 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,10 +21,10 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
@@ -140,10 +139,15 @@ class WorstCaseFiftyYearTest {
         rootHolder = cert(ROOT_NAME, rootKp.getPublic(), ROOT_NAME, rootKey, true, null);
         interHolder = cert(INTER_NAME, interKp.getPublic(), ROOT_NAME, rootKey, true, WWDR_OID);
         leafHolder = cert(
-                new X500Name("CN=Fifty Year Fake Receipt Signer"), leafKp.getPublic(), INTER_NAME, interKey,
-                false, SIGNING_LEAF_OID);
+                new X500Name("CN=Fifty Year Fake Receipt Signer"),
+                leafKp.getPublic(),
+                INTER_NAME,
+                interKey,
+                false,
+                SIGNING_LEAF_OID);
         root = jca(rootHolder);
-        verifier = Verifier.create(Config.builder().roots(Collections.singleton(root)).build());
+        verifier = Verifier.create(
+                Config.builder().roots(Collections.singleton(root)).build());
     }
 
     /** One refusal: expected reason (one of), inside the budget, message printed. */
@@ -153,10 +157,13 @@ class WorstCaseFiftyYearTest {
         long ms = (System.nanoTime() - start) / 1_000_000;
         Reason actual = result.verified() ? null : result.failure().reason();
         System.out.println("fifty " + what + ": " + ms + " ms, "
-                + (result.verified() ? "VERIFIED" : actual + " (" + result.failure().message() + ")"));
+                + (result.verified()
+                        ? "VERIFIED"
+                        : actual + " (" + result.failure().message() + ")"));
         assertFalse(result.verified(), what + " verified");
         assertNotNull(actual);
-        assertTrue(Arrays.asList(expected).contains(actual),
+        assertTrue(
+                Arrays.asList(expected).contains(actual),
                 what + " refused as " + actual + ", expected one of " + Arrays.toString(expected));
         assertTrue(ms < BUDGET_MS, what + " took " + ms + " ms");
     }
@@ -173,12 +180,21 @@ class WorstCaseFiftyYearTest {
     private static byte[] payload() throws Exception {
         String now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         return TestPki.receiptPayload(
-                "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8}, now,
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
+                now,
                 Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", now, null)));
     }
 
-    private static byte[] sign(byte[] content, PrivateKey key, String alg, X509CertificateHolder signerCert,
-            List<X509CertificateHolder> chain) throws Exception {
+    private static byte[] sign(
+            byte[] content,
+            PrivateKey key,
+            String alg,
+            X509CertificateHolder signerCert,
+            List<X509CertificateHolder> chain)
+            throws Exception {
         return sign(content, genuineSigner(key, alg), signerCert, chain, false, null, null);
     }
 
@@ -187,12 +203,17 @@ class WorstCaseFiftyYearTest {
      * attribute-abuse tests need (direct signature, or custom generators for
      * the signed and unsigned attribute tables).
      */
-    private static byte[] sign(byte[] content, ContentSigner signer, X509CertificateHolder signerCert,
-            List<X509CertificateHolder> chain, boolean direct, CMSAttributeTableGenerator signedGenerator,
-            CMSAttributeTableGenerator unsignedGenerator) throws Exception {
-        JcaSignerInfoGeneratorBuilder builder =
-                new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
-                        .setProvider(TestPki.BC).build());
+    private static byte[] sign(
+            byte[] content,
+            ContentSigner signer,
+            X509CertificateHolder signerCert,
+            List<X509CertificateHolder> chain,
+            boolean direct,
+            CMSAttributeTableGenerator signedGenerator,
+            CMSAttributeTableGenerator unsignedGenerator)
+            throws Exception {
+        JcaSignerInfoGeneratorBuilder builder = new JcaSignerInfoGeneratorBuilder(
+                new JcaDigestCalculatorProviderBuilder().setProvider(TestPki.BC).build());
         if (direct) {
             builder.setDirectSignature(true);
         }
@@ -205,8 +226,10 @@ class WorstCaseFiftyYearTest {
         CMSSignedDataGenerator generator = new CMSSignedDataGenerator();
         generator.addCertificates(new CollectionStore<>(chain));
         generator.addSignerInfoGenerator(builder.build(signer, signerCert));
-        return generator.generate(new CMSProcessableByteArray(content), true)
-                .toASN1Structure().getEncoded("DER");
+        return generator
+                .generate(new CMSProcessableByteArray(content), true)
+                .toASN1Structure()
+                .getEncoded("DER");
     }
 
     private static ContentSigner genuineSigner(PrivateKey key, String alg) throws Exception {
@@ -230,8 +253,13 @@ class WorstCaseFiftyYearTest {
 
     /** A certificate built on a hand-made SPKI, signed the normal way. */
     private static X509CertificateHolder craftedSubjectCert(
-            X500Name subject, SubjectPublicKeyInfo spki, X500Name issuer, PrivateKey issuerKey, boolean ca,
-            String marker) throws Exception {
+            X500Name subject,
+            SubjectPublicKeyInfo spki,
+            X500Name issuer,
+            PrivateKey issuerKey,
+            boolean ca,
+            String marker)
+            throws Exception {
         X509v3CertificateBuilder builder =
                 new X509v3CertificateBuilder(issuer, serial(), new Date(), yearOut(), subject, spki);
         if (ca) {
@@ -339,9 +367,7 @@ class WorstCaseFiftyYearTest {
     private static BigInteger ceilCbrt(BigInteger value) {
         BigInteger x = BigInteger.ONE.shiftLeft(value.bitLength() / 3 + 2);
         while (true) {
-            BigInteger next = x.shiftLeft(1)
-                    .add(value.divide(x.multiply(x)))
-                    .divide(THREE);
+            BigInteger next = x.shiftLeft(1).add(value.divide(x.multiply(x))).divide(THREE);
             if (next.compareTo(x) >= 0) {
                 break;
             }
@@ -384,16 +410,24 @@ class WorstCaseFiftyYearTest {
             BigInteger root = ceilCbrt(target);
             byte[] cube = root.pow(3).toByteArray();
             byte[] asBlock = new byte[256];
-            System.arraycopy(cube, Math.max(0, cube.length - 256),
-                    asBlock, Math.max(0, 256 - cube.length), Math.min(256, cube.length));
+            System.arraycopy(
+                    cube,
+                    Math.max(0, cube.length - 256),
+                    asBlock,
+                    Math.max(0, 256 - cube.length),
+                    Math.min(256, cube.length));
             byte[] check = Arrays.copyOf(asBlock, prefix.length);
             if (!Arrays.equals(check, prefix)) {
                 throw new IllegalStateException("the cube root lost the PKCS#1 prefix");
             }
             byte[] signature = new byte[256];
             byte[] rootBytes = root.toByteArray();
-            System.arraycopy(rootBytes, Math.max(0, rootBytes.length - 256),
-                    signature, Math.max(0, 256 - rootBytes.length), Math.min(256, rootBytes.length));
+            System.arraycopy(
+                    rootBytes,
+                    Math.max(0, rootBytes.length - 256),
+                    signature,
+                    Math.max(0, 256 - rootBytes.length),
+                    Math.min(256, rootBytes.length));
             ASN1EncodableVector cert = new ASN1EncodableVector();
             cert.add(ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(tbs)));
             cert.add(sha256RsaLabel());
@@ -413,18 +447,31 @@ class WorstCaseFiftyYearTest {
         // where the strict parser reads the DigestInfo to the last byte
         // and refuses the garbage after it.
         X509CertificateHolder cubeCa = craftedSubjectCert(
-                new X500Name("CN=Cube Root CA"), rawRsaKey(2048, THREE), INTER_NAME, interKey, true,
-                WWDR_OID);
+                new X500Name("CN=Cube Root CA"), rawRsaKey(2048, THREE), INTER_NAME, interKey, true, WWDR_OID);
         X509v3CertificateBuilder leafBuilder = new X509v3CertificateBuilder(
-                new X500Name("CN=Cube Root CA"), serial(), new Date(), yearOut(),
-                new X500Name("CN=Cube Root Signer"), rawRsaKey(2048, THREE));
+                new X500Name("CN=Cube Root CA"),
+                serial(),
+                new Date(),
+                yearOut(),
+                new X500Name("CN=Cube Root Signer"),
+                rawRsaKey(2048, THREE));
         leafBuilder.addExtension(
                 new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE);
         X509CertificateHolder cubeLeaf = cubeRootCert(leafBuilder);
-        byte[] receipt = sign(payload(), new GarbageSigner(), cubeLeaf,
-                Arrays.asList(cubeLeaf, cubeCa, interHolder, rootHolder), false, null, null);
-        refused("bleichenbacher cube-root forged chain", b64(receipt),
-                Reason.UNTRUSTED_CHAIN, Reason.INVALID_CERTIFICATE, Reason.INVALID_SIGNATURE);
+        byte[] receipt = sign(
+                payload(),
+                new GarbageSigner(),
+                cubeLeaf,
+                Arrays.asList(cubeLeaf, cubeCa, interHolder, rootHolder),
+                false,
+                null,
+                null);
+        refused(
+                "bleichenbacher cube-root forged chain",
+                b64(receipt),
+                Reason.UNTRUSTED_CHAIN,
+                Reason.INVALID_CERTIFICATE,
+                Reason.INVALID_SIGNATURE);
     }
 
     @Test
@@ -436,12 +483,20 @@ class WorstCaseFiftyYearTest {
         eThree.initialize(new RSAKeyGenParameterSpec(2048, THREE));
         KeyPair caKp = eThree.generateKeyPair();
         KeyPair leafKp = eThree.generateKeyPair();
-        X509CertificateHolder eThreeCa = cert(
-                new X500Name("CN=Exponent Three CA"), caKp.getPublic(), INTER_NAME, interKey, true, WWDR_OID);
+        X509CertificateHolder eThreeCa =
+                cert(new X500Name("CN=Exponent Three CA"), caKp.getPublic(), INTER_NAME, interKey, true, WWDR_OID);
         X509CertificateHolder eThreeLeaf = cert(
-                new X500Name("CN=Exponent Three Signer"), leafKp.getPublic(),
-                new X500Name("CN=Exponent Three CA"), caKp.getPrivate(), false, SIGNING_LEAF_OID);
-        byte[] receipt = sign(payload(), leafKp.getPrivate(), "SHA256withRSA", eThreeLeaf,
+                new X500Name("CN=Exponent Three Signer"),
+                leafKp.getPublic(),
+                new X500Name("CN=Exponent Three CA"),
+                caKp.getPrivate(),
+                false,
+                SIGNING_LEAF_OID);
+        byte[] receipt = sign(
+                payload(),
+                leafKp.getPrivate(),
+                "SHA256withRSA",
+                eThreeLeaf,
                 Arrays.asList(eThreeLeaf, eThreeCa, interHolder, rootHolder));
         verifies("genuinely used exponent-3 chain", b64(receipt));
     }
@@ -457,29 +512,51 @@ class WorstCaseFiftyYearTest {
         KeyPairGenerator rsa = KeyPairGenerator.getInstance("RSA");
         rsa.initialize(2048);
         KeyPair shared = rsa.generateKeyPair();
-        BigInteger modulus =
-                ((java.security.interfaces.RSAPublicKey) shared.getPublic()).getModulus();
+        BigInteger modulus = ((java.security.interfaces.RSAPublicKey) shared.getPublic()).getModulus();
         X509CertificateHolder caOne = craftedSubjectCert(
-                new X500Name("CN=Shared Modulus CA"), rawRsaKey(modulus, BigInteger.valueOf(65537)),
-                INTER_NAME, interKey, true, WWDR_OID);
+                new X500Name("CN=Shared Modulus CA"),
+                rawRsaKey(modulus, BigInteger.valueOf(65537)),
+                INTER_NAME,
+                interKey,
+                true,
+                WWDR_OID);
         X509CertificateHolder caTwo = craftedSubjectCert(
-                new X500Name("CN=Shared Modulus CA"), rawRsaKey(modulus, BigInteger.valueOf(17)),
-                INTER_NAME, interKey, true, WWDR_OID);
+                new X500Name("CN=Shared Modulus CA"),
+                rawRsaKey(modulus, BigInteger.valueOf(17)),
+                INTER_NAME,
+                interKey,
+                true,
+                WWDR_OID);
         KeyPair leafKp = rsa.generateKeyPair();
         X509CertificateHolder leafOne = cert(
-                new X500Name("CN=Shared Modulus Signer"), leafKp.getPublic(),
-                new X500Name("CN=Shared Modulus CA"), shared.getPrivate(), false, SIGNING_LEAF_OID);
-        byte[] genuine = sign(payload(), leafKp.getPrivate(), "SHA256withRSA", leafOne,
+                new X500Name("CN=Shared Modulus Signer"),
+                leafKp.getPublic(),
+                new X500Name("CN=Shared Modulus CA"),
+                shared.getPrivate(),
+                false,
+                SIGNING_LEAF_OID);
+        byte[] genuine = sign(
+                payload(),
+                leafKp.getPrivate(),
+                "SHA256withRSA",
+                leafOne,
                 Arrays.asList(leafOne, caOne, caTwo, interHolder, rootHolder));
         verifies("shared-modulus chain with the held key", b64(genuine));
 
         X509CertificateHolder siblingLeaf = new X509v3CertificateBuilder(
-                new X500Name("CN=Shared Modulus CA"), serial(), new Date(), yearOut(),
-                new X500Name("CN=Shared Modulus Sibling Signer"), rawRsaKey(modulus, BigInteger.valueOf(17)))
-                .addExtension(new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false,
-                        org.bouncycastle.asn1.ASN1Boolean.TRUE)
+                        new X500Name("CN=Shared Modulus CA"),
+                        serial(),
+                        new Date(),
+                        yearOut(),
+                        new X500Name("CN=Shared Modulus Sibling Signer"),
+                        rawRsaKey(modulus, BigInteger.valueOf(17)))
+                .addExtension(new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE)
                 .build(new GarbageSigner());
-        byte[] forged = sign(payload(), leafKey, "SHA256withRSA", siblingLeaf,
+        byte[] forged = sign(
+                payload(),
+                leafKey,
+                "SHA256withRSA",
+                siblingLeaf,
                 Arrays.asList(siblingLeaf, caOne, caTwo, interHolder, rootHolder));
         refused("shared-modulus sibling's garbage-issued signer", b64(forged), Reason.UNTRUSTED_CHAIN);
     }
@@ -496,20 +573,37 @@ class WorstCaseFiftyYearTest {
         // both riding in the bag of a genuine receipt: the walk signature
         // check kills both, whatever names they wear.
         X509CertificateHolder interSquatter = new X509v3CertificateBuilder(
-                ROOT_NAME, serial(), new Date(), yearOut(), INTER_NAME, rawRsaKey(2048, BigInteger.valueOf(65537)))
+                        ROOT_NAME,
+                        serial(),
+                        new Date(),
+                        yearOut(),
+                        INTER_NAME,
+                        rawRsaKey(2048, BigInteger.valueOf(65537)))
                 .addExtension(Extension.basicConstraints, true, new BasicConstraints(true))
-                .addExtension(new ASN1ObjectIdentifier(WWDR_OID), false,
-                        org.bouncycastle.asn1.ASN1Boolean.TRUE)
+                .addExtension(new ASN1ObjectIdentifier(WWDR_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE)
                 .build(new GarbageSigner());
         X509CertificateHolder rootSquatter = new X509v3CertificateBuilder(
-                ROOT_NAME, serial(), new Date(), yearOut(), ROOT_NAME, rawRsaKey(2048, BigInteger.valueOf(65537)))
+                        ROOT_NAME,
+                        serial(),
+                        new Date(),
+                        yearOut(),
+                        ROOT_NAME,
+                        rawRsaKey(2048, BigInteger.valueOf(65537)))
                 .addExtension(Extension.basicConstraints, true, new BasicConstraints(true))
                 .build(new GarbageSigner());
-        byte[] receipt = sign(payload(), leafKey, "SHA256withRSA", leafHolder,
+        byte[] receipt = sign(
+                payload(),
+                leafKey,
+                "SHA256withRSA",
+                leafHolder,
                 Arrays.asList(leafHolder, interHolder, rootHolder, interSquatter, rootSquatter));
         verifies("receipt beside intermediate and root squatters", b64(receipt));
 
-        byte[] asSigner = sign(payload(), leafKey, "SHA256withRSA", interSquatter,
+        byte[] asSigner = sign(
+                payload(),
+                leafKey,
+                "SHA256withRSA",
+                interSquatter,
                 Arrays.asList(leafHolder, interHolder, rootHolder, interSquatter));
         refused("intermediate squatter as signer", b64(asSigner), Reason.UNTRUSTED_CHAIN);
     }
@@ -523,19 +617,25 @@ class WorstCaseFiftyYearTest {
         // failure does not sink it. Alone it is the only match, and the
         // walk refuses it.
         X509CertificateHolder sidStranger = new X509v3CertificateBuilder(
-                INTER_NAME, leafHolder.getSerialNumber(), new Date(), yearOut(),
-                new X500Name("CN=Sid Colliding Signer"), rawRsaKey(2048, BigInteger.valueOf(65537)))
-                .addExtension(new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false,
-                        org.bouncycastle.asn1.ASN1Boolean.TRUE)
+                        INTER_NAME,
+                        leafHolder.getSerialNumber(),
+                        new Date(),
+                        yearOut(),
+                        new X500Name("CN=Sid Colliding Signer"),
+                        rawRsaKey(2048, BigInteger.valueOf(65537)))
+                .addExtension(new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false, org.bouncycastle.asn1.ASN1Boolean.TRUE)
                 .build(new GarbageSigner());
-        byte[] besideGenuine = sign(payload(), leafKey, "SHA256withRSA", leafHolder,
+        byte[] besideGenuine = sign(
+                payload(),
+                leafKey,
+                "SHA256withRSA",
+                leafHolder,
                 Arrays.asList(leafHolder, sidStranger, interHolder, rootHolder));
         verifies("genuine signer beside a sid-colliding stranger", b64(besideGenuine));
 
-        byte[] alone = sign(payload(), leafKey, "SHA256withRSA", leafHolder,
-                Arrays.asList(sidStranger, interHolder, rootHolder));
-        refused("sid-colliding stranger alone", b64(alone),
-                Reason.UNTRUSTED_CHAIN, Reason.MALFORMED);
+        byte[] alone = sign(
+                payload(), leafKey, "SHA256withRSA", leafHolder, Arrays.asList(sidStranger, interHolder, rootHolder));
+        refused("sid-colliding stranger alone", b64(alone), Reason.UNTRUSTED_CHAIN, Reason.MALFORMED);
     }
 
     @Test
@@ -550,19 +650,33 @@ class WorstCaseFiftyYearTest {
             X509CertificateHolder outlaw;
             try {
                 outlaw = new X509v3CertificateBuilder(
-                        INTER_NAME, serial, new Date(), yearOut(),
-                        new X500Name("CN=Outlaw Serial Signer"), rawRsaKey(2048, BigInteger.valueOf(65537)))
-                        .addExtension(new ASN1ObjectIdentifier(SIGNING_LEAF_OID), false,
+                                INTER_NAME,
+                                serial,
+                                new Date(),
+                                yearOut(),
+                                new X500Name("CN=Outlaw Serial Signer"),
+                                rawRsaKey(2048, BigInteger.valueOf(65537)))
+                        .addExtension(
+                                new ASN1ObjectIdentifier(SIGNING_LEAF_OID),
+                                false,
                                 org.bouncycastle.asn1.ASN1Boolean.TRUE)
                         .build(new GarbageSigner());
             } catch (IllegalArgumentException e) {
                 System.out.println("fifty " + what + ": the certificate builder refused the serial");
                 continue;
             }
-            byte[] asSigner = sign(payload(), leafKey, "SHA256withRSA", outlaw,
+            byte[] asSigner = sign(
+                    payload(),
+                    leafKey,
+                    "SHA256withRSA",
+                    outlaw,
                     Arrays.asList(leafHolder, interHolder, rootHolder, outlaw));
             refused(what + " as signer", b64(asSigner), Reason.UNTRUSTED_CHAIN);
-            byte[] asJunk = sign(payload(), leafKey, "SHA256withRSA", leafHolder,
+            byte[] asJunk = sign(
+                    payload(),
+                    leafKey,
+                    "SHA256withRSA",
+                    leafHolder,
                     Arrays.asList(leafHolder, interHolder, rootHolder, outlaw));
             verifies(what + " as bag junk", b64(asJunk));
         }
@@ -583,31 +697,54 @@ class WorstCaseFiftyYearTest {
         // pinned root, which neither touches, so both are inert however
         // genuine their mutual signatures are.
         X509CertificateHolder meshA = cert(
-                new X500Name("CN=Mesh A"), meshAKp.getPublic(), new X500Name("CN=Mesh B"),
-                meshBKp.getPrivate(), true, WWDR_OID);
+                new X500Name("CN=Mesh A"),
+                meshAKp.getPublic(),
+                new X500Name("CN=Mesh B"),
+                meshBKp.getPrivate(),
+                true,
+                WWDR_OID);
         X509CertificateHolder meshB = cert(
-                new X500Name("CN=Mesh B"), meshBKp.getPublic(), new X500Name("CN=Mesh A"),
-                meshAKp.getPrivate(), true, WWDR_OID);
+                new X500Name("CN=Mesh B"),
+                meshBKp.getPublic(),
+                new X500Name("CN=Mesh A"),
+                meshAKp.getPrivate(),
+                true,
+                WWDR_OID);
         // C is genuinely issued by A, which never authenticates, so the
         // genuine signature under a dead CA is as inert as garbage.
         X509CertificateHolder meshC = cert(
-                new X500Name("CN=Mesh C"), rsa.generateKeyPair().getPublic(), new X500Name("CN=Mesh A"),
-                meshAKp.getPrivate(), false, SIGNING_LEAF_OID);
+                new X500Name("CN=Mesh C"),
+                rsa.generateKeyPair().getPublic(),
+                new X500Name("CN=Mesh A"),
+                meshAKp.getPrivate(),
+                false,
+                SIGNING_LEAF_OID);
         // A genuine root-issued twin of the intermediate's own name: the
         // walk authenticates it too, and PKIX must keep it distinct from
         // the real one on the way to the anchor.
         KeyPair twinKp = rsa.generateKeyPair();
         KeyPair twinLeafKp = rsa.generateKeyPair();
-        X509CertificateHolder twin = cert(
-                INTER_NAME, twinKp.getPublic(), ROOT_NAME, rootKey, true, WWDR_OID);
+        X509CertificateHolder twin = cert(INTER_NAME, twinKp.getPublic(), ROOT_NAME, rootKey, true, WWDR_OID);
         X509CertificateHolder twinLeaf = cert(
-                new X500Name("CN=Signer Under The Twin"), twinLeafKp.getPublic(), INTER_NAME,
-                twinKp.getPrivate(), false, SIGNING_LEAF_OID);
-        byte[] receipt = sign(payload(), leafKey, "SHA256withRSA", leafHolder,
+                new X500Name("CN=Signer Under The Twin"),
+                twinLeafKp.getPublic(),
+                INTER_NAME,
+                twinKp.getPrivate(),
+                false,
+                SIGNING_LEAF_OID);
+        byte[] receipt = sign(
+                payload(),
+                leafKey,
+                "SHA256withRSA",
+                leafHolder,
                 Arrays.asList(leafHolder, interHolder, twin, twinLeaf, meshA, meshB, meshC, rootHolder));
         verifies("receipt beside cycles and a named twin", b64(receipt));
 
-        byte[] underTwin = sign(payload(), twinLeafKp.getPrivate(), "SHA256withRSA", twinLeaf,
+        byte[] underTwin = sign(
+                payload(),
+                twinLeafKp.getPrivate(),
+                "SHA256withRSA",
+                twinLeaf,
                 Arrays.asList(twinLeaf, twin, rootHolder));
         // The twin is root-issued and carries the marker, so a genuine leaf
         // under it verifies: the walk and PKIX judged it exactly as they
@@ -627,8 +764,7 @@ class WorstCaseFiftyYearTest {
         @Override
         public AttributeTable getAttributes(Map parameters) {
             return new AttributeTable(new Attribute(
-                    new ASN1ObjectIdentifier("1.2.3.4.98"),
-                    new DERSet(new DEROctetString(new byte[] {9, 9, 9, 9}))));
+                    new ASN1ObjectIdentifier("1.2.3.4.98"), new DERSet(new DEROctetString(new byte[] {9, 9, 9, 9}))));
         }
     }
 
@@ -649,8 +785,13 @@ class WorstCaseFiftyYearTest {
 
     @Test
     void unsignedAttributesAreInert() throws Exception {
-        byte[] receipt = sign(payload(), genuineSigner(leafKey, "SHA256withRSA"), leafHolder,
-                Arrays.asList(leafHolder, interHolder, rootHolder), false, null,
+        byte[] receipt = sign(
+                payload(),
+                genuineSigner(leafKey, "SHA256withRSA"),
+                leafHolder,
+                Arrays.asList(leafHolder, interHolder, rootHolder),
+                false,
+                null,
                 new GarbageUnsignedGenerator());
         verifies("genuine receipt with an injected unsigned attribute", b64(receipt));
     }
@@ -660,11 +801,19 @@ class WorstCaseFiftyYearTest {
         // The signature is genuine and covers the attributes as sent, but
         // the signed messageDigest names another payload's digest: the
         // recomputed digest disagrees, and the SignerInfo refuses.
-        byte[] receipt = sign(payload(), genuineSigner(leafKey, "SHA256withRSA"), leafHolder,
-                Arrays.asList(leafHolder, interHolder, rootHolder), false,
-                new MistakenDigestGenerator(), null);
-        refused("signed messageDigest naming another payload", b64(receipt),
-                Reason.INVALID_SIGNATURE, Reason.MALFORMED);
+        byte[] receipt = sign(
+                payload(),
+                genuineSigner(leafKey, "SHA256withRSA"),
+                leafHolder,
+                Arrays.asList(leafHolder, interHolder, rootHolder),
+                false,
+                new MistakenDigestGenerator(),
+                null);
+        refused(
+                "signed messageDigest naming another payload",
+                b64(receipt),
+                Reason.INVALID_SIGNATURE,
+                Reason.MALFORMED);
     }
 
     @Test
@@ -673,8 +822,14 @@ class WorstCaseFiftyYearTest {
         // attributes; Apple never does. Whatever the verdict here, it must
         // be fast and never throw, and a genuine signature is behind it
         // either way.
-        byte[] receipt = sign(payload(), genuineSigner(leafKey, "SHA256withRSA"), leafHolder,
-                Arrays.asList(leafHolder, interHolder, rootHolder), true, null, null);
+        byte[] receipt = sign(
+                payload(),
+                genuineSigner(leafKey, "SHA256withRSA"),
+                leafHolder,
+                Arrays.asList(leafHolder, interHolder, rootHolder),
+                true,
+                null,
+                null);
         long start = System.nanoTime();
         VerificationResult<ReceiptPayload> result = verifier.verifyReceipt(b64(receipt));
         long ms = (System.nanoTime() - start) / 1_000_000;
@@ -682,8 +837,9 @@ class WorstCaseFiftyYearTest {
                 + (result.verified() ? "" : " " + result.failure()));
         assertTrue(ms < BUDGET_MS, "the direct-signature receipt took " + ms + " ms");
         if (!result.verified()) {
-            assertTrue(Arrays.asList(Reason.MALFORMED, Reason.INVALID_SIGNATURE, Reason.UNREADABLE_PAYLOAD)
-                    .contains(result.failure().reason()),
+            assertTrue(
+                    Arrays.asList(Reason.MALFORMED, Reason.INVALID_SIGNATURE, Reason.UNREADABLE_PAYLOAD)
+                            .contains(result.failure().reason()),
                     "direct signature refused as " + result.failure().reason());
         }
     }

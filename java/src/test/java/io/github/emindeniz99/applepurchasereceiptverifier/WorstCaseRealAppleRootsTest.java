@@ -1,10 +1,9 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -25,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -112,9 +112,10 @@ class WorstCaseRealAppleRootsTest {
         verifier = Verifier.create(Config.defaults());
         genuine = new CMSSignedData(Base64.getMimeDecoder().decode(receipt("receipt-sandbox-g5")));
         SignerInformation signerInfo = genuine.getSignerInfos().iterator().next();
-        genuineSigner =
-                (X509CertificateHolder) genuine.getCertificates().getMatches(signerInfo.getSID())
-                        .iterator().next();
+        genuineSigner = (X509CertificateHolder) genuine.getCertificates()
+                .getMatches(signerInfo.getSID())
+                .iterator()
+                .next();
         genuineChain = new ArrayList<>(genuine.getCertificates().getMatches(null));
         for (X509Certificate root : AppleRootCerts.roots()) {
             rootHolders.add(new X509CertificateHolder(root.getEncoded()));
@@ -146,11 +147,15 @@ class WorstCaseRealAppleRootsTest {
         attackerPublic = attackerKp.getPublic();
         X500Name strangerName = new X500Name("CN=Stranger Root that is not Apple");
         strangerRoot = cert(strangerName, rootKp.getPublic(), strangerName, rootKp.getPrivate(), true, null);
-        lookalikeWwdr = cert(
-                genuineWwdr.getSubject(), wwdrKp.getPublic(), strangerName, rootKp.getPrivate(), true, WWDR_OID);
+        lookalikeWwdr =
+                cert(genuineWwdr.getSubject(), wwdrKp.getPublic(), strangerName, rootKp.getPrivate(), true, WWDR_OID);
         strangerLeaf = cert(
-                new X500Name("CN=Stranger Receipt Signer"), leafKp.getPublic(), genuineWwdr.getSubject(),
-                wwdrKp.getPrivate(), false, SIGNING_LEAF_OID);
+                new X500Name("CN=Stranger Receipt Signer"),
+                leafKp.getPublic(),
+                genuineWwdr.getSubject(),
+                wwdrKp.getPrivate(),
+                false,
+                SIGNING_LEAF_OID);
     }
 
     private static String receipt(String name) throws Exception {
@@ -165,10 +170,13 @@ class WorstCaseRealAppleRootsTest {
         long ms = (System.nanoTime() - start) / 1_000_000;
         Reason actual = result.verified() ? null : result.failure().reason();
         System.out.println("real " + what + ": " + ms + " ms, "
-                + (result.verified() ? "VERIFIED" : actual + " (" + result.failure().message() + ")"));
+                + (result.verified()
+                        ? "VERIFIED"
+                        : actual + " (" + result.failure().message() + ")"));
         assertFalse(result.verified(), what + " verified");
         assertNotNull(actual);
-        assertTrue(Arrays.asList(expected).contains(actual),
+        assertTrue(
+                Arrays.asList(expected).contains(actual),
                 what + " refused as " + actual + ", expected one of " + Arrays.toString(expected));
         assertTrue(ms < BUDGET_MS, what + " took " + ms + " ms");
     }
@@ -200,7 +208,11 @@ class WorstCaseRealAppleRootsTest {
      */
     private static byte[] payloadAt(String creationDate) throws Exception {
         return TestPki.receiptPayload(
-                "com.example.app", "1.0", new byte[] {1, 2, 3, 4}, new byte[] {5, 6, 7, 8}, creationDate,
+                "com.example.app",
+                "1.0",
+                new byte[] {1, 2, 3, 4},
+                new byte[] {5, 6, 7, 8},
+                creationDate,
                 Collections.singletonList(TestPki.inAppPurchase(1, "gems.small", "2001", "2001", creationDate, null)));
     }
 
@@ -213,17 +225,19 @@ class WorstCaseRealAppleRootsTest {
      * form Apple's genuine receipts carry, under any signer certificate the
      * attack wants to claim, with any chain in the bag.
      */
-    private static byte[] sign(byte[] content, PrivateKey key, X509CertificateHolder signerCert,
-            List<X509CertificateHolder> chain) throws Exception {
-        JcaSignerInfoGeneratorBuilder builder =
-                new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder()
-                        .setProvider(TestPki.BC).build());
+    private static byte[] sign(
+            byte[] content, PrivateKey key, X509CertificateHolder signerCert, List<X509CertificateHolder> chain)
+            throws Exception {
+        JcaSignerInfoGeneratorBuilder builder = new JcaSignerInfoGeneratorBuilder(
+                new JcaDigestCalculatorProviderBuilder().setProvider(TestPki.BC).build());
         builder.setDirectSignature(true);
         CMSSignedDataGenerator generator = new CMSSignedDataGenerator();
         generator.addCertificates(new CollectionStore<>(chain));
         generator.addSignerInfoGenerator(builder.build(genuineSigner(key, "SHA256withRSA"), signerCert));
-        return generator.generate(new CMSProcessableByteArray(content), true)
-                .toASN1Structure().getEncoded("DER");
+        return generator
+                .generate(new CMSProcessableByteArray(content), true)
+                .toASN1Structure()
+                .getEncoded("DER");
     }
 
     private static ContentSigner genuineSigner(PrivateKey key, String alg) throws Exception {
@@ -251,8 +265,8 @@ class WorstCaseRealAppleRootsTest {
      * Whatever claims Apple WWDR or an Apple root issued it has to land in
      * this shape, because Apple's keys are Apple's.
      */
-    private static X509CertificateHolder garbageSigned(X500Name subject, PublicKey key, X500Name issuer,
-            String marker) throws IOException {
+    private static X509CertificateHolder garbageSigned(X500Name subject, PublicKey key, X500Name issuer, String marker)
+            throws IOException {
         X509v3CertificateBuilder builder =
                 new JcaX509v3CertificateBuilder(issuer, serial(), new Date(), yearOut(), subject, key);
         builder.addExtension(new ASN1ObjectIdentifier(marker), false, ASN1Boolean.TRUE);
@@ -298,12 +312,13 @@ class WorstCaseRealAppleRootsTest {
 
     @Test
     void genuineAppStoreReceiptsVerifyAgainstThePinsProdUsesAndMapToApplesEndpointStatuses() throws Exception {
-        for (String name :
-                new String[] {"receipt-sandbox-g5", "receipt-sandbox-legacy"}) {
+        for (String name : new String[] {"receipt-sandbox-g5", "receipt-sandbox-legacy"}) {
             byte[] der = Base64.getMimeDecoder().decode(receipt(name));
             verifies(name, der);
             assertEquals(AppleStatus.OK, status(Environment.SANDBOX, der), name + " on the sandbox endpoint");
-            assertEquals(AppleStatus.SANDBOX_RECEIPT_ON_PRODUCTION, status(Environment.PRODUCTION, der),
+            assertEquals(
+                    AppleStatus.SANDBOX_RECEIPT_ON_PRODUCTION,
+                    status(Environment.PRODUCTION, der),
                     name + " on the production endpoint");
         }
     }
@@ -334,7 +349,9 @@ class WorstCaseRealAppleRootsTest {
                 continue;
             }
             sawRsa = true;
-            assertEquals(BigInteger.valueOf(65537), ((RSAPublicKey) key).getPublicExponent(),
+            assertEquals(
+                    BigInteger.valueOf(65537),
+                    ((RSAPublicKey) key).getPublicExponent(),
                     root.getSubjectX500Principal().getName() + " is an RSA root with an unexpected exponent");
         }
         assertTrue(sawRsa, "expected at least one RSA root among the pins");
@@ -368,8 +385,7 @@ class WorstCaseRealAppleRootsTest {
         // with garbage where Apple's signature would be. Only Apple holds
         // the WWDR key, so nothing enters the walk through it.
         X509CertificateHolder forged = garbageSigned(
-                new X500Name("CN=Leaf Apple never issued"), attackerPublic,
-                genuineWwdr.getSubject(), SIGNING_LEAF_OID);
+                new X500Name("CN=Leaf Apple never issued"), attackerPublic, genuineWwdr.getSubject(), SIGNING_LEAF_OID);
         List<X509CertificateHolder> bag = new ArrayList<>();
         bag.add(forged);
         bag.addAll(genuineChain);
@@ -385,11 +401,16 @@ class WorstCaseRealAppleRootsTest {
         // Each leg dies the same way -- nobody can vouch under Apple.
         for (X509CertificateHolder rootHolder : rootHolders) {
             X509CertificateHolder squatter = garbageSigned(
-                    new X500Name("CN=Receipt signer Apple never vouched"), attackerPublic,
-                    rootHolder.getSubject(), SIGNING_LEAF_OID);
+                    new X500Name("CN=Receipt signer Apple never vouched"),
+                    attackerPublic,
+                    rootHolder.getSubject(),
+                    SIGNING_LEAF_OID);
             byte[] receipt = sign(payload(), attackerKey, squatter, Arrays.asList(squatter, rootHolder));
-            refused("a squatter under " + rootHolder.getSubject(), receipt,
-                    Reason.UNTRUSTED_CHAIN, Reason.INVALID_CERTIFICATE);
+            refused(
+                    "a squatter under " + rootHolder.getSubject(),
+                    receipt,
+                    Reason.UNTRUSTED_CHAIN,
+                    Reason.INVALID_CERTIFICATE);
             assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, status(Environment.SANDBOX, receipt));
         }
     }
