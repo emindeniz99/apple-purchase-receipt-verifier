@@ -626,6 +626,10 @@ jobs:
         # requires-python floor and stays tested while claimed.
         python: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
+        # macOS runners are the scarce ones. On a pull request macOS runs the
+        # floor and the newest line on Apple silicon only; a push to main,
+        # which every release is cut from, runs the whole grid.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15-intel"},{"os":"macos-15","python":"3.12"},{"os":"macos-15","python":"3.13"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -871,7 +875,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # On a pull request the macOS leg runs in macos-wrappers instead.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["windows-latest"]' || '["macos-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1220,9 +1225,75 @@ jobs:
 
   # The arm64-darwin platform gem of wasmtime, which the Linux legs never
   # load. One current-Ruby leg is enough.
+  # On a pull request the macOS legs of the Go, Ruby and .NET ports share
+  # one macOS runner here instead of taking three: macOS runners are the
+  # scarce ones, and each leg runs for a minute or two. A push to main runs
+  # each leg in its own job (go-platforms, ruby-macos, dotnet), so every
+  # release is cut from a tree that passed them separately. The commands
+  # are those jobs' commands; change them together.
+  macos-wrappers:
+    needs: [changes, rust-wasm]
+    if: >-
+      github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true'
+      || needs.changes.outputs.ruby == 'true' || needs.changes.outputs.dotnet == 'true')
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.changes.outputs.go == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: needs.changes.outputs.go == 'true'
+        run: go test ./...
+        working-directory: go
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+      - if: needs.changes.outputs.ruby == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: ruby
+      - if: needs.changes.outputs.ruby == 'true'
+        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          working-directory: ruby
+        env:
+          BUNDLE_FROZEN: "true"
+      - if: needs.changes.outputs.ruby == 'true'
+        run: bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION' && bundle exec rake test
+        working-directory: ruby
+        env:
+          BUNDLE_FROZEN: "true"
+      - if: needs.changes.outputs.dotnet == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      - if: needs.changes.outputs.dotnet == 'true'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - if: needs.changes.outputs.dotnet == 'true'
+        run: dotnet test -c Release
+        working-directory: dotnet
+
+  # On a pull request this leg runs in macos-wrappers instead.
   ruby-macos:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.ruby == 'true'
+    if: needs.changes.outputs.ruby == 'true' && github.event_name != 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 15
     env:
@@ -2928,7 +2999,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # On a pull request the macOS leg runs in macos-wrappers instead.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
