@@ -64,7 +64,13 @@ case "$target" in
 esac
 check "every case over HTTP and through the CLI" \
   "$python" rust/server/scripts/cases.py --aprv "$bin" --mode both --list
-check "the managed mode" "$python" rust/server/scripts/managed-smoke.py --aprv "$bin"
+# managed-smoke.py is POSIX-only (it kills the parent with SIGKILL and probes
+# the child with os.kill(pid, 0)); ci.yml runs it on Linux alone.
+if [[ "$target" == *-windows-* ]]; then
+  skip "the managed mode (managed-smoke.py is POSIX-only)"
+else
+  check "the managed mode" "$python" rust/server/scripts/managed-smoke.py --aprv "$bin"
+fi
 
 # --- the server crate's own tests, as cargo test would run them ---------
 run_tests() {
