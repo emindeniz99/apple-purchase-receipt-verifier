@@ -1,0 +1,107 @@
+== aprv-x86_64-pc-windows-gnu.exe (13542400 bytes)
+   PE32+ executable (console) x86-64
+   Machine: IMAGE_FILE_MACHINE_AMD64 (0x8664)
+   SizeOfStackReserve: 16777216
+   SizeOfStackCommit: 4096
+   imports bcryptprimitives.dll
+   imports ntdll.dll
+   imports kernel32.dll
+   imports ws2_32.dll
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports api-ms-win-crt-environment-l1-1-0.dll
+== ffi/apple_purchase_receipt_verifier_ffi.dll (8147968 bytes)
+   PE32+ executable (DLL) (GUI) x86-64
+   Machine: IMAGE_FILE_MACHINE_AMD64 (0x8664)
+   SizeOfStackReserve: 1048576
+   SizeOfStackCommit: 4096
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports bcryptprimitives.dll
+   imports KERNEL32.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports WS2_32.dll
+   imports ntdll.dll
+   imports USERENV.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-utility-l1-1-0.dll
+   imports api-ms-win-crt-convert-l1-1-0.dll
+   imports api-ms-win-crt-private-l1-1-0.dll
+   imports api-ms-win-crt-time-l1-1-0.dll
+   imports api-ms-win-crt-filesystem-l1-1-0.dll
+   imports USER32.dll
+   imports ADVAPI32.dll
+   imports api-ms-win-crt-environment-l1-1-0.dll
+   imports CRYPT32.dll
+== ffi/libapple_purchase_receipt_verifier_ffi.dll.a (4735128 bytes)
+   current ar archive
+== tests/ffi/apple_purchase_receipt_verifier_ffi-de60ca956a25f812.exe (46540800 bytes)
+   PE32+ executable (console) x86-64
+   Machine: IMAGE_FILE_MACHINE_AMD64 (0x8664)
+   SizeOfStackReserve: 16777216
+   SizeOfStackCommit: 4096
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports bcryptprimitives.dll
+   imports KERNEL32.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports WS2_32.dll
+   imports ntdll.dll
+   imports USERENV.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+   imports api-ms-win-crt-environment-l1-1-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   imports api-ms-win-crt-time-l1-1-0.dll
+   imports api-ms-win-crt-private-l1-1-0.dll
+   imports api-ms-win-crt-filesystem-l1-1-0.dll
+   imports api-ms-win-crt-utility-l1-1-0.dll
+   imports api-ms-win-crt-convert-l1-1-0.dll
+   imports USER32.dll
+   imports ADVAPI32.dll
+   imports CRYPT32.dll
+   lines holding $SRC/rust/: 6
+== tests/ffi/exported_symbols-cb6bc0943571cafd.exe (7348224 bytes)
+   PE32+ executable (console) x86-64
+   Machine: IMAGE_FILE_MACHINE_AMD64 (0x8664)
+   SizeOfStackReserve: 16777216
+   SizeOfStackCommit: 4096
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports bcryptprimitives.dll
+   imports KERNEL32.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports WS2_32.dll
+   imports ntdll.dll
+   imports USERENV.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+   imports api-ms-win-crt-environment-l1-1-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   lines holding $SRC/rust/: 0
+== tests/server/aprv-10bebcfda5a7ead6.exe (338164736 bytes)
+   PE32+ executable (console) x86-64
+   Machine: IMAGE_FILE_MACHINE_AMD64 (0x8664)
+   SizeOfStackReserve: 16777216
+   SizeOfStackCommit: 4096
+   imports bcryptprimitives.dll
+   imports kernel32.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   imports ws2_32.dll
+   imports ntdll.dll
+   imports USERENV.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+   imports api-ms-win-crt-environment-l1-1-0.dll
+   lines holding $SRC/rust/: 61

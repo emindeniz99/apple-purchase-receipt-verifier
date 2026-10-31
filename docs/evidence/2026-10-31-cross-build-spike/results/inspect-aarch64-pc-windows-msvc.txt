@@ -1,0 +1,36 @@
+== aprv-aarch64-pc-windows-msvc.exe (11054592 bytes)
+   PE32+ executable (console) Aarch64
+   Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)
+   SizeOfStackReserve: 1048576
+   SizeOfStackCommit: 4096
+   imports bcryptprimitives.dll
+   imports kernel32.dll
+   imports ntdll.dll
+   imports ws2_32.dll
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports VCRUNTIME140.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+== tests/server/aprv-985e37a9ab3b35f5.exe (23412224 bytes)
+   PE32+ executable (console) Aarch64
+   Machine: IMAGE_FILE_MACHINE_ARM64 (0xAA64)
+   SizeOfStackReserve: 1048576
+   SizeOfStackCommit: 4096
+   imports bcryptprimitives.dll
+   imports kernel32.dll
+   imports api-ms-win-core-synch-l1-2-0.dll
+   imports ws2_32.dll
+   imports ntdll.dll
+   imports USERENV.dll
+   imports VCRUNTIME140.dll
+   imports api-ms-win-crt-runtime-l1-1-0.dll
+   imports api-ms-win-crt-stdio-l1-1-0.dll
+   imports api-ms-win-crt-math-l1-1-0.dll
+   imports api-ms-win-crt-locale-l1-1-0.dll
+   imports api-ms-win-crt-heap-l1-1-0.dll
+   imports api-ms-win-crt-string-l1-1-0.dll
+   lines holding $SRC/rust/: 14
