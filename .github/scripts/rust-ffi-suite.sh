@@ -17,6 +17,14 @@ group() {
   in_group=1
 }
 
+# On Windows this script runs under Git Bash, whose /usr/bin/perl lacks the
+# modules OpenSSL's Configure needs (Locale::Maketext::Simple). A step in
+# the default PowerShell finds Strawberry Perl first, so put it first here
+# too; openssl-src builds the C ABI's OpenSSL with whichever perl it finds.
+if [[ "${RUNNER_OS:-}" == "Windows" && -d /c/Strawberry/perl/bin ]]; then
+  export PATH="/c/Strawberry/perl/bin:$PATH"
+fi
+
 group "toolchain"
 rustup toolchain install stable --profile minimal --component rustfmt,clippy
 
