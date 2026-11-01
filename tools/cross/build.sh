@@ -145,6 +145,12 @@ case "$target" in
   *-linux-musl*)
     echo "C ABI: skipped, Rust builds no cdylib for $target" | tee -a "$log" ;;
   *)
+    # On a Windows runner this script runs under Git Bash, whose perl lacks
+    # the modules OpenSSL's Configure loads; Strawberry Perl has them, as
+    # .github/scripts/rust-ffi-suite.sh does for the rust-ffi job.
+    if [[ "${RUNNER_OS:-}" == "Windows" && -d /c/Strawberry/perl/bin ]]; then
+      export PATH="/c/Strawberry/perl/bin:$PATH"
+    fi
     mkdir -p "$out/ffi" "$out/tests/ffi"
     echo "::group::the C ABI library for $target"
     # A Mach-O dylib's install name defaults to the path the linker wrote it

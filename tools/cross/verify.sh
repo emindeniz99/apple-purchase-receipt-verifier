@@ -115,7 +115,13 @@ cpp() {
     && "$dir/cppbuild/bin/aprv_conformance" "$dir/manifest"
 }
 if [[ ! -d "$dir/ffi" ]]; then
-  skip "C ABI (none built for $target)"
+  # Only a musl target has no C ABI by design; anywhere else a missing
+  # library is a failed build, and the row says so.
+  if [[ "$target" == *-linux-musl* ]]; then
+    skip "C ABI (Rust builds no cdylib for $target)"
+  else
+    check "C ABI library built" false
+  fi
 else
   # exported_symbols finds the library through the cargo target directory
   # above its own binary, which a copied test executable no longer has; the
