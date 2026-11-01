@@ -89,7 +89,7 @@ impl Serialize for Base64<'_> {
 }
 
 /// `unknown_attributes`: an object keyed by the decimal attribute type, in
-/// the surface's (ascending) order, each value a list of base64 strings.
+/// the core's (ascending) order, each value a list of base64 strings.
 struct Attributes<'a>(&'a UnknownAttributes);
 
 impl Serialize for Attributes<'_> {
@@ -236,7 +236,7 @@ pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String
         Ok(receipt) => to_json(&Verified {
             verified: true,
             payload: Receipt(receipt),
-            environment: spelling(receipt.environment),
+            environment: spelling(receipt.environment().map(Environment::from)),
         }),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
@@ -368,7 +368,10 @@ mod tests {
         init_result, read_init_config, receipt_payload, verify_receipt_result,
         verify_signed_data_result,
     };
-    use aprv_surface::{Environment, Failure, InAppPurchase, JsonPayload, Reason, ReceiptPayload};
+    use apple_purchase_receipt_verifier::__internal as seams;
+    use aprv_surface::{
+        Environment, Failure, JsonPayload, Reason, ReceiptPayload, UnknownAttributes,
+    };
 
     #[test]
     fn a_failure_carries_exactly_three_members_in_a_fixed_order() {
@@ -399,7 +402,7 @@ mod tests {
     #[test]
     fn an_empty_receipt_writes_every_key_as_null_or_empty() {
         assert_eq!(
-            receipt_payload(&ReceiptPayload::default()),
+            receipt_payload(&seams::receipt_payload()),
             concat!(
                 r#"{"receipt_type":null,"app_item_id":null,"bundle_id":null,"bundle_id_bytes":null,"#,
                 r#""application_version":null,"opaque_value":null,"sha1_hash":null,"#,
@@ -414,68 +417,59 @@ mod tests {
     /// Every field `Some`, two purchases, and the strings, keys and numbers
     /// a writer can get wrong.
     fn full_receipt() -> ReceiptPayload {
-        ReceiptPayload {
-            receipt_type: Some("Production\u{0}\u{1}\u{1f}\u{7f}".to_owned()),
-            app_item_id: Some(i64::MIN),
-            bundle_id: Some("com.example.\u{e9}\u{2028}\u{2029}\u{1f600}/\"\\".to_owned()),
-            bundle_id_bytes: Some(vec![]),
-            application_version: Some("1.0\t\r\n\u{8}\u{c}\u{b}".to_owned()),
-            opaque_value: Some(vec![0xfb, 0xff, 0xbf]),
-            sha1_hash: Some(vec![0, 1, 2, 3, 4]),
-            receipt_creation_date_ms: Some(i64::MIN),
-            download_id: Some(i64::MAX),
-            version_external_identifier: Some(0),
-            in_app: vec![
-                InAppPurchase {
-                    quantity: Some(i64::MAX),
-                    product_id: Some("p\u{0}\u{a0}\u{feff}".to_owned()),
-                    transaction_id: Some("-1".to_owned()),
-                    purchase_date_ms: Some(-1),
-                    original_transaction_id: Some(String::new()),
-                    original_purchase_date_ms: Some(0),
-                    expires_date_ms: Some(i64::MAX),
-                    web_order_line_item_id: Some(i64::MIN),
-                    cancellation_reason: None,
-                    cancellation_date_ms: Some(i64::MIN),
-                    is_trial_period: Some(true),
-                    is_in_intro_offer_period: Some(false),
-                    unknown_attributes: vec![
-                        (-1, vec![vec![]]),
-                        (1714, vec![vec![1, 2, 3], vec![]]),
-                        (1714, vec![vec![0xff]]),
-                    ],
-                },
-                InAppPurchase {
-                    quantity: Some(1),
-                    product_id: Some("\u{80}\u{9f}\u{fffd}\u{10ffff}".to_owned()),
-                    transaction_id: Some("1000000000000000".to_owned()),
-                    purchase_date_ms: Some(1_375_340_400_000),
-                    original_transaction_id: Some("1000000000000000".to_owned()),
-                    original_purchase_date_ms: Some(1_375_340_400_000),
-                    expires_date_ms: Some(1_375_344_000_000),
-                    web_order_line_item_id: Some(0),
-                    cancellation_reason: None,
-                    cancellation_date_ms: Some(1_375_341_000_000),
-                    is_trial_period: Some(false),
-                    is_in_intro_offer_period: Some(true),
-                    unknown_attributes: vec![],
-                },
-            ],
-            original_purchase_date_ms: Some(1_375_340_400_000),
-            preorder_date_ms: Some(1_719_913_520_000),
-            original_application_version: Some("\u{1e}\u{1b}\u{e000}".to_owned()),
-            expiration_date_ms: Some(-62_135_596_800_000),
-            unknown_attributes: vec![
-                (i64::MIN, vec![vec![]]),
-                (-5, vec![vec![0]]),
-                (13, vec![vec![0xfb, 0xff], vec![]]),
-                (13, vec![vec![1]]),
-                (i64::MAX, vec![]),
-            ],
-            // Written as the surface carries it: the wire derives nothing
-            // from receipt_type.
-            environment: Some(Environment::Sandbox),
-        }
+        let mut first = seams::in_app_purchase();
+        first.quantity = Some(i64::MAX);
+        first.product_id = Some("p\u{0}\u{a0}\u{feff}".to_owned());
+        first.transaction_id = Some("-1".to_owned());
+        first.purchase_date_ms = Some(-1);
+        first.original_transaction_id = Some(String::new());
+        first.original_purchase_date_ms = Some(0);
+        first.expires_date_ms = Some(i64::MAX);
+        first.web_order_line_item_id = Some(i64::MIN);
+        first.cancellation_date_ms = Some(i64::MIN);
+        first.is_trial_period = Some(true);
+        first.is_in_intro_offer_period = Some(false);
+        first.unknown_attributes = UnknownAttributes::from([
+            (0, vec![vec![]]),
+            (1714, vec![vec![1, 2, 3], vec![], vec![0xff]]),
+        ]);
+        let mut second = seams::in_app_purchase();
+        second.quantity = Some(1);
+        second.product_id = Some("\u{80}\u{9f}\u{fffd}\u{10ffff}".to_owned());
+        second.transaction_id = Some("1000000000000000".to_owned());
+        second.purchase_date_ms = Some(1_375_340_400_000);
+        second.original_transaction_id = Some("1000000000000000".to_owned());
+        second.original_purchase_date_ms = Some(1_375_340_400_000);
+        second.expires_date_ms = Some(1_375_344_000_000);
+        second.web_order_line_item_id = Some(0);
+        second.cancellation_date_ms = Some(1_375_341_000_000);
+        second.is_trial_period = Some(false);
+        second.is_in_intro_offer_period = Some(true);
+        let mut receipt = seams::receipt_payload();
+        receipt.receipt_type = Some("Production\u{0}\u{1}\u{1f}\u{7f}".to_owned());
+        receipt.app_item_id = Some(i64::MIN);
+        receipt.bundle_id = Some("com.example.\u{e9}\u{2028}\u{2029}\u{1f600}/\"\\".to_owned());
+        receipt.bundle_id_bytes = Some(vec![]);
+        receipt.application_version = Some("1.0\t\r\n\u{8}\u{c}\u{b}".to_owned());
+        receipt.opaque_value = Some(vec![0xfb, 0xff, 0xbf]);
+        receipt.sha1_hash = Some(vec![0, 1, 2, 3, 4]);
+        receipt.receipt_creation_date_ms = Some(i64::MIN);
+        receipt.download_id = Some(i64::MAX);
+        receipt.version_external_identifier = Some(0);
+        receipt.in_app = vec![first, second];
+        receipt.original_purchase_date_ms = Some(1_375_340_400_000);
+        receipt.preorder_date_ms = Some(1_719_913_520_000);
+        receipt.original_application_version = Some("\u{1e}\u{1b}\u{e000}".to_owned());
+        receipt.expiration_date_ms = Some(-62_135_596_800_000);
+        // The extremes of the attribute type, and 9 before 13: ascending
+        // by value, not by the decimal text.
+        receipt.unknown_attributes = UnknownAttributes::from([
+            (0, vec![vec![]]),
+            (9, vec![vec![0]]),
+            (13, vec![vec![0xfb, 0xff], vec![], vec![1]]),
+            (u32::MAX, vec![]),
+        ]);
+        receipt
     }
 
     /// The whole verified `verify-receipt` answer for [`full_receipt`], byte
@@ -483,9 +477,13 @@ mod tests {
     /// private use, outside the BMP), negative and repeated attribute keys,
     /// `i64` extremes and empty byte strings. The expected text was produced
     /// by the hand-written writer that the `serde_json` one replaced, run on
-    /// this same receipt. It includes the environment member after the
-    /// payload (DECISIONS.md R42), pre-order date and nullable cancellation
-    /// reason; changes to its byte form must be deliberate.
+    /// this same receipt, when the receipt type was the surface's own copy;
+    /// the core's type holds no negative or repeated attribute type, so
+    /// those keys left the test with it. It includes the environment member
+    /// after the payload (DECISIONS.md R42), `null` here because the core
+    /// reads no environment from this `receipt_type`, pre-order date and
+    /// nullable cancellation reason; changes to its byte form must be
+    /// deliberate.
     #[test]
     fn a_full_receipt_answer_keeps_the_bytes_of_the_hand_written_writer() {
         assert_eq!(
@@ -506,7 +504,7 @@ mod tests {
                 r#","web_order_line_item_id":"-9223372036854775808""#,
                 r#","cancellation_date_ms":-9223372036854775808"#,
                 r#","cancellation_reason":null,"is_trial_period":true,"is_in_intro_offer_period":false"#,
-                r#","unknown_attributes":{"-1":[""],"1714":["AQID",""],"1714":["/w=="]}}"#,
+                r#","unknown_attributes":{"0":[""],"1714":["AQID","","/w=="]}}"#,
                 r#",{"quantity":1,"product_id":""#,
                 "\u{80}\u{9f}\u{fffd}\u{10ffff}",
                 r#"","transaction_id":"1000000000000000","purchase_date_ms":1375340400000"#,
@@ -520,30 +518,29 @@ mod tests {
                 r#","original_application_version":"\u001e\u001b"#,
                 "\u{e000}",
                 r#"","expiration_date_ms":-62135596800000"#,
-                r#","unknown_attributes":{"-9223372036854775808":[""],"-5":["AA=="]"#,
-                r#","13":["+/8=",""],"13":["AQ=="],"9223372036854775807":[]}}"#,
-                r#","environment":"Sandbox"}"#
+                r#","unknown_attributes":{"0":[""],"9":["AA=="]"#,
+                r#","13":["+/8=","","AQ=="],"4294967295":[]}}"#,
+                r#","environment":null}"#
             )
         );
     }
 
     #[test]
     fn ids_are_decimal_strings_dates_numbers_bytes_padded_base64() {
-        let receipt = ReceiptPayload {
-            app_item_id: Some(-5),
-            download_id: Some(i64::MAX),
-            receipt_creation_date_ms: Some(1_600_000_000_000),
-            sha1_hash: Some(vec![0xfb, 0xff]),
-            in_app: vec![InAppPurchase {
-                quantity: Some(1),
-                web_order_line_item_id: Some(0),
-                is_trial_period: Some(false),
-                unknown_attributes: vec![(1714, vec![vec![], vec![1, 2, 3]])],
-                ..InAppPurchase::default()
-            }],
-            unknown_attributes: vec![(13, vec![vec![0]]), (20_000, vec![vec![0xff]])],
-            ..ReceiptPayload::default()
-        };
+        let mut purchase = seams::in_app_purchase();
+        purchase.quantity = Some(1);
+        purchase.web_order_line_item_id = Some(0);
+        purchase.is_trial_period = Some(false);
+        purchase.unknown_attributes =
+            UnknownAttributes::from([(1714, vec![vec![], vec![1, 2, 3]])]);
+        let mut receipt = seams::receipt_payload();
+        receipt.app_item_id = Some(-5);
+        receipt.download_id = Some(i64::MAX);
+        receipt.receipt_creation_date_ms = Some(1_600_000_000_000);
+        receipt.sha1_hash = Some(vec![0xfb, 0xff]);
+        receipt.in_app = vec![purchase];
+        receipt.unknown_attributes =
+            UnknownAttributes::from([(13, vec![vec![0]]), (20_000, vec![vec![0xff]])]);
         let json = receipt_payload(&receipt);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["app_item_id"], "-5");
@@ -557,22 +554,34 @@ mod tests {
         assert!(json.ends_with(r#""unknown_attributes":{"13":["AA=="],"20000":["/w=="]}}"#));
     }
 
+    /// The environment is the core's reading of `receipt_type`, written
+    /// after the payload.
     #[test]
     fn a_verified_answer_states_the_environment_after_the_payload() {
-        let receipt = |environment| ReceiptPayload {
-            environment,
-            ..ReceiptPayload::default()
-        };
-        let empty = receipt_payload(&ReceiptPayload::default());
+        for (receipt_type, written) in [
+            (Some("Production"), "\"Production\""),
+            (Some("ProductionVPP"), "\"Production\""),
+            (Some("ProductionSandbox"), "\"Sandbox\""),
+            (Some("ProductionVPPSandbox"), "\"Sandbox\""),
+            (Some("Xcode"), "null"),
+            (None, "null"),
+        ] {
+            let mut receipt = seams::receipt_payload();
+            receipt.receipt_type = receipt_type.map(str::to_owned);
+            let payload = receipt_payload(&receipt);
+            // The payload's own JSON, which the C ABI's 0.7 calls hand out,
+            // has no environment member.
+            assert!(!payload.contains("environment"), "{payload}");
+            assert_eq!(
+                verify_receipt_result(&Ok(receipt)),
+                format!("{{\"verified\":true,\"payload\":{payload},\"environment\":{written}}}")
+            );
+        }
         for (environment, written) in [
             (Some(Environment::Production), "\"Production\""),
             (Some(Environment::Sandbox), "\"Sandbox\""),
             (None, "null"),
         ] {
-            assert_eq!(
-                verify_receipt_result(&Ok(receipt(environment))),
-                format!("{{\"verified\":true,\"payload\":{empty},\"environment\":{written}}}")
-            );
             assert_eq!(
                 verify_signed_data_result(&Ok(JsonPayload {
                     json: "{}".to_owned(),
@@ -581,9 +590,6 @@ mod tests {
                 format!("{{\"verified\":true,\"payload\":\"{{}}\",\"environment\":{written}}}")
             );
         }
-        // The payload's own JSON, which the C ABI's 0.7 calls hand out, has
-        // no environment member.
-        assert!(!receipt_payload(&receipt(Some(Environment::Sandbox))).contains("environment"));
     }
 
     #[test]

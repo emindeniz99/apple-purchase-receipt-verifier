@@ -85,9 +85,11 @@ Package.swift, swift/         the Swift wrapper over WasmKit
   API is the Rust rendering of the 0.7 API that 0.7.0 already ships.
 - **aprv-surface** is the semantic model every boundary shares: the
   three operations, the eight reasons, the payload records, the failure,
-  the configuration (a list of roots, each DER or PEM bytes). It depends on the core only,
-  and never on a binding generator, a runtime or a wire format
-  (SURFACE.md §4).
+  the configuration (a list of roots, each DER or PEM bytes). The receipt
+  records are the core's own `ReceiptPayload` and `InAppPurchase`,
+  re-exported rather than copied, so an attribute is modelled once. It
+  depends on the core only, and never on a binding generator, a runtime
+  or a wire format (SURFACE.md §4).
 - **aprv-wire** turns surface values into the 0.7 canonical JSON bytes
   and reads `init`'s configuration JSON. The C ABI and `aprv.wasm` both
   use it, so the two boundaries cannot drift apart. Its three shapes are
@@ -838,8 +840,9 @@ workspace ([CMS everywhere §1][cms]).
   plus what is particular to its host: the Python compile and cache, the
   Java engine choice and `noexec` directories, PHP's `aprv install`,
   workerd's static import.
-- Doc comments on `aprv-surface` are the reference text; each wrapper's
-  API docs are written from it by hand and reviewed with the wrapper.
+- Doc comments on `aprv-surface`, and on the core's receipt types it
+  re-exports, are the reference text; each wrapper's API docs are written
+  from them by hand and reviewed with the wrapper.
 
 ## 9. Invariants and how CI holds them
 
