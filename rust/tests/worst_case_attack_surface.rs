@@ -14,7 +14,6 @@ use common::pki::{
     refused_der, test_pki_cert, timed, CertSpec, Key, Pki, BUDGET, NULL, SIGNING_LEAF_OID,
 };
 use common::{der_int, der_seq, Rng};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -352,10 +351,9 @@ fn random_input_never_panics_never_verifies_and_is_never_internal_error() {
         } else {
             b64(&bytes)
         };
-        let outcome = catch_unwind(AssertUnwindSafe(|| {
-            timed(|| verifier.verify_receipt(&receipt))
-        }));
-        let (result, cost) = outcome.unwrap_or_else(|_| panic!("random input {i} panicked"));
+        let ((result, cost), panics) =
+            common::panics::panics_during(|| timed(|| verifier.verify_receipt(&receipt)));
+        assert_eq!(panics, 0, "random input {i} panicked");
         worst = worst.max(cost);
         let failure = result
             .err()
@@ -381,11 +379,9 @@ fn bit_flipped_genuine_receipts_never_verify_a_different_payload() {
         let index = rng.below(mutated.len());
         mutated[index] ^= 1 << rng.below(8);
         let encoded = b64(&mutated);
-        let outcome = catch_unwind(AssertUnwindSafe(|| {
-            timed(|| m.verifier.verify_receipt(&encoded))
-        }));
-        let (result, cost) =
-            outcome.unwrap_or_else(|_| panic!("flip {i} at byte {index} panicked"));
+        let ((result, cost), panics) =
+            common::panics::panics_during(|| timed(|| m.verifier.verify_receipt(&encoded)));
+        assert_eq!(panics, 0, "flip {i} at byte {index} panicked");
         worst = worst.max(cost);
         match result {
             Ok(payload) => {
@@ -421,8 +417,10 @@ fn endpoint_never_answers_the_alert_status_on_hostile_requests() {
         };
         // Concatenated as Java does, so a Latin-1 value may break the JSON.
         let body = format!("{{\"receipt-data\":\"{receipt}\"}}");
-        let (answer, cost) =
-            timed(|| verifier.verify_receipt_endpoint(Environment::Production, &body));
+        let ((answer, cost), panics) = common::panics::panics_during(|| {
+            timed(|| verifier.verify_receipt_endpoint(Environment::Production, &body))
+        });
+        assert_eq!(panics, 0, "hostile endpoint call {i} panicked");
         let status = pki::status_of(&answer);
         worst = worst.max(cost);
         assert_ne!(

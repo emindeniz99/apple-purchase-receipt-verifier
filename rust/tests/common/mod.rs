@@ -1,12 +1,16 @@
 //! Shared helpers for the native suite: fixture loading, a DER writer and
 //! a BER reader over `asn1-rs`, a CMS rebuilder that lets a test state
-//! one structural fault at a time, and (`pki`) an RSA test PKI with the
-//! X.509, CMS and payload writers the worst-case suites build from.
+//! one structural fault at a time, (`pki`) an RSA test PKI with the
+//! X.509, CMS and payload writers the worst-case suites build from, and
+//! (`panics`) the panic count the "never panics" tests assert on, and
+//! (`timing`) the switch for wall-clock bounds.
 #![allow(dead_code)]
 
 pub mod ber;
 pub mod cms;
+pub mod panics;
 pub mod pki;
+pub mod timing;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{
