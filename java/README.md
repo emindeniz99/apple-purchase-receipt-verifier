@@ -19,7 +19,7 @@ real receipt through the code, in under an hour;
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.12.0</version> <!-- x-release-please-version -->
+  <version>0.13.0</version> <!-- x-release-please-version -->
 </dependency>
 ```
 
@@ -929,7 +929,7 @@ synthetic-PKI signer this library's own suite uses:
 <dependency>
   <groupId>io.github.emindeniz99</groupId>
   <artifactId>apple-purchase-receipt-verifier</artifactId>
-  <version>0.12.0</version> <!-- x-release-please-version -->
+  <version>0.13.0</version> <!-- x-release-please-version -->
   <classifier>tests</classifier>
   <type>test-jar</type>
   <scope>test</scope>

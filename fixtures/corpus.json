@@ -1,5 +1,6 @@
 {
-  "url": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/corpus-2026-10-17/corpus-2026-10-17.tar.gz",
-  "sha256": "bd45530669ef50bda8fa7c3604c279f67187010da181ab06379bd0c12ee2f2bf",
-  "generated": "2026-10-17"
+  "url": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/releases/download/corpus-0.13.0-14d16a1d/corpus-0.13.0-14d16a1d.tar.gz",
+  "sha256": "04a9eeb8780267f63d2ed9729138f352ede7e53e48f89222828e7a5c9fa017dd",
+  "generated": "2026-11-01",
+  "module": "14d16a1d4db843169428718bdb5b1857909b4696c76efb64d7bee6e163d5ac67"
 }
