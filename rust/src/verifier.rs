@@ -112,8 +112,8 @@ impl Verifier {
         environment: Environment,
         request_json: &[u8],
     ) -> String {
-        if self.roots.is_empty() {
-            return endpoint::status_only(endpoint::status(Reason::InternalError));
+        if let Err(failure) = self.check_anchors() {
+            return endpoint::status_only(endpoint::status(failure.reason()));
         }
         let clock = Clock::new(&*self.clock);
         staged(|| endpoint::respond(environment, request_json, &self.roots, &clock))
@@ -125,18 +125,23 @@ impl Verifier {
         &self,
         verify: impl FnOnce(&Clock<'_>) -> Result<T, Failure>,
     ) -> Result<T, Failure> {
-        // Only Config::default can hand over an empty set, when the bundled
-        // roots did not load; every verdict without an anchor would be a
-        // misleading UNTRUSTED_CHAIN.
+        self.check_anchors()?;
+        let clock = Clock::new(&*self.clock);
+        staged(|| verify(&clock))
+            .unwrap_or_else(|stage| Err(Failure::new(stage.reason(), stage.message())))
+    }
+
+    /// `INTERNAL_ERROR` when there is no anchor. Only `Config::default` can
+    /// hand over an empty set, when the bundled roots did not load; every
+    /// verdict without an anchor would be a misleading `UNTRUSTED_CHAIN`.
+    fn check_anchors(&self) -> Result<(), Failure> {
         if self.roots.is_empty() {
             return Err(Failure::new(
                 Reason::InternalError,
                 "no trust anchors: the bundled Apple roots did not load",
             ));
         }
-        let clock = Clock::new(&*self.clock);
-        staged(|| verify(&clock))
-            .unwrap_or_else(|stage| Err(Failure::new(stage.reason(), stage.message())))
+        Ok(())
     }
 }
 
