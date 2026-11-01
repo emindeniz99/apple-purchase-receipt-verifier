@@ -571,6 +571,76 @@ fn contained_panic(id: &str, panicked: usize) -> Failed {
     ))
 }
 
+/// The `SubjectPublicKeyInfo` DER of every key a signature check on
+/// `input` may use: the anchors' keys, then, round by round, the key of
+/// each certificate the input carries (a receipt's CMS certificates, a
+/// JWS's `x5c`) whose signature verifies under a key already in the set.
+/// The harness's own walk, over the openssl crate rather than the library,
+/// and blind to validity periods and markers: it bounds which keys may be
+/// used, not which chains verify. A certificate it cannot read is not
+/// vouched for.
+fn vouched_keys(roots: &[TrustAnchor], operation: &str, input: &str) -> Vec<Vec<u8>> {
+    use openssl::pkey::{PKey, Public};
+    use openssl::x509::X509;
+    let carried: Vec<X509> = if operation == "verifyReceipt" {
+        base64::engine::general_purpose::STANDARD
+            .decode(input)
+            .ok()
+            .and_then(|der| openssl::pkcs7::Pkcs7::from_der(&der).ok())
+            .and_then(|cms| {
+                let certificates = cms.signed()?.certificates()?;
+                Some(certificates.iter().map(ToOwned::to_owned).collect())
+            })
+            .unwrap_or_default()
+    } else {
+        input
+            .split('.')
+            .next()
+            .and_then(|header| {
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(header)
+                    .ok()
+            })
+            .and_then(|header| serde_json::from_slice::<Value>(&header).ok())
+            .and_then(|header| header.get("x5c")?.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|entry| {
+                let der = base64::engine::general_purpose::STANDARD
+                    .decode(entry.as_str()?)
+                    .ok()?;
+                X509::from_der(&der).ok()
+            })
+            .collect()
+    };
+    let mut vouched: Vec<PKey<Public>> = roots
+        .iter()
+        .filter_map(|anchor| X509::from_der(anchor.der()).ok()?.public_key().ok())
+        .collect();
+    let mut pending = carried;
+    loop {
+        let before = pending.len();
+        let (issued, rest): (Vec<X509>, Vec<X509>) = pending.into_iter().partition(|certificate| {
+            vouched
+                .iter()
+                .any(|key| certificate.verify(key).unwrap_or(false))
+        });
+        vouched.extend(
+            issued
+                .iter()
+                .filter_map(|certificate| certificate.public_key().ok()),
+        );
+        pending = rest;
+        if pending.len() == before {
+            break;
+        }
+    }
+    vouched
+        .iter()
+        .filter_map(|key| key.public_key_to_der().ok())
+        .collect()
+}
+
 /// Which case ids actually ran, so the coverage check after the run is a
 /// fact rather than a loop-shaped assumption.
 static RAN: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -583,7 +653,9 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
     if case.operation == "decodeBase64" {
         return run_decode_base64(case);
     }
-    let verifier = Verifier::new(config(dir, fixtures, case)?);
+    let config = config(dir, fixtures, case)?;
+    let roots = config.roots().to_vec();
+    let verifier = Verifier::new(config);
     let expected = &case.expected;
     let fixture = case.input.fixture.as_deref();
     let actual = match case.operation.as_str() {
@@ -703,14 +775,14 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                             "{id}: took {elapsed:?}, over the {budget} ms budget"
                         )));
                     }
-                    // The direct form of the budget: every stranger in these
-                    // cases carries a key far over the 8192-bit cap, so an
-                    // SPKI that large among the keys used means a stranger's
-                    // key reached a signature check. An 8192-bit RSA SPKI is
-                    // about 1,050 bytes.
-                    if let Some(spki) = used.iter().find(|spki| spki.len() > 1100) {
+                    // The direct form of the budget, checked on every run:
+                    // the strangers in these cases are what would cost
+                    // seconds, so no key a pinned root did not vouch for
+                    // may have checked a signature.
+                    let vouched = vouched_keys(&roots, operation, &input);
+                    if let Some(spki) = used.iter().find(|spki| !vouched.contains(spki)) {
                         return Err(Failed::from(format!(
-                            "{id}: a {}-byte stranger key checked a signature",
+                            "{id}: a {}-byte key no pinned root vouched for checked a signature",
                             spki.len()
                         )));
                     }
