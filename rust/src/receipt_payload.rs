@@ -42,7 +42,7 @@ use crate::environment::Environment;
 use aprv_openssl::payload::{attribute_integer, attribute_string, receipt_attributes, StringKind};
 use aprv_openssl::Budget;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 // App-level attribute types.
 const ATTR_RECEIPT_TYPE: u32 = 0;
@@ -187,26 +187,15 @@ pub(crate) struct Attribute {
 /// not decode is not an error: it is kept raw.
 pub(crate) fn parse_receipt_payload(attributes: Vec<Attribute>) -> ReceiptPayload {
     let mut receipt = ReceiptPayload::default();
-    let mut seen: Vec<u32> = Vec::new();
+    let mut seen = BTreeSet::new();
     for attribute in attributes {
         let value = attribute.value.as_slice();
-        let known = matches!(
-            attribute.attribute_type,
-            ATTR_RECEIPT_TYPE
-                | ATTR_APP_ITEM_ID
-                | ATTR_BUNDLE_ID
-                | ATTR_APP_VERSION
-                | ATTR_OPAQUE_VALUE
-                | ATTR_SHA1_HASH
-                | ATTR_CREATION_DATE
-                | ATTR_DOWNLOAD_ID
-                | ATTR_VERSION_EXTERNAL_IDENTIFIER
-                | ATTR_ORIGINAL_PURCHASE_DATE
-                | ATTR_ORIGINAL_APP_VERSION
-                | ATTR_EXPIRATION_DATE
-                | ATTR_PREORDER_DATE
-        );
-        if known && is_later_copy(&mut seen, attribute.attribute_type) {
+        // Attribute 17 repeats by design, one purchase per copy; of every
+        // other type the first copy decides. A later copy of a type no arm
+        // below models goes raw either way.
+        if attribute.attribute_type != ATTR_IN_APP
+            && is_later_copy(&mut seen, attribute.attribute_type)
+        {
             keep_raw(&mut receipt.unknown_attributes, attribute);
             continue;
         }
@@ -258,25 +247,10 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase, Undecodable> {
     let attributes =
         parse_attribute_set(value, "in-app purchase attribute").map_err(|_| Undecodable)?;
     let mut purchase = InAppPurchase::default();
-    let mut seen: Vec<u32> = Vec::new();
+    let mut seen = BTreeSet::new();
     for attribute in attributes {
         let value = attribute.value.as_slice();
-        let known = matches!(
-            attribute.attribute_type,
-            IAP_QUANTITY
-                | IAP_PRODUCT_ID
-                | IAP_TRANSACTION_ID
-                | IAP_PURCHASE_DATE
-                | IAP_ORIGINAL_TRANSACTION_ID
-                | IAP_ORIGINAL_PURCHASE_DATE
-                | IAP_EXPIRES_DATE
-                | IAP_WEB_ORDER_LINE_ITEM_ID
-                | IAP_CANCELLATION_DATE
-                | IAP_IS_TRIAL_PERIOD
-                | IAP_IS_IN_INTRO_OFFER_PERIOD
-                | IAP_CANCELLATION_REASON
-        );
-        if known && is_later_copy(&mut seen, attribute.attribute_type) {
+        if is_later_copy(&mut seen, attribute.attribute_type) {
             keep_raw(&mut purchase.unknown_attributes, attribute);
             continue;
         }
@@ -316,13 +290,10 @@ fn parse_in_app(value: &[u8]) -> Result<InAppPurchase, Undecodable> {
 
 /// Whether `attribute_type` was already seen in this SET; records it if not.
 /// The first copy of a known attribute decides its field, and a later one is
-/// kept raw.
-fn is_later_copy(seen: &mut Vec<u32>, attribute_type: u32) -> bool {
-    if seen.contains(&attribute_type) {
-        return true;
-    }
-    seen.push(attribute_type);
-    false
+/// kept raw. The match arms are the one list of known types: a later copy
+/// of an unknown type would be kept raw by the arms too.
+fn is_later_copy(seen: &mut BTreeSet<u32>, attribute_type: u32) -> bool {
+    !seen.insert(attribute_type)
 }
 
 fn keep_raw(unknown: &mut UnknownAttributes, attribute: Attribute) {
@@ -615,6 +586,43 @@ mod tests {
             Some("com.example.first")
         );
         assert_eq!(receipt.unknown_attributes.get(&3), Some(&vec![second]));
+    }
+
+    #[test]
+    fn attribute_17_repeats_and_an_in_app_type_keeps_its_first_copy() {
+        // One purchase per copy of 17; inside a purchase the first copy of
+        // a known type decides, as at the top level; every copy of an
+        // unknown type is kept raw, in order.
+        let purchase = |product: &str| {
+            set(&[
+                attribute(&[0x06, 0xa6], &ia5(product)),
+                attribute(&[0x06, 0xa6], &ia5("later")),
+            ])
+        };
+        let (one, two) = (purchase("one"), purchase("two"));
+        let receipt = parse_receipt_payload(&set(&[
+            attribute(&[17], &one),
+            attribute(&[17], &two),
+            attribute(&[99], &[1]),
+            attribute(&[99], &[2]),
+        ]))
+        .unwrap();
+        let products: Vec<_> = receipt
+            .in_app
+            .iter()
+            .map(|purchase| purchase.product_id.as_deref())
+            .collect();
+        assert_eq!(products, [Some("one"), Some("two")]);
+        for purchase in &receipt.in_app {
+            assert_eq!(
+                purchase.unknown_attributes.get(&1702),
+                Some(&vec![ia5("later")])
+            );
+        }
+        assert_eq!(
+            receipt.unknown_attributes.get(&99),
+            Some(&vec![vec![1], vec![2]])
+        );
     }
 
     #[test]
