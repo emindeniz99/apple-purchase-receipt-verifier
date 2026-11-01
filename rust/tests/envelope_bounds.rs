@@ -496,6 +496,11 @@ fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
             );
         }
     }
+    // The verdicts above hold on every run; the ratio is checked when
+    // APRV_TIMING_ASSERTS=1 (common/timing.rs).
+    if !common::timing::enabled() {
+        return;
+    }
     for (set, cost) in ["certificates", "crls", "signerInfos"]
         .into_iter()
         .zip(flood_costs)

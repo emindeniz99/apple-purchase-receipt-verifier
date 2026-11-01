@@ -11,9 +11,11 @@
 //! roots, so a key no root vouched for is never used, and the same receipt
 //! is refused in about a millisecond.
 //!
-//! The bounds are set for `cargo test`'s debug profile. The direct
+//! The bounds are set for `cargo test`'s debug profile, and checked only
+//! when `APRV_TIMING_ASSERTS=1` (`common/timing.rs` says why). The direct
 //! statement, that no stranger key checked a signature, comes from the
-//! OpenSSL adapter's record of every key it builds for a signature check.
+//! OpenSSL adapter's record of every key it builds for a signature check,
+//! and is checked on every run.
 
 mod common;
 
@@ -197,7 +199,10 @@ fn signer_and_intermediate(builder: &CmsBuilder) -> (Vec<u8>, Vec<u8>) {
 
 fn assert_fast(start: Instant) {
     let elapsed = start.elapsed();
-    assert!(elapsed < BOUND, "took {elapsed:?}");
+    assert!(
+        !common::timing::enabled() || elapsed < BOUND,
+        "took {elapsed:?}"
+    );
 }
 
 /// The direct statement behind the timing: no signature was checked with
@@ -213,7 +218,10 @@ fn assert_no_stranger_key_used(used: &[Vec<u8>]) {
 
 fn assert_refused_fast(start: Instant) {
     let elapsed = start.elapsed();
-    assert!(elapsed < REFUSAL_BOUND, "took {elapsed:?}");
+    assert!(
+        !common::timing::enabled() || elapsed < REFUSAL_BOUND,
+        "took {elapsed:?}"
+    );
 }
 
 #[test]

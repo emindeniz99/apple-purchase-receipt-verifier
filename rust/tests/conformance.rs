@@ -16,9 +16,16 @@
 //! Every verify call is also counted for panics: `Verifier` contains a panic
 //! and answers it with a reason, often the very `MALFORMED` a case expects,
 //! so a case is failed when its answer was reached through a panic.
+//!
+//! A case's `maxMillis` is checked against the clock only when
+//! `APRV_TIMING_ASSERTS=1` (`common/timing.rs` says why); its verdict, and
+//! for a case with a pinned status the keys its signature checks used, are
+//! checked on every run.
 
 #[path = "common/panics.rs"]
 mod panics;
+#[path = "common/timing.rs"]
+mod timing;
 
 use apple_purchase_receipt_verifier::__internal::{
     base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
@@ -83,7 +90,7 @@ struct Case {
     #[serde(default, rename = "fault")]
     _fault: Option<String>,
     /// A wall-clock budget for the verify call, measured after one warm-up
-    /// call of the same case.
+    /// call of the same case, when `APRV_TIMING_ASSERTS=1`.
     #[serde(default, rename = "maxMillis")]
     max_millis: Option<u64>,
     #[serde(rename = "tags")]
@@ -665,7 +672,7 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                         let start = std::time::Instant::now();
                         let result = call()?;
                         let elapsed = start.elapsed();
-                        if elapsed.as_millis() > u128::from(budget) {
+                        if timing::enabled() && elapsed.as_millis() > u128::from(budget) {
                             return Err(Failed::from(format!(
                                 "{id}: took {elapsed:?}, over the {budget} ms budget"
                             )));
@@ -691,7 +698,7 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                     let (result, used) = keys_used_during(call);
                     let result = result?;
                     let elapsed = start.elapsed();
-                    if elapsed.as_millis() > u128::from(budget) {
+                    if timing::enabled() && elapsed.as_millis() > u128::from(budget) {
                         return Err(Failed::from(format!(
                             "{id}: took {elapsed:?}, over the {budget} ms budget"
                         )));

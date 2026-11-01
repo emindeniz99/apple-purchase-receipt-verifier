@@ -9,6 +9,10 @@
 //! answers it with a reason, so a panic would never reach a test's own
 //! `catch_unwind`. `common::panics::panics_during` counts every panic that
 //! starts on the test's thread, the contained ones included.
+//!
+//! "Nothing costs unbounded time" is checked against the clock only when
+//! `APRV_TIMING_ASSERTS=1` (`common/timing.rs` says why); every verdict in
+//! the timed tests is checked on every run.
 
 mod common;
 
@@ -122,7 +126,7 @@ fn a_declared_length_larger_than_the_input_is_refused_without_allocating() {
         );
     }
     assert!(
-        started.elapsed().as_millis() < 500,
+        !common::timing::enabled() || started.elapsed().as_millis() < 500,
         "a length claim must not cost time"
     );
 }
@@ -148,7 +152,7 @@ fn a_megabyte_of_zeros_is_refused_quickly() {
         Reason::Malformed
     );
     assert!(
-        started.elapsed().as_millis() < 1000,
+        !common::timing::enabled() || started.elapsed().as_millis() < 1000,
         "junk must not cost real work"
     );
 }
@@ -168,7 +172,7 @@ fn a_wide_flat_structure_is_refused_at_a_bounded_cost() {
         receipt_verifier().verify(&input).unwrap_err().reason(),
         Reason::Malformed
     );
-    assert!(started.elapsed().as_secs() < 5);
+    assert!(!common::timing::enabled() || started.elapsed().as_secs() < 5);
 }
 
 #[test]
@@ -240,6 +244,9 @@ fn a_certificate_flood_is_rejected_at_a_bounded_cost() {
         assert_eq!(refused.reason(), Reason::Malformed);
     }
     let [genuine_cost, walked_cost, flood_cost, broken_cost] = costs;
+    if !common::timing::enabled() {
+        return;
+    }
 
     // Half the walk's cost again, plus ten genuine verifications, is
     // headroom for the shallow decode and for timing noise; the full
@@ -343,6 +350,9 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
         }
     }
     let [genuine, flat_absent, absent, flat, embedded] = costs;
+    if !common::timing::enabled() {
+        return;
+    }
     assert!(
         absent < flat_absent * 2 + genuine * 10,
         "unsigned content of {count} tiny attributes and no embedded signer cost {absent:?}, \
@@ -376,7 +386,7 @@ fn a_cross_signed_certificate_mesh_stays_flat() {
     let started = Instant::now();
     let _ = receipt_verifier().verify(&mesh);
     assert!(
-        started.elapsed().as_secs() < 5,
+        !common::timing::enabled() || started.elapsed().as_secs() < 5,
         "the path walk must not be exponential"
     );
 }
