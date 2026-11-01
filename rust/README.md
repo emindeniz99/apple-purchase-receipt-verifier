@@ -189,8 +189,9 @@ outside this crate only because a `Verifier` returned it. None has a
 public constructor: `ReceiptPayload` and `InAppPurchase` are
 `#[non_exhaustive]` and do not implement `Default`, and `JsonPayload` and
 `Failure` keep their fields private. A function that takes a
-`ReceiptPayload` therefore holds a receipt that passed its checks, whoever
-called it. To test code that consumes these types, mock the call that
+`ReceiptPayload` therefore receives a value a `Verifier` returned. Its
+fields are public, so code that owns the value can still change them, and
+the edited value then carries claims no receipt made. To test code that consumes these types, mock the call that
 returns them (a trait over `Verifier` in your code), or feed it a receipt
 your test signs under a root of its own (`Config::builder().roots(...)`).
 The constructors the library's own tests use sit behind the internal,

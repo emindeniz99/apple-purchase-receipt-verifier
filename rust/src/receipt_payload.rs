@@ -84,7 +84,9 @@ pub type UnknownAttributes = BTreeMap<u32, Vec<Vec<u8>>>;
 /// [`Verifier::verify_receipt`](crate::Verifier::verify_receipt), from a
 /// receipt whose chain and signature passed: the type is
 /// `#[non_exhaustive]` and does not implement [`Default`], so no code
-/// outside the crate can build one. The fields are public to read.
+/// outside the crate can build one. The one exception is the internal,
+/// unstable `test-seams` feature, whose constructors build values for the
+/// library's own tests. The fields are public to read.
 ///
 /// Dates are epoch milliseconds, UTC. The 64-bit ids are `i64`: an ASN.1
 /// INTEGER can be negative, and the decoder reports what is there.
