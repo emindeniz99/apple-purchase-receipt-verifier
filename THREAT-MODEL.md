@@ -655,6 +655,17 @@ Not defended against here, by decision rather than omission.
 - **SHA-1 is accepted for legacy receipts**, and the device-hash binding is
   SHA-1, because Apple signs them that way. Neither can be chosen differently
   and still verify genuine receipts.
+- **MD5 is accepted too: there is no digest floor.** Both implementations
+  take any certificate or CMS signature their crypto library verifies
+  (docs/rust-core/DECISIONS.md R20, "Algorithm policy"), so an MD5 or
+  SHA-1 signature in the chain or on the `SignerInfo` verifies like a
+  SHA-2 one. No genuine Apple chain or receipt uses MD5. The risk is low because a collision forgery needs
+  a pinned Apple CA, or a marker-carrying signer below one, to have
+  signed content the attacker chose with that hash; the forged certificate
+  or payload then reuses that signature. Refusing MD5, or SHA-1 where
+  Apple does not use it, would be a behaviour change across the Rust
+  core, Java and `fixtures/cases.json` together (AGENTS.md, "Behavior
+  changes").
 
 ## 6. Where the core runs: isolation
 
