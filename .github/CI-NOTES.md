@@ -217,9 +217,10 @@ crates.io and NuGet credential exchanges and pushes, the PyPI upload, and
 the smoke dispatch. npm runs `npm publish --dry-run` (left out when the
 registry already serves the version: npm 11.3 and later refuse it even
 as a dry run), crates.io `cargo publish --dry-run`, Maven `deploy
--DskipPublishing=true -Dgpg.skip=true` (the central-publishing-maven-
-plugin builds and tests, stages nothing, so no bundle is written, and
-signing is skipped: the job runs under the `maven-central-dry-run`
+-DskipUpload=true -Dgpg.skip=true` (the central-publishing-maven-plugin
+builds, tests and writes the bundle Central would receive, which goes
+into the `dry-run-maven` artifact, and uploads nothing; signing is
+skipped: the job runs under the `maven-central-dry-run`
 environment, which GitHub creates on first use with no reviewer, and
 which is handed none of the `maven-central` secrets, so a rehearsal from
 `main` needs no approval and no branch allowance). A registry that
