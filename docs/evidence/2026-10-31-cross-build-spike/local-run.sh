@@ -34,13 +34,21 @@ mkdir -p "$SCRATCH/out" "$SCRATCH/logs"
 cd "$repo" || exit 1
 
 start=$(date +%s)
+rm -rf "$SCRATCH/ccwasm"
 "$repo/tools/cross/precompile.sh" "$COMPONENT" "$SCRATCH/ccwasm" "${targets[@]}" > "$SCRATCH/logs/precompile.log" 2>&1
-echo "precompile: exit $? after $(( $(date +%s) - start )) s" | tee -a "$SCRATCH/logs/summary.txt"
+status=$?
+echo "precompile: exit $status after $(( $(date +%s) - start )) s" | tee -a "$SCRATCH/logs/summary.txt"
+# No target build may run on stale or missing .ccwasm files.
+[[ $status == 0 ]] || exit "$status"
+failed=0
 
 for t in "${targets[@]}"; do
   start=$(date +%s)
   "$repo/tools/cross/build.sh" "$SCRATCH/ccwasm/aprv.$t.ccwasm" "$t" "$SCRATCH/out/$t" > "$SCRATCH/logs/$t.log" 2>&1
-  echo "$t: exit $? after $(( $(date +%s) - start )) s" | tee -a "$SCRATCH/logs/summary.txt"
+  status=$?
+  echo "$t: exit $status after $(( $(date +%s) - start )) s" | tee -a "$SCRATCH/logs/summary.txt"
+  [[ $status == 0 ]] || failed=1
   [[ -n "${KEEP_TARGET_DIRS:-}" ]] || rm -rf "$repo/rust/target"
 done
 [[ -n "${KEEP_TARGET_DIRS:-}" ]] || rm -rf "$repo/rust/server/target"
+exit "$failed"

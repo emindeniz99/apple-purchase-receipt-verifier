@@ -35,7 +35,9 @@ channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$REPO/rust/rust-toolchain.toml"
 rustup target add --toolchain "$channel" aarch64-apple-darwin x86_64-apple-darwin \
   x86_64-pc-windows-gnu x86_64-pc-windows-msvc
 
-# the component, as ci.yml's rust-wasm job builds it
+# the component, as ci.yml's rust-wasm job builds it (the toolchain first:
+# build.sh needs WASI_SDK_DIR and OPENSSL_WASM_DIR and installs neither)
+eval "$("$REPO/tools/wasm-toolchain.sh" "$SCRATCH/wasm-toolchain")"
 "$REPO/rust/bindings/abi/build.sh" "$SCRATCH/aprv"
 
 # one precompiler and one .ccwasm per target (B and C), then the cross
@@ -43,12 +45,12 @@ rustup target add --toolchain "$channel" aarch64-apple-darwin x86_64-apple-darwi
 ln -sfn "$REPO" /tmp/aprv-src
 SCRATCH="$SCRATCH" COMPONENT="$SCRATCH/aprv/aprv.component.wasm" \
   /tmp/aprv-src/docs/evidence/2026-10-31-cross-build-spike/local-run.sh /tmp/aprv-src
-./inspect.sh "$SCRATCH/out/aarch64-apple-darwin" /tmp/aprv-src
+"$REPO/docs/evidence/2026-10-31-cross-build-spike/inspect.sh" "$SCRATCH/out/aarch64-apple-darwin" /tmp/aprv-src
 
 # does the precompiler's build change the .ccwasm?
-./ccwasm-compare.sh "$SCRATCH/aprv/aprv.component.wasm" "$SCRATCH/ccwasm-compare"
+"$REPO/docs/evidence/2026-10-31-cross-build-spike/ccwasm-compare.sh" "$SCRATCH/aprv/aprv.component.wasm" "$SCRATCH/ccwasm-compare"
 
-python3 release-timings.py 10
+python3 "$REPO/docs/evidence/2026-10-31-cross-build-spike/release-timings.py" 10
 ```
 
 The runs on macOS and Windows are the spike workflow's: dispatch it, or

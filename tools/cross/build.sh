@@ -124,6 +124,7 @@ for line in sys.stdin:
 
 server="$repo/rust/server"
 ffi="$repo/rust/ffi"
+rm -rf "$out/tests/server"
 mkdir -p "$out/tests/server"
 
 echo "::group::the runtime-only server for $target"

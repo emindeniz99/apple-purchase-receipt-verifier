@@ -57,10 +57,18 @@ chmod +x "$bin" "$dir"/tests/*/* 2>/dev/null || true
 # --- the shipped server binary ------------------------------------------
 check "aprv info" "$bin" info
 case "$target" in
-  *-apple-darwin)
+  aarch64-apple-darwin)
     # arm64 macOS kills an unsigned Mach-O at exec; the ad-hoc signature a
     # linker writes is enough. Print what this binary carries.
     check "code signature (codesign -dv)" codesign -dv --verbose=2 "$bin" ;;
+  x86_64-apple-darwin)
+    # Intel macOS runs unsigned binaries, and Apple's own linker leaves them
+    # unsigned, so a missing signature is recorded, not failed.
+    if codesign -dv --verbose=2 "$bin"; then
+      skip "code signature (x86_64: signed; not required)"
+    else
+      skip "code signature (x86_64: unsigned; not required)"
+    fi ;;
 esac
 check "every case over HTTP and through the CLI" \
   "$python" rust/server/scripts/cases.py --aprv "$bin" --mode both --list

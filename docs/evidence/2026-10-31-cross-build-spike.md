@@ -94,7 +94,11 @@ earlier `tools/cross/build.sh` that still built stage 1 itself, as
 `build-static.sh` does; the script was then split into
 `tools/cross/precompile.sh` (stage 1 and the precompiles, once) and
 `tools/cross/build.sh` (everything after, per target), and the last two
-rows ran that pair.
+rows ran that pair. The earlier script was never committed, so the first
+four rows' Stage 1 column cannot be rerun as recorded; `precompile.sh` is
+its successor, and its own stage-1 times are in
+`results/precompile-timings.tsv`. Every other column is what `build.sh`
+runs today.
 
 | Target | Tool | Stage 1 | Stage 2 | Server tests (`--no-run`) | C ABI (release) | C ABI tests | Result |
 |---|---|---:|---:|---:|---:|---:|---|

@@ -498,15 +498,15 @@ jobs:
             echo "## B and C build steps (seconds)"
             echo
             echo "| build | target | step | seconds |"; echo "|---|---|---|---:|"
-            cat "$r"/spike-b-*/timings.tsv "$r"/spike-c-*/timings.tsv "$r"/spike-c-*/download.tsv 2>/dev/null | row
+            { cat "$r"/spike-b-*/timings.tsv "$r"/spike-c-*/timings.tsv "$r"/spike-c-*/download.tsv 2>/dev/null || true; } | row
             echo
             echo "## checks"
             echo
             echo "| build | target | check | result | seconds |"; echo "|---|---|---|---|---:|"
-            cat "$r"/spike-b-*/results.tsv "$r"/spike-c-*/results.tsv 2>/dev/null | sort -t$'\t' -k2,2 -k3,3 -k1,1 | row
+            { cat "$r"/spike-b-*/results.tsv "$r"/spike-c-*/results.tsv 2>/dev/null || true; } | sort -t$'\t' -k2,2 -k3,3 -k1,1 | row
             echo
             echo "## sizes (bytes)"
             echo
             echo "| | build | target | file | bytes |"; echo "|---|---|---|---|---:|"
-            cat "$r"/spike-b-*/sizes.tsv "$r"/spike-c-*/sizes.tsv 2>/dev/null | sort -t$'\t' -k3,3 -k4,4 -k2,2 | row
+            { cat "$r"/spike-b-*/sizes.tsv "$r"/spike-c-*/sizes.tsv 2>/dev/null || true; } | sort -t$'\t' -k3,3 -k4,4 -k2,2 | row
           } | tee -a "$GITHUB_STEP_SUMMARY"
