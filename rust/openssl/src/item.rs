@@ -55,7 +55,8 @@ pub(crate) fn elements<T>(stack: *const ffi::OPENSSL_STACK) -> Vec<*mut T> {
 
 /// An `ASN1_TYPE`'s type, and its value when that is held as a string
 /// (every universal type but BOOLEAN, OBJECT and NULL; a SEQUENCE, a SET or
-/// a value of another class as its whole encoding).
+/// a value of another class as its whole encoding). `value` must not be
+/// null: `Envelope::decode` checks it, and `elements` drops null entries.
 pub(crate) fn typed(value: *const ffi::ASN1_TYPE) -> (c_int, *const ffi::ASN1_STRING) {
     // SAFETY: `value` is a live ASN1_TYPE its owner keeps. The union member
     // is read as a string pointer only for the types that store one.
