@@ -43,8 +43,9 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   beside this crate), `base64` for `receipt-data` and `x5c` entries,
   `jiff` for the calendar and the US Pacific time of the `_pst` dates
   (one zone, `America/Los_Angeles`, compiled in; no time-zone file is
-  read at run time), and `serde_json`, which only writes `to_json()` and
-  the endpoint response and never reads input. Every byte of
+  read at run time), and `serde_json`, which reads the JWS header and
+  payload and the endpoint request body and writes `to_json()` and the
+  endpoint response. Every byte of
   attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
   signatures) is parsed by OpenSSL 4 through
   that adapter, which also does the path building and the signature
@@ -472,7 +473,7 @@ caller checks those on the returned payload.
 | `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's checks |
 
 The `endpoint` feature is gone: the endpoint is always there, and
-`serde_json` is an unconditional dependency that only writes JSON.
+`serde_json` is an unconditional dependency.
 
 ## Vendoring
 
