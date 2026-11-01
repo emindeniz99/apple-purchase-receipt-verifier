@@ -64,15 +64,17 @@ case "$target" in
 esac
 check "every case over HTTP and through the CLI" \
   "$python" rust/server/scripts/cases.py --aprv "$bin" --mode both --list
-# managed-smoke.py is POSIX-only (it kills the parent with SIGKILL and probes
-# the child with os.kill(pid, 0)); ci.yml runs it on Linux alone.
-if [[ "$target" == *-windows-* ]]; then
-  skip "the managed mode (managed-smoke.py is POSIX-only)"
+# managed-smoke.py is Linux-only: it kills the parent with SIGKILL and reads
+# /proc/<pid>/stat to tell a live child from a zombie. ci.yml runs it on
+# Linux alone.
+if [[ "$target" != *-linux-* ]]; then
+  skip "the managed mode (managed-smoke.py reads /proc, Linux only)"
 else
   check "the managed mode" "$python" rust/server/scripts/managed-smoke.py --aprv "$bin"
 fi
 
 # --- the server crate's own tests, as cargo test would run them ---------
+test_skip=()
 run_tests() {
   local where="$1" any=0 f
   shift
@@ -80,7 +82,7 @@ run_tests() {
     [[ -f "$f" ]] || continue
     any=1
     echo "+ $f"
-    (cd "$where" && APRV_TEST_COMPONENT="$component" "$f" --include-ignored) || return 1
+    (cd "$where" && APRV_TEST_COMPONENT="$component" "$f" --include-ignored ${test_skip[@]+"${test_skip[@]}"}) || return 1
   done
   [[ $any == 1 ]]
 }
@@ -107,7 +109,12 @@ cpp() {
 if [[ ! -d "$dir/ffi" ]]; then
   skip "C ABI (none built for $target)"
 else
-  check "C ABI Rust tests" run_tests rust/ffi "$dir"/tests/ffi/*
+  # exported_symbols finds the library through the cargo target directory
+  # above its own binary, which a copied test executable no longer has; the
+  # C++ and ctypes runs below load the shipped library itself.
+  test_skip=(--skip the_library_exports_exactly_the_allowlist)
+  check "C ABI Rust tests (export allowlist skipped: needs the target dir)" run_tests rust/ffi "$dir"/tests/ffi/*
+  test_skip=()
   check "flatten the shared vectors" node tools/gen-cases-manifest.mjs "$dir/manifest"
   if [[ "$target" == *-windows-gnu* ]]; then
     # MinGW writes libNAME.dll.a, an import library MSVC's find_library
