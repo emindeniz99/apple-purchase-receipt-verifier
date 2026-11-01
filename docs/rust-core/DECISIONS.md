@@ -2241,7 +2241,10 @@ the release, it is a breaking change for every caller. So the audit of
     `Config`, `Config.defaults()` included: it is the shape the others
     came from, and Java has no default arguments. (On 2026-10-01 Ruby's
     and PHP's `defaults` were kept here too; the next day's decision
-    above removed them.)
+    above removed them. Rust's payload and failure constructors went on
+    2026-11-01: `Failure::new` and `JsonPayload::new` are crate-private
+    and the receipt structs `#[non_exhaustive]` without `Default`, so
+    only a `Verifier` makes one; SURFACE.md §4.)
 - **.NET reads and writes JSON with `System.Text.Json` (2026-10-02).**
   The package's hand-written reader and writer (`Internal/Json.cs`, 610
   lines, and `OrderedMap`) existed because `System.Text.Json` is a
