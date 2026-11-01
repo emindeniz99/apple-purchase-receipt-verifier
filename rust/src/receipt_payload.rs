@@ -75,7 +75,11 @@ const IAP_IS_IN_INTRO_OFFER_PERIOD: u32 = 1719;
 const IAP_CANCELLATION_REASON: u32 = 1720;
 
 /// The raw attributes that did not end up in a typed field, by attribute
-/// type, each type's values in receipt order.
+/// type in ascending order, each type's value octets in receipt order. That
+/// covers an attribute type the library does not model, the second and
+/// later copies of a known attribute, and a known attribute whose value
+/// does not parse (its typed field is then `None`). Each entry keeps the
+/// attribute's value octets; its `version` integer is not kept.
 pub type UnknownAttributes = BTreeMap<u32, Vec<Vec<u8>>>;
 
 /// A verified legacy app receipt.
@@ -88,8 +92,11 @@ pub type UnknownAttributes = BTreeMap<u32, Vec<Vec<u8>>>;
 /// unstable `test-seams` feature, whose constructors build values for the
 /// library's own tests. The fields are public to read.
 ///
-/// Dates are epoch milliseconds, UTC. The 64-bit ids are `i64`: an ASN.1
-/// INTEGER can be negative, and the decoder reports what is there.
+/// Field names are Apple's own words from the `verifyReceipt` response. A
+/// missing attribute is `None`; the library invents no values. The first
+/// copy of a known attribute fills its field. Dates are epoch milliseconds,
+/// UTC. The 64-bit ids are `i64`: an ASN.1 INTEGER can be negative, and the
+/// decoder reports what is there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ReceiptPayload {
@@ -99,22 +106,23 @@ pub struct ReceiptPayload {
     pub app_item_id: Option<i64>,
     /// Attribute 2, decoded.
     pub bundle_id: Option<String>,
-    /// Attribute 2, the value octets as they sit in the receipt: the input
-    /// to Apple's device-hash formula.
+    /// Attribute 2, the value octets as they sit in the receipt: one input
+    /// of Apple's device-hash formula.
     pub bundle_id_bytes: Option<Vec<u8>>,
     /// Attribute 3.
     pub application_version: Option<String>,
-    /// Attribute 4.
+    /// Attribute 4, an input of the device-hash formula.
     pub opaque_value: Option<Vec<u8>>,
     /// Attribute 5, the SHA-1 device hash.
     pub sha1_hash: Option<Vec<u8>>,
-    /// Attribute 12.
+    /// Attribute 12, the receipt's creation date; the instant the chain is
+    /// judged at.
     pub receipt_creation_date_ms: Option<i64>,
     /// Attribute 15. Genuine values run to eighteen digits.
     pub download_id: Option<i64>,
     /// Attribute 16.
     pub version_external_identifier: Option<i64>,
-    /// Attribute 17, one entry per copy.
+    /// Attribute 17, one entry per copy, in receipt order.
     pub in_app: Vec<InAppPurchase>,
     /// Attribute 18.
     pub original_purchase_date_ms: Option<i64>,

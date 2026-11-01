@@ -18,8 +18,10 @@
 //!   The core uses it for two things only: the certificate-validity instant
 //!   when the receipt or JWS carries no usable signing date, and
 //!   `request_date` in the endpoint response.
-//! - **No unsigned integers.** Ids are `i64`, since an ASN.1 INTEGER in
-//!   hostile input can be negative, and attribute types are `i64` too.
+//! - **No unsigned integers, but for one.** Ids are `i64`, since an ASN.1
+//!   INTEGER in hostile input can be negative. The receipt types are the
+//!   core's own, so an unknown attribute's type is the core's `u32`, which
+//!   the core bounds to the `i32` range; on the wire it is a decimal key.
 //! - **A failure is a reason and a message.** The core's `source()` chain is
 //!   Rust-only and does not cross a boundary.
 //!
@@ -169,8 +171,8 @@ impl From<core_api::Failure> for Failure {
 
 /// Apple's two environments: which of Apple's two `verifyReceipt` URLs
 /// [`Verifier::verify_receipt_endpoint`] imitates, and the environment a
-/// verified receipt or JWS names ([`ReceiptPayload::environment`],
-/// [`JsonPayload::environment`]). A sandbox receipt on `Production` answers
+/// verified receipt or JWS names ([`ReceiptPayload::environment`], the
+/// core's, converted with `From`, and [`JsonPayload::environment`]). A sandbox receipt on `Production` answers
 /// 21007 and a production receipt on `Sandbox` 21008, as Apple's endpoints
 /// do; it filters nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,94 +210,13 @@ pub const MAX_INPUT_BYTES: usize = core_api::__internal::MAX_INPUT_BYTES;
 
 // -------------------------------------------------------------- payloads
 
-/// The attributes of a receipt or purchase that did not end up in a typed
-/// field: each attribute type once, in ascending order, with its raw value
-/// octets in receipt order. That covers an attribute type the library does
-/// not model, the second and later copies of a known attribute, and a known
-/// attribute whose value does not parse (its typed field is then `None`).
-/// Nothing Apple signed is lost.
-pub type UnknownAttributes = Vec<(i64, Vec<Vec<u8>>)>;
-
-/// A verified legacy app receipt (0.7-api.md §1).
-///
-/// Field names are Apple's own words from the `verifyReceipt` response. A
-/// missing attribute is `None`; the library invents no values. Dates are
-/// epoch milliseconds, UTC. The first copy of a known attribute fills its
-/// field.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ReceiptPayload {
-    /// Attribute 0, such as `Production` or `ProductionSandbox`.
-    pub receipt_type: Option<String>,
-    /// Attribute 1, the app's App Store item id. Zero in sandbox receipts.
-    pub app_item_id: Option<i64>,
-    /// Attribute 2, decoded.
-    pub bundle_id: Option<String>,
-    /// Attribute 2, the value octets as they sit in the receipt: one input
-    /// of Apple's device-hash formula.
-    pub bundle_id_bytes: Option<Vec<u8>>,
-    /// Attribute 3.
-    pub application_version: Option<String>,
-    /// Attribute 4, an input of the device-hash formula.
-    pub opaque_value: Option<Vec<u8>>,
-    /// Attribute 5, the SHA-1 device hash.
-    pub sha1_hash: Option<Vec<u8>>,
-    /// Attribute 12, the receipt's creation date; the instant the chain is
-    /// judged at.
-    pub receipt_creation_date_ms: Option<i64>,
-    /// Attribute 15. Genuine values run to eighteen digits.
-    pub download_id: Option<i64>,
-    /// Attribute 16.
-    pub version_external_identifier: Option<i64>,
-    /// Attribute 17, one entry per copy, in receipt order.
-    pub in_app: Vec<InAppPurchase>,
-    /// Attribute 18.
-    pub original_purchase_date_ms: Option<i64>,
-    /// Attribute 32, the pre-order date.
-    pub preorder_date_ms: Option<i64>,
-    /// Attribute 19.
-    pub original_application_version: Option<String>,
-    /// Attribute 21.
-    pub expiration_date_ms: Option<i64>,
-    /// Every attribute that did not end up in a field above.
-    pub unknown_attributes: UnknownAttributes,
-    /// The environment `receipt_type` names, by the core's rule:
-    /// `Production` and `ProductionVPP` are `Production`,
-    /// `ProductionSandbox` and `ProductionVPPSandbox` are `Sandbox`,
-    /// anything else (`Xcode`, a missing value) is `None`. Not part of the
-    /// payload's JSON; the answer carries it beside the payload.
-    pub environment: Option<Environment>,
-}
-
-/// One in-app purchase (attribute 17) of a [`ReceiptPayload`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct InAppPurchase {
-    /// 1701
-    pub quantity: Option<i64>,
-    /// 1702
-    pub product_id: Option<String>,
-    /// 1703
-    pub transaction_id: Option<String>,
-    /// 1704
-    pub purchase_date_ms: Option<i64>,
-    /// 1705
-    pub original_transaction_id: Option<String>,
-    /// 1706
-    pub original_purchase_date_ms: Option<i64>,
-    /// 1708
-    pub expires_date_ms: Option<i64>,
-    /// 1711
-    pub web_order_line_item_id: Option<i64>,
-    /// 1712
-    pub cancellation_date_ms: Option<i64>,
-    /// 1720, an INTEGER.
-    pub cancellation_reason: Option<i64>,
-    /// 1713: 0 is `false`, any other value `true`.
-    pub is_trial_period: Option<bool>,
-    /// 1719: 0 is `false`, any other value `true`.
-    pub is_in_intro_offer_period: Option<bool>,
-    /// Every attribute of this purchase that did not end up in a field.
-    pub unknown_attributes: UnknownAttributes,
-}
+/// A verified legacy app receipt (0.7-api.md §1), its in-app purchases and
+/// the attributes no typed field holds: the core's own types, handed out
+/// as the core returns them, so a receipt is modelled once. Their doc
+/// comments are in the core. The environment a receipt names is the core's
+/// [`ReceiptPayload::environment`], which a verified answer carries beside
+/// the payload.
+pub use core_api::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 
 /// A verified JWS payload (0.7-api.md §2): the JSON Apple signed, exactly as
 /// signed. Callers parse it with their own JSON library; the library
@@ -310,62 +231,6 @@ pub struct JsonPayload {
     /// `Sandbox` map and anything else is `None`; `None` when none is
     /// present.
     pub environment: Option<Environment>,
-}
-
-fn unknown_attributes(attributes: core_api::UnknownAttributes) -> UnknownAttributes {
-    attributes
-        .into_iter()
-        .map(|(attribute_type, values)| (i64::from(attribute_type), values))
-        .collect()
-}
-
-impl From<core_api::InAppPurchase> for InAppPurchase {
-    fn from(purchase: core_api::InAppPurchase) -> InAppPurchase {
-        InAppPurchase {
-            quantity: purchase.quantity,
-            product_id: purchase.product_id,
-            transaction_id: purchase.transaction_id,
-            purchase_date_ms: purchase.purchase_date_ms,
-            original_transaction_id: purchase.original_transaction_id,
-            original_purchase_date_ms: purchase.original_purchase_date_ms,
-            expires_date_ms: purchase.expires_date_ms,
-            web_order_line_item_id: purchase.web_order_line_item_id,
-            cancellation_date_ms: purchase.cancellation_date_ms,
-            cancellation_reason: purchase.cancellation_reason,
-            is_trial_period: purchase.is_trial_period,
-            is_in_intro_offer_period: purchase.is_in_intro_offer_period,
-            unknown_attributes: unknown_attributes(purchase.unknown_attributes),
-        }
-    }
-}
-
-impl From<core_api::ReceiptPayload> for ReceiptPayload {
-    fn from(receipt: core_api::ReceiptPayload) -> ReceiptPayload {
-        let environment = receipt.environment().map(Environment::from);
-        ReceiptPayload {
-            receipt_type: receipt.receipt_type,
-            app_item_id: receipt.app_item_id,
-            bundle_id: receipt.bundle_id,
-            bundle_id_bytes: receipt.bundle_id_bytes,
-            application_version: receipt.application_version,
-            opaque_value: receipt.opaque_value,
-            sha1_hash: receipt.sha1_hash,
-            receipt_creation_date_ms: receipt.receipt_creation_date_ms,
-            download_id: receipt.download_id,
-            version_external_identifier: receipt.version_external_identifier,
-            in_app: receipt
-                .in_app
-                .into_iter()
-                .map(InAppPurchase::from)
-                .collect(),
-            original_purchase_date_ms: receipt.original_purchase_date_ms,
-            preorder_date_ms: receipt.preorder_date_ms,
-            original_application_version: receipt.original_application_version,
-            expiration_date_ms: receipt.expiration_date_ms,
-            unknown_attributes: unknown_attributes(receipt.unknown_attributes),
-            environment,
-        }
-    }
 }
 
 // --------------------------------------------------------------- config
@@ -463,7 +328,6 @@ impl Verifier {
         self.at(now_ms, |verifier| {
             verifier.verify_receipt_bytes(receipt_base64)
         })
-        .map(ReceiptPayload::from)
         .map_err(Failure::from)
     }
 
@@ -538,9 +402,7 @@ pub fn endpoint_internal_error() -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
-    use super::{
-        core_api, now_ms_from_u64, Environment, Failure, Reason, ReceiptPayload, Verifier,
-    };
+    use super::{core_api, now_ms_from_u64, Environment, Failure, Reason, Verifier};
     use std::path::PathBuf;
 
     fn fixture(relative: &str) -> Vec<u8> {
@@ -674,33 +536,6 @@ mod tests {
             .collect();
         for handle in handles {
             handle.join().unwrap();
-        }
-    }
-
-    #[test]
-    fn attribute_types_cross_as_signed_integers_in_ascending_order() {
-        let mut core = core_api::__internal::receipt_payload();
-        core.unknown_attributes.insert(19_999, vec![vec![1]]);
-        core.unknown_attributes.insert(13, vec![vec![2], vec![3]]);
-        let ours = ReceiptPayload::from(core);
-        assert_eq!(
-            ours.unknown_attributes,
-            vec![(13, vec![vec![2], vec![3]]), (19_999, vec![vec![1]])]
-        );
-    }
-
-    /// The environment is the core's answer, carried across unchanged.
-    #[test]
-    fn the_environment_crosses_as_the_core_states_it() {
-        for (receipt_type, expected) in [
-            (Some("ProductionVPP"), Some(Environment::Production)),
-            (Some("ProductionSandbox"), Some(Environment::Sandbox)),
-            (Some("Xcode"), None),
-            (None, None),
-        ] {
-            let mut core = core_api::__internal::receipt_payload();
-            core.receipt_type = receipt_type.map(str::to_owned);
-            assert_eq!(ReceiptPayload::from(core).environment, expected);
         }
     }
 

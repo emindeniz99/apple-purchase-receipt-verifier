@@ -34,6 +34,9 @@ vendored = ["aprv-surface/vendored"]
 # network: `resolve-http` and `resolve-file` stay off, the schemas are
 # registered in memory.
 jsonschema = { version = "0.60.1", default-features = false }
+# The core's test seams: the receipt types are the core's, and outside the
+# core a payload is built by hand only through them.
+apple-purchase-receipt-verifier = { path = "../..", default-features = false, features = ["test-seams"] }
 
 [lints.clippy]
 cast_possible_truncation = "deny"

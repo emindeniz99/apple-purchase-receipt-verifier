@@ -136,7 +136,10 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
   `JsonPayload::new` and `Failure::new` are crate-private, so a value of
   these types in a caller's code passed verification. The library's own
   tests build them through `__internal` under the `test-seams` feature.
-  `aprv-surface`'s types, which only the bindings see, are unchanged.
+  `aprv-surface` hands out the core's `ReceiptPayload` and `InAppPurchase`
+  themselves, so the bindings hold no copy of the receipt model and the
+  same rule reaches them; `aprv-wire`'s tests build values through the
+  same seams.
 
 ## 5. The bounds
 
@@ -212,10 +215,10 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
 | `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: u32, now-ms, request-json: list<u8>)` |
 | `Environment` (2) | `Environment` (2) | `env`: 0 production, 1 sandbox; anything else traps |
-| `ReceiptPayload.environment()`, `JsonPayload.environment()` | `environment: Option<Environment>` on both payloads | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
+| `ReceiptPayload.environment()`, `JsonPayload.environment()` | the core's `ReceiptPayload::environment()`; `environment: Option<Environment>` on `JsonPayload` | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
 | `Reason` (8) | `Reason` (8), with `token()` | `"reason":"<TOKEN>"` |
 | `Failure` (reason, message, cause) | `Failure { reason, message }` | `{"verified":false,"reason":...,"message":...}` |
-| `ReceiptPayload`, `InAppPurchase` | records of `Option<String>`, `Option<i64>`, `Option<bool>`, `Vec<u8>`, lists; unknown attributes as `(i64, Vec<Vec<u8>>)` in receipt order | 0.7's "Our JSON" |
+| `ReceiptPayload`, `InAppPurchase` | the core's own types, re-exported: records of `Option<String>`, `Option<i64>`, `Option<bool>`, `Vec<u8>`, lists; unknown attributes as the core's `BTreeMap<u32, Vec<Vec<u8>>>`, ascending by type, values in receipt order | 0.7's "Our JSON" |
 | `JsonPayload.json()` | `String`, the signed bytes | a JSON string |
 | `VerificationResult<T>` | `Result<T, Failure>` | `{"verified":true,"payload":...,"environment":...}` or the failure |
 
@@ -223,6 +226,9 @@ Conversion rules carried over from the 2026-09-25 surface audit:
 
 - No unsigned integers on the surface; ids are `i64`, since a hostile
   ASN.1 INTEGER can be negative ([0.7-api.md][api07], the other ports).
+  The one exception is an unknown attribute's type, the core's `u32`,
+  which the core bounds to the `i32` range and the wire writes as a
+  decimal key.
 - `TryFrom` wherever a value can fail to fit, `From` only when it is
   total; `clippy::cast_*` denied. A conversion failure becomes
   `INTERNAL_ERROR` and never a success.

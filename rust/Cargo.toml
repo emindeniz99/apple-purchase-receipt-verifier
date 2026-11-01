@@ -58,8 +58,8 @@ vendored = ["aprv-openssl/vendored"]
 # certificates, the `x5c` decoder, and hand-built payloads and failures.
 # Internal and unstable; a build with it on can forge a verdict value, so
 # no shipped build turns it on. Only this crate's own tests (through the
-# dev-dependency on itself below) and aprv-surface's tests do, so
-# aprv.wasm, the C ABI and aprv-server never carry them.
+# dev-dependency on itself below) and aprv-wire's tests do, so aprv.wasm,
+# the C ABI and aprv-server never carry them.
 test-seams = ["aprv-openssl/test-seams"]
 
 [dev-dependencies]
