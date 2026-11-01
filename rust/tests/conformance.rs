@@ -12,6 +12,13 @@
 //! source, and no per-case fix-up: a vector that disagrees with the library
 //! is a bug report against one of the two, never something to special-case
 //! here.
+//!
+//! Every verify call is also counted for panics: `Verifier` contains a panic
+//! and answers it with a reason, often the very `MALFORMED` a case expects,
+//! so a case is failed when its answer was reached through a panic.
+
+#[path = "common/panics.rs"]
+mod panics;
 
 use apple_purchase_receipt_verifier::__internal::{
     base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
@@ -547,6 +554,16 @@ fn run_decode_base64(case: &Case) -> Result<(), Failed> {
 
 // --- one case ------------------------------------------------------------
 
+/// The failure for a verify call that panicked: the library contained the
+/// panic and answered a reason, but an answer reached that way is a bug
+/// whatever the case expected.
+fn contained_panic(id: &str, panicked: usize) -> Failed {
+    Failed::from(format!(
+        "{id}: the operation panicked {panicked} time(s); the library contained it and \
+         answered anyway"
+    ))
+}
+
 /// Which case ids actually ran, so the coverage check after the run is a
 /// fact rather than a loop-shaped assumption.
 static RAN: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -582,7 +599,12 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 .map_err(|err| Failed::from(format!("{id}: harness error: {err}")))?,
                 (None, None) => return Err(Failed::from(format!("{id}: harness error: no input"))),
             };
-            let response = parse_json(id, &verifier.verify_receipt_endpoint(environment, &body))?;
+            let (response, panicked) =
+                panics::panics_during(|| verifier.verify_receipt_endpoint(environment, &body));
+            if panicked != 0 {
+                return Err(contained_panic(id, panicked));
+            }
+            let response = parse_json(id, &response)?;
             // Port-defined within a list: the response's /status must be
             // listed, and nothing else is pinned.
             if let Some(allowed) = &expected.one_of {
@@ -614,31 +636,34 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 String::from_utf8(fixture_bytes(dir, fixtures, fixture)?)
                     .map_err(|_| Failed::from(format!("{id}: harness error: JWS not UTF-8")))?
             };
-            // The payload's JSON and its environment.
+            // The payload's JSON and its environment, or the harness's
+            // failure when the answer was reached through a panic.
             let call = || {
-                if operation == "verifyReceipt" {
-                    verifier
-                        .verify_receipt(&input)
-                        .map(|receipt| (receipt.to_json(), receipt.environment()))
+                let (result, panicked) = panics::panics_during(|| {
+                    if operation == "verifyReceipt" {
+                        verifier
+                            .verify_receipt(&input)
+                            .map(|receipt| (receipt.to_json(), receipt.environment()))
+                    } else {
+                        verifier.verify_signed_data(&input).map(|payload| {
+                            let environment = payload.environment();
+                            (payload.into_json(), environment)
+                        })
+                    }
+                });
+                if panicked == 0 {
+                    Ok(result)
                 } else {
-                    verifier.verify_signed_data(&input).map(|payload| {
-                        let environment = payload.environment();
-                        (payload.into_json(), environment)
-                    })
+                    Err(contained_panic(id, panicked))
                 }
             };
             if let Some(allowed) = &expected.one_of {
-                let guarded = || {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&call)).map_err(|_| {
-                        Failed::from(format!("{id}: the operation panicked instead of answering"))
-                    })
-                };
                 let result = match case.max_millis {
-                    None => guarded()?,
+                    None => call()?,
                     Some(budget) => {
-                        let _warm_up = guarded()?;
+                        let _warm_up = call()?;
                         let start = std::time::Instant::now();
-                        let result = guarded()?;
+                        let result = call()?;
                         let elapsed = start.elapsed();
                         if elapsed.as_millis() > u128::from(budget) {
                             return Err(Failed::from(format!(
@@ -659,11 +684,12 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 return Ok(());
             }
             let result = match case.max_millis {
-                None => call(),
+                None => call()?,
                 Some(budget) => {
-                    let _warm_up = call();
+                    let _warm_up = call()?;
                     let start = std::time::Instant::now();
                     let (result, used) = keys_used_during(call);
+                    let result = result?;
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() > u128::from(budget) {
                         return Err(Failed::from(format!(

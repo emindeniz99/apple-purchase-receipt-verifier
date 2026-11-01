@@ -4,11 +4,15 @@
 //! These tests state the two properties that follow from that, through the
 //! public API: nothing ever panics, and nothing costs unbounded time or
 //! memory.
+//!
+//! "Nothing panics" is counted, not caught: `Verifier` contains a panic and
+//! answers it with a reason, so a panic would never reach a test's own
+//! `catch_unwind`. `common::panics::panics_during` counts every panic that
+//! starts on the test's thread, the contained ones included.
 
 mod common;
 
 use apple_purchase_receipt_verifier::{Environment, Reason, ReceiptPayload, Verifier};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
 fn receipt_verifier() -> Verifier {
@@ -41,8 +45,8 @@ fn eleven_characters_of_base64_do_not_escape_the_contract() {
     // The exact input that once escaped a sibling port's declared contract.
     let verifier = receipt_verifier();
     for text in ["aaaaaaaaaaa", "AAAAAAAAAAA", "////////////", "MIIBIjANBgkq"] {
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_receipt(text)));
-        let result = outcome.unwrap_or_else(|_| panic!("verify_receipt({text}) panicked"));
+        let (result, panics) = common::panics::panics_during(|| verifier.verify_receipt(text));
+        assert_eq!(panics, 0, "verify_receipt({text}) panicked");
         assert_eq!(result.unwrap_err().reason(), Reason::Malformed);
     }
 }
@@ -78,8 +82,9 @@ fn a_thousand_levels_of_nesting_does_not_overflow_the_stack() {
         wrapped.extend_from_slice(&nested);
         nested = wrapped;
     }
-    let outcome = catch_unwind(AssertUnwindSafe(|| receipt_verifier().verify(&nested)));
-    assert_eq!(outcome.unwrap().unwrap_err().reason(), Reason::Malformed);
+    let (result, panics) = common::panics::panics_during(|| receipt_verifier().verify(&nested));
+    assert_eq!(panics, 0, "a thousand levels of nesting panicked");
+    assert_eq!(result.unwrap_err().reason(), Reason::Malformed);
 }
 
 #[test]
@@ -395,11 +400,11 @@ fn five_thousand_mutations_of_a_genuine_receipt_never_panic_and_never_verify() {
             let index = rng.below(mutated.len());
             mutated[index] ^= 1u8 << rng.below(8);
         }
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify(&mutated)));
-        let result = match outcome {
-            Ok(result) => result,
-            Err(_) => panic!("mutation {iteration} panicked; seed 0x5EED123456789ABC"),
-        };
+        let (result, panics) = common::panics::panics_during(|| verifier.verify(&mutated));
+        assert_eq!(
+            panics, 0,
+            "mutation {iteration} panicked; seed 0x5EED123456789ABC"
+        );
         match result {
             // A mutation may only be accepted if it changed nothing the
             // caller is told. Every structural or cryptographic byte is
@@ -476,8 +481,8 @@ fn two_thousand_mutations_of_a_genuine_jws_never_panic_and_never_verify() {
             mutated[index] ^= 1u8 << rng.below(8);
         }
         let text = String::from_utf8_lossy(&mutated).into_owned();
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_signed_data(&text)));
-        let result = outcome.unwrap_or_else(|_| panic!("jws mutation {iteration} panicked"));
+        let (result, panics) = common::panics::panics_during(|| verifier.verify_signed_data(&text));
+        assert_eq!(panics, 0, "jws mutation {iteration} panicked");
         assert!(result.is_err(), "jws mutation {iteration} was ACCEPTED");
     }
 }
@@ -488,8 +493,9 @@ fn every_truncation_of_a_genuine_receipt_is_refused_without_panicking() {
     let verifier = receipt_verifier();
     let mut length = 0;
     while length < genuine.len() {
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify(&genuine[..length])));
-        let result = outcome.unwrap_or_else(|_| panic!("truncation to {length} panicked"));
+        let (result, panics) =
+            common::panics::panics_during(|| verifier.verify(&genuine[..length]));
+        assert_eq!(panics, 0, "truncation to {length} panicked");
         assert!(result.is_err(), "truncation to {length} was accepted");
         length += 37; // a stride that is coprime with every field boundary
     }
@@ -506,7 +512,7 @@ fn arbitrary_byte_strings_never_panic_in_either_entry_point() {
             .map(|_| u8::try_from(rng.below(256)).unwrap())
             .collect();
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        let outcome = catch_unwind(AssertUnwindSafe(|| {
+        let (refused, panics) = common::panics::panics_during(|| {
             let a = receipt.verify(&bytes).is_err();
             let b = receipt.verify_receipt(&text).is_err();
             let c = jws.verify_signed_data(&text).is_err();
@@ -515,8 +521,9 @@ fn arbitrary_byte_strings_never_panic_in_either_entry_point() {
                 != "{\"status\":0}"
                 && receipt.verify_receipt_endpoint(Environment::Sandbox, &body) != "{\"status\":0}";
             a && b && c && d
-        }));
-        assert!(outcome.unwrap_or_else(|_| panic!("random input {iteration} panicked")));
+        });
+        assert_eq!(panics, 0, "random input {iteration} panicked");
+        assert!(refused, "random input {iteration} was accepted");
     }
 }
 
@@ -531,8 +538,8 @@ fn every_single_byte_mutation_of_the_first_kilobyte_is_rejected() {
         for bit in [0u8, 3, 7] {
             let mut mutated = genuine.clone();
             mutated[index] ^= 1u8 << bit;
-            let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify(&mutated)));
-            let result = outcome.unwrap_or_else(|_| panic!("byte {index} bit {bit} panicked"));
+            let (result, panics) = common::panics::panics_during(|| verifier.verify(&mutated));
+            assert_eq!(panics, 0, "byte {index} bit {bit} panicked");
             if let Ok(actual) = result {
                 assert_eq!(
                     actual, genuine_fields,
@@ -603,8 +610,9 @@ fn no_respelling_of_a_genuine_jws_is_accepted() {
 
     let mut accepted = Vec::new();
     for candidate in &candidates {
-        let outcome = catch_unwind(AssertUnwindSafe(|| verifier.verify_signed_data(candidate)));
-        let result = outcome.unwrap_or_else(|_| panic!("respelling panicked: {candidate:?}"));
+        let (result, panics) =
+            common::panics::panics_during(|| verifier.verify_signed_data(candidate));
+        assert_eq!(panics, 0, "respelling panicked: {candidate:?}");
         if result.is_ok() {
             accepted.push(candidate.clone());
         }
