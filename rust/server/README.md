@@ -213,6 +213,12 @@ SHA-256, the Wasmtime version, its features and the Wasm features.
 musl's own malloc, no INTERP and no NEEDED, which the script checks with
 `readelf`. For `aarch64-unknown-linux-musl` it needs a cross linker; see
 the script's header (not tested in this repository's container).
+`scripts/build-static.sh --ccwasm FILE.ccwasm [TARGET]` runs stage 2
+alone around a file `aprv precompile` already wrote, with its manifest
+beside it. The release does that: one precompiler built on Linux x86_64
+with `wasmtime/all-arch` writes every target's `.ccwasm`, and each
+target's runner builds and checks the binary
+(`docs/evidence/2026-10-31-cross-build-spike.md`).
 
 ## Docker
 

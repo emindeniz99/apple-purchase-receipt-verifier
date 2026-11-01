@@ -10,6 +10,7 @@
 #      precompiled for another target or Wasmtime version.
 #
 #   build-static.sh COMPONENT.wasm [TARGET] [OUTDIR]
+#   build-static.sh --ccwasm FILE.ccwasm [TARGET] [OUTDIR]
 #
 # TARGET defaults to x86_64-unknown-linux-musl: a fully static binary
 # (static-pie, musl's own malloc; no INTERP, no NEEDED), which the script
@@ -17,6 +18,13 @@
 # Wasmtime compiles. OUTDIR defaults to rust/server/dist. Set
 # COMPONENT_SHA256 to refuse any other component (the release does). A
 # Windows TARGET writes aprv-TARGET.exe.
+#
+# --ccwasm skips step 1 and builds step 2 around a file `aprv precompile`
+# already wrote, with its manifest FILE.ccwasm.json beside it; both are
+# copied into OUTDIR under the names step 1 would give them. release.yml
+# precompiles once for every target (precompile-server) and each native
+# leg passes its own file here. COMPONENT_SHA256 then refuses a file whose
+# manifest names any other component; build.rs runs its usual checks.
 #
 # aarch64-unknown-linux-musl works the same way but needs a cross linker,
 # which this script does not provide (untested here):
@@ -27,7 +35,15 @@
 # `wasmtime/all-arch` so Cranelift has that backend.
 set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-component=${1:?usage: build-static.sh COMPONENT.wasm [TARGET] [OUTDIR]}
+usage="usage: build-static.sh COMPONENT.wasm [TARGET] [OUTDIR], or --ccwasm FILE.ccwasm [TARGET] [OUTDIR]"
+component=
+given=
+if [ "${1:-}" = --ccwasm ]; then
+  shift
+  given=${1:?$usage}
+else
+  component=${1:?$usage}
+fi
 target=${2:-x86_64-unknown-linux-musl}
 out=${3:-$here/dist}
 host=$(rustc -vV | sed -n 's/^host: //p')
@@ -43,12 +59,32 @@ case "$target" in *-windows-*) exe=.exe ;; esac
 # stdin, not a name: sha256sum escapes a name holding a backslash (Windows).
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum < "$1"; else shasum -a 256 < "$1"; fi | cut -c1-64; }
 
-got=$(sha256 "$component")
-if [ -n "${COMPONENT_SHA256:-}" ] && [ "$got" != "$COMPONENT_SHA256" ]; then
-  echo "component sha256 $got is not the expected $COMPONENT_SHA256" >&2
-  exit 1
+ccwasm="$out/aprv.$target.ccwasm"
+if [ -n "$given" ]; then
+  if [ ! -f "$given.json" ]; then
+    echo "$given.json: no manifest beside the .ccwasm (aprv precompile writes one)" >&2
+    exit 1
+  fi
+  # Through a temporary name, so FILE may already be the one in OUTDIR.
+  cp "$given" "$ccwasm.part"
+  cp "$given.json" "$ccwasm.json.part"
+  mv "$ccwasm.part" "$ccwasm"
+  mv "$ccwasm.json.part" "$ccwasm.json"
+  # serde_json's pretty print puts each key on a line of its own.
+  from=$(sed -n 's/^ *"component_sha256": *"\([0-9a-f]*\)".*$/\1/p' "$ccwasm.json")
+  if [ -n "${COMPONENT_SHA256:-}" ] && [ "$from" != "$COMPONENT_SHA256" ]; then
+    echo "the .ccwasm was precompiled from component sha256 ${from:-(none in its manifest)}, not the expected $COMPONENT_SHA256" >&2
+    exit 1
+  fi
+  echo "ccwasm: $given, sha256 $(sha256 "$ccwasm"), precompiled from component sha256 $from; step 1 skipped"
+else
+  got=$(sha256 "$component")
+  if [ -n "${COMPONENT_SHA256:-}" ] && [ "$got" != "$COMPONENT_SHA256" ]; then
+    echo "component sha256 $got is not the expected $COMPONENT_SHA256" >&2
+    exit 1
+  fi
+  echo "component: $component, sha256 $got"
 fi
-echo "component: $component, sha256 $got"
 
 # cc-rs compiles Wasmtime's C helpers with TARGET's C compiler and, for a
 # musl TARGET, looks for <arch>-linux-musl-gcc (and musl-gcc for x86_64
@@ -65,15 +101,15 @@ case "$target" in
   ;;
 esac
 
-features=compile
-[ "${target%%-*}" = "${host%%-*}" ] || features="compile,wasmtime/all-arch"
-
 # 1. The full build precompiles for TARGET, with the serving build's
 #    Wasmtime settings (runtime::config() in both).
-cargo build --release --locked --manifest-path "$here/Cargo.toml" --target "$host" --features "$features"
-full="$targetdir/$host/release/aprv"
-ccwasm="$out/aprv.$target.ccwasm"
-"$full" precompile "$component" --target "$target" -o "$ccwasm"
+if [ -n "$component" ]; then
+  features=compile
+  [ "${target%%-*}" = "${host%%-*}" ] || features="compile,wasmtime/all-arch"
+  cargo build --release --locked --manifest-path "$here/Cargo.toml" --target "$host" --features "$features"
+  full="$targetdir/$host/release/aprv"
+  "$full" precompile "$component" --target "$target" -o "$ccwasm"
+fi
 
 # 2. The shipped build: runtime-only, the .ccwasm embedded.
 APRV_CCWASM="$ccwasm" cargo build --release --locked --manifest-path "$here/Cargo.toml" --target "$target"
