@@ -16,7 +16,7 @@ use crate::error::{malformed, Failure, Reason};
 use crate::json::{instant, string, strings, whole_object_members, JsonError, Members};
 use crate::path::validate_pair;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
-use crate::verifier::{self, Clock, Stage};
+use crate::verifier::Clock;
 use aprv_openssl::{verify_es256, Certificate};
 use core::fmt;
 
@@ -192,7 +192,6 @@ pub(crate) fn verify(
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
-    verifier::enter(Stage::AfterSignature);
     match payload {
         Ok(read) => Ok(JsonPayload {
             json: read.json,

@@ -178,7 +178,7 @@ parse `failure.message()`.
 | `InvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
+| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic, wherever it happened), or the configured clock panicked; no input makes a correct library answer it | 21009 |
 
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure with `VERSION`, and reconcile the purchase through the App
@@ -377,13 +377,13 @@ are standard base64, JWS segments unpadded canonical base64url, so one
 signed payload has one accepted spelling.
 
 The library target additionally denies `unwrap`, `expect`, slice indexing
-and `panic!` at compile time, and every public method contains a panic by
-where it happened, with a fixed message that never carries the panic's text:
-before a signature has verified it is `MALFORMED` (21002), as input nobody
-vouched for must not be able to raise the internal-error alarm at will;
-while the signed receipt payload is decoded it is `UNREADABLE_PAYLOAD`;
-after that it is `INTERNAL_ERROR` (21009). Containment needs unwinding: a
-binary built with `panic = "abort"` ends the process on a panic instead.
+and `panic!` at compile time, and every public method contains a panic as
+`INTERNAL_ERROR` (21009), wherever it happened, with a fixed message that
+never carries the panic's text. A panic is a bug in this library, not a
+verdict on the input, so it raises the alarm rather than read as a client
+"deny"; `aprv.wasm`, which traps on a panic, answers the same through every
+host. Containment needs unwinding: a binary built with `panic = "abort"`
+ends the process on a panic instead.
 
 ## Measured worst-case CPU
 

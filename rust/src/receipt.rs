@@ -8,7 +8,7 @@ use crate::receipt_payload::{
     ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
 };
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
-use crate::verifier::{self, Clock, Stage};
+use crate::verifier::Clock;
 use aprv_openssl::{Certificate, CmsError, EnvelopeLimits, SignedData};
 
 /// How many certificates a receipt may embed. Every embedded certificate is
@@ -65,20 +65,17 @@ pub(crate) fn verify(
     }
     let der = decode_receipt_data(base64)?;
     let attributes = verify_envelope(&der, anchors, clock)?;
-    verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot
     // read is the library's failure or a format Apple added, not the
     // client's: UNREADABLE_PAYLOAD, never MALFORMED, which the endpoint
     // answers as 21002 and an app server reads as "deny".
-    let payload = attributes.map(parse_receipt_payload).map_err(|err| {
+    attributes.map(parse_receipt_payload).map_err(|err| {
         Failure::new(
             Reason::UnreadablePayload,
             "signed receipt content could not be read",
         )
         .with_source(err)
-    });
-    verifier::enter(Stage::AfterSignature);
-    payload
+    })
 }
 
 fn too_many_signer_infos(count: usize) -> Failure {

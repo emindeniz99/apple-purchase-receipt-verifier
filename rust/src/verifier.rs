@@ -17,16 +17,14 @@ use std::sync::Arc;
 /// [`Config`].
 ///
 /// Immutable and cheap to clone; share one across threads. The verify
-/// methods never panic for any input: a panic inside one is contained and
-/// reported by where it happened, with a fixed message. Before a signature
-/// has verified it is [`Reason::Malformed`], as the input nobody vouched for
-/// must not be able to raise an internal-error alert at will; while the
-/// signed receipt payload is read it is [`Reason::UnreadablePayload`]; after
-/// that, or a clock that panics, it is [`Reason::InternalError`]. The
-/// endpoint answers each with its status. Containment needs unwinding, so it
-/// holds in native builds only: `aprv.wasm` is built with the `wasm`
-/// profile's `panic = "abort"` (`rust/Cargo.toml`), where a panic traps the
-/// module instead of returning a verdict.
+/// methods never panic for any input: a panic inside one is contained as
+/// [`Reason::InternalError`] with a fixed message, wherever it happened, and
+/// so is a clock that panics; the endpoint answers 21009. A panic is a bug
+/// in this library, never a verdict on the input, so it must raise the
+/// operator's alarm rather than read as a client "deny". Containment needs
+/// unwinding, so it holds in native builds only: `aprv.wasm` is built with
+/// the `wasm` profile's `panic = "abort"` (`rust/Cargo.toml`), where a panic
+/// traps the module, which every host reports as `INTERNAL_ERROR` too.
 ///
 /// The clock is read only when a verdict needs it, so input that fails its
 /// own checks never reaches it.
@@ -116,19 +114,27 @@ impl Verifier {
             return endpoint::status_only(endpoint::status(failure.reason()));
         }
         let clock = Clock::new(&*self.clock);
-        staged(|| endpoint::respond(environment, request_json, &self.roots, &clock))
-            .unwrap_or_else(|stage| endpoint::status_only(endpoint::status(stage.reason())))
+        catch_unwind(AssertUnwindSafe(|| {
+            endpoint::respond(environment, request_json, &self.roots, &clock)
+        }))
+        .unwrap_or_else(|_| endpoint::status_only(endpoint::status(Reason::InternalError)))
     }
 
-    /// Runs `verify` with a lazy clock, containing a panic by stage.
+    /// Runs `verify` with a lazy clock, containing a panic.
     fn contained<T>(
         &self,
         verify: impl FnOnce(&Clock<'_>) -> Result<T, Failure>,
     ) -> Result<T, Failure> {
         self.check_anchors()?;
         let clock = Clock::new(&*self.clock);
-        staged(|| verify(&clock))
-            .unwrap_or_else(|stage| Err(Failure::new(stage.reason(), stage.message())))
+        catch_unwind(AssertUnwindSafe(|| verify(&clock))).unwrap_or_else(|_| {
+            // Nothing that is only known after a panic, its text included,
+            // reaches the caller.
+            Err(Failure::new(
+                Reason::InternalError,
+                "unexpected internal failure",
+            ))
+        })
     }
 
     /// `INTERNAL_ERROR` when there is no anchor. Only `Config::default` can
@@ -151,56 +157,6 @@ impl fmt::Debug for Verifier {
             .field("roots", &self.roots.len())
             .finish_non_exhaustive()
     }
-}
-
-/// Where a verification is, for mapping a panic to a verdict: nothing that
-/// is only known after a panic, its text included, reaches the caller.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Stage {
-    /// Reading input no signature has vouched for yet.
-    BeforeSignature,
-    /// Decoding a receipt payload a trusted signer signed.
-    PayloadParse,
-    /// Everything after that.
-    AfterSignature,
-}
-
-impl Stage {
-    const fn reason(self) -> Reason {
-        match self {
-            Stage::BeforeSignature => Reason::Malformed,
-            Stage::PayloadParse => Reason::UnreadablePayload,
-            Stage::AfterSignature => Reason::InternalError,
-        }
-    }
-
-    const fn message(self) -> &'static str {
-        match self {
-            Stage::BeforeSignature => "unexpected failure while reading unverified input",
-            Stage::PayloadParse => "unexpected failure while reading the signed payload",
-            Stage::AfterSignature => "unexpected internal failure",
-        }
-    }
-}
-
-thread_local! {
-    static STAGE: Cell<Stage> = const { Cell::new(Stage::BeforeSignature) };
-}
-
-/// Marks the stage the current verification has reached.
-pub(crate) fn enter(stage: Stage) {
-    STAGE.with(|current| current.set(stage));
-}
-
-/// Runs `work` from [`Stage::BeforeSignature`], and on a panic returns the
-/// stage it happened in. The caller's stage is restored either way, so a
-/// verification that runs inside another one (from a clock, say) leaves the
-/// outer one's stage as it found it.
-fn staged<R>(work: impl FnOnce() -> R) -> Result<R, Stage> {
-    let outer = STAGE.with(|current| current.replace(Stage::BeforeSignature));
-    let result = catch_unwind(AssertUnwindSafe(work));
-    let reached = STAGE.with(|current| current.replace(outer));
-    result.map_err(|_| reached)
 }
 
 /// The configured clock, read at most once and only when asked.
@@ -236,7 +192,7 @@ impl<'a> Clock<'a> {
 #[cfg(test)]
 #[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
-    use super::{enter, staged, Clock, Stage, Verifier, STAGE};
+    use super::{Clock, Verifier};
     use crate::environment::Environment;
     use crate::error::Reason;
     use std::sync::Arc;
@@ -263,33 +219,16 @@ mod tests {
     }
 
     #[test]
-    fn a_panic_is_judged_by_the_stage_it_happened_in() {
-        // Before a signature the input is nobody's, so a panic there must
-        // not raise the internal-error alarm; after it, it must.
-        let cases = [
-            (Stage::BeforeSignature, Reason::Malformed),
-            (Stage::PayloadParse, Reason::UnreadablePayload),
-            (Stage::AfterSignature, Reason::InternalError),
-        ];
-        for (stage, reason) in cases {
-            let reached = staged(|| {
-                enter(stage);
-                panic!("secret panic text");
-            })
+    fn a_panic_is_an_internal_error_wherever_it_happens() {
+        // A panic is a bug in this library, whatever input it met: it must
+        // raise the operator's alarm, as aprv.wasm's trap does, never read
+        // as a client "deny". Its text never reaches the caller.
+        let verifier = Verifier::new(crate::Config::default());
+        let failure = verifier
+            .contained(|_| -> Result<(), crate::Failure> { panic!("secret panic text") })
             .unwrap_err();
-            assert_eq!(reached, stage);
-            assert_eq!(reached.reason(), reason);
-            assert!(!reached.message().contains("secret"));
-        }
-    }
-
-    #[test]
-    fn every_verification_starts_before_the_signature_and_restores_the_caller() {
-        enter(Stage::AfterSignature);
-        let inner = staged(|| STAGE.with(std::cell::Cell::get));
-        assert_eq!(inner, Ok(Stage::BeforeSignature));
-        assert_eq!(STAGE.with(std::cell::Cell::get), Stage::AfterSignature);
-        enter(Stage::BeforeSignature);
+        assert_eq!(failure.reason(), Reason::InternalError);
+        assert_eq!(failure.message(), "unexpected internal failure");
     }
 
     #[test]
