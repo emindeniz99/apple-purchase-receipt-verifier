@@ -12,6 +12,20 @@
 //! source, and no per-case fix-up: a vector that disagrees with the library
 //! is a bug report against one of the two, never something to special-case
 //! here.
+//!
+//! Every verify call is also counted for panics: `Verifier` contains a panic
+//! and answers it with a reason, often the very `MALFORMED` a case expects,
+//! so a case is failed when its answer was reached through a panic.
+//!
+//! A case's `maxMillis` is checked against the clock only when
+//! `APRV_TIMING_ASSERTS=1` (`common/timing.rs` says why); its verdict, and
+//! for a case with a pinned status the keys its signature checks used, are
+//! checked on every run.
+
+#[path = "common/panics.rs"]
+mod panics;
+#[path = "common/timing.rs"]
+mod timing;
 
 use apple_purchase_receipt_verifier::__internal::{
     base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
@@ -76,7 +90,7 @@ struct Case {
     #[serde(default, rename = "fault")]
     _fault: Option<String>,
     /// A wall-clock budget for the verify call, measured after one warm-up
-    /// call of the same case.
+    /// call of the same case, when `APRV_TIMING_ASSERTS=1`.
     #[serde(default, rename = "maxMillis")]
     max_millis: Option<u64>,
     #[serde(rename = "tags")]
@@ -547,6 +561,86 @@ fn run_decode_base64(case: &Case) -> Result<(), Failed> {
 
 // --- one case ------------------------------------------------------------
 
+/// The failure for a verify call that panicked: the library contained the
+/// panic and answered a reason, but an answer reached that way is a bug
+/// whatever the case expected.
+fn contained_panic(id: &str, panicked: usize) -> Failed {
+    Failed::from(format!(
+        "{id}: the operation panicked {panicked} time(s); the library contained it and \
+         answered anyway"
+    ))
+}
+
+/// The `SubjectPublicKeyInfo` DER of every key a signature check on
+/// `input` may use: the anchors' keys, then, round by round, the key of
+/// each certificate the input carries (a receipt's CMS certificates, a
+/// JWS's `x5c`) whose signature verifies under a key already in the set.
+/// The harness's own walk, over the openssl crate rather than the library,
+/// and blind to validity periods and markers: it bounds which keys may be
+/// used, not which chains verify. A certificate it cannot read is not
+/// vouched for.
+fn vouched_keys(roots: &[TrustAnchor], operation: &str, input: &str) -> Vec<Vec<u8>> {
+    use openssl::pkey::{PKey, Public};
+    use openssl::x509::X509;
+    let carried: Vec<X509> = if operation == "verifyReceipt" {
+        base64::engine::general_purpose::STANDARD
+            .decode(input)
+            .ok()
+            .and_then(|der| openssl::pkcs7::Pkcs7::from_der(&der).ok())
+            .and_then(|cms| {
+                let certificates = cms.signed()?.certificates()?;
+                Some(certificates.iter().map(ToOwned::to_owned).collect())
+            })
+            .unwrap_or_default()
+    } else {
+        input
+            .split('.')
+            .next()
+            .and_then(|header| {
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(header)
+                    .ok()
+            })
+            .and_then(|header| serde_json::from_slice::<Value>(&header).ok())
+            .and_then(|header| header.get("x5c")?.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|entry| {
+                let der = base64::engine::general_purpose::STANDARD
+                    .decode(entry.as_str()?)
+                    .ok()?;
+                X509::from_der(&der).ok()
+            })
+            .collect()
+    };
+    let mut vouched: Vec<PKey<Public>> = roots
+        .iter()
+        .filter_map(|anchor| X509::from_der(anchor.der()).ok()?.public_key().ok())
+        .collect();
+    let mut pending = carried;
+    loop {
+        let before = pending.len();
+        let (issued, rest): (Vec<X509>, Vec<X509>) = pending.into_iter().partition(|certificate| {
+            vouched
+                .iter()
+                .any(|key| certificate.verify(key).unwrap_or(false))
+        });
+        vouched.extend(
+            issued
+                .iter()
+                .filter_map(|certificate| certificate.public_key().ok()),
+        );
+        pending = rest;
+        if pending.len() == before {
+            break;
+        }
+    }
+    vouched
+        .iter()
+        .filter_map(|key| key.public_key_to_der().ok())
+        .collect()
+}
+
 /// Which case ids actually ran, so the coverage check after the run is a
 /// fact rather than a loop-shaped assumption.
 static RAN: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -559,7 +653,9 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
     if case.operation == "decodeBase64" {
         return run_decode_base64(case);
     }
-    let verifier = Verifier::new(config(dir, fixtures, case)?);
+    let config = config(dir, fixtures, case)?;
+    let roots = config.roots().to_vec();
+    let verifier = Verifier::new(config);
     let expected = &case.expected;
     let fixture = case.input.fixture.as_deref();
     let actual = match case.operation.as_str() {
@@ -582,7 +678,12 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 .map_err(|err| Failed::from(format!("{id}: harness error: {err}")))?,
                 (None, None) => return Err(Failed::from(format!("{id}: harness error: no input"))),
             };
-            let response = parse_json(id, &verifier.verify_receipt_endpoint(environment, &body))?;
+            let (response, panicked) =
+                panics::panics_during(|| verifier.verify_receipt_endpoint(environment, &body));
+            if panicked != 0 {
+                return Err(contained_panic(id, panicked));
+            }
+            let response = parse_json(id, &response)?;
             // Port-defined within a list: the response's /status must be
             // listed, and nothing else is pinned.
             if let Some(allowed) = &expected.one_of {
@@ -614,33 +715,36 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 String::from_utf8(fixture_bytes(dir, fixtures, fixture)?)
                     .map_err(|_| Failed::from(format!("{id}: harness error: JWS not UTF-8")))?
             };
-            // The payload's JSON and its environment.
+            // The payload's JSON and its environment, or the harness's
+            // failure when the answer was reached through a panic.
             let call = || {
-                if operation == "verifyReceipt" {
-                    verifier
-                        .verify_receipt(&input)
-                        .map(|receipt| (receipt.to_json(), receipt.environment()))
+                let (result, panicked) = panics::panics_during(|| {
+                    if operation == "verifyReceipt" {
+                        verifier
+                            .verify_receipt(&input)
+                            .map(|receipt| (receipt.to_json(), receipt.environment()))
+                    } else {
+                        verifier.verify_signed_data(&input).map(|payload| {
+                            let environment = payload.environment();
+                            (payload.into_json(), environment)
+                        })
+                    }
+                });
+                if panicked == 0 {
+                    Ok(result)
                 } else {
-                    verifier.verify_signed_data(&input).map(|payload| {
-                        let environment = payload.environment();
-                        (payload.into_json(), environment)
-                    })
+                    Err(contained_panic(id, panicked))
                 }
             };
             if let Some(allowed) = &expected.one_of {
-                let guarded = || {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&call)).map_err(|_| {
-                        Failed::from(format!("{id}: the operation panicked instead of answering"))
-                    })
-                };
                 let result = match case.max_millis {
-                    None => guarded()?,
+                    None => call()?,
                     Some(budget) => {
-                        let _warm_up = guarded()?;
+                        let _warm_up = call()?;
                         let start = std::time::Instant::now();
-                        let result = guarded()?;
+                        let result = call()?;
                         let elapsed = start.elapsed();
-                        if elapsed.as_millis() > u128::from(budget) {
+                        if timing::enabled() && elapsed.as_millis() > u128::from(budget) {
                             return Err(Failed::from(format!(
                                 "{id}: took {elapsed:?}, over the {budget} ms budget"
                             )));
@@ -659,25 +763,26 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
                 return Ok(());
             }
             let result = match case.max_millis {
-                None => call(),
+                None => call()?,
                 Some(budget) => {
-                    let _warm_up = call();
+                    let _warm_up = call()?;
                     let start = std::time::Instant::now();
                     let (result, used) = keys_used_during(call);
+                    let result = result?;
                     let elapsed = start.elapsed();
-                    if elapsed.as_millis() > u128::from(budget) {
+                    if timing::enabled() && elapsed.as_millis() > u128::from(budget) {
                         return Err(Failed::from(format!(
                             "{id}: took {elapsed:?}, over the {budget} ms budget"
                         )));
                     }
-                    // The direct form of the budget: every stranger in these
-                    // cases carries a key far over the 8192-bit cap, so an
-                    // SPKI that large among the keys used means a stranger's
-                    // key reached a signature check. An 8192-bit RSA SPKI is
-                    // about 1,050 bytes.
-                    if let Some(spki) = used.iter().find(|spki| spki.len() > 1100) {
+                    // The direct form of the budget, checked on every run:
+                    // the strangers in these cases are what would cost
+                    // seconds, so no key a pinned root did not vouch for
+                    // may have checked a signature.
+                    let vouched = vouched_keys(&roots, operation, &input);
+                    if let Some(spki) = used.iter().find(|spki| !vouched.contains(spki)) {
                         return Err(Failed::from(format!(
-                            "{id}: a {}-byte stranger key checked a signature",
+                            "{id}: a {}-byte key no pinned root vouched for checked a signature",
                             spki.len()
                         )));
                     }
