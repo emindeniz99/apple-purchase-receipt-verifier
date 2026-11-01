@@ -18,7 +18,10 @@ the Wasm-first basis** (R22). The decisions it rests on are in
 │   │ safe calls                                                      │
 │ rust/openssl/  aprv-openssl: FFI to OpenSSL's CMS, X.509, EVP and   │
 │                ASN.1 template APIs; payload.c. The only unsafe      │
-│                crate below the boundary crates.                     │
+│                crate below the boundary crates. Holds part of the   │
+│                chain policy too (src/path.rs: anchor waivers,       │
+│                issuer narrowing, per-anchor runs, the grouping of   │
+│                X509_V_ERR codes); path validation is internal.      │
 │   │ static link                                                     │
 │ OpenSSL 4.0.3, upstream C in the trusted base                       │
 └───┬─────────────────────────────────────────────────────────────────┘

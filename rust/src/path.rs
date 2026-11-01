@@ -1,8 +1,10 @@
 //! Certificate path policy: which certificates may be tried, at which
 //! instant, and what each problem OpenSSL reports means as a reason.
 //!
-//! OpenSSL (`aprv_openssl::verify_path`, `X509_verify_cert` over a store of
-//! the pinned anchors alone) builds the path and checks its signatures,
+//! OpenSSL (`aprv_openssl::__internal::verify_path`, `X509_verify_cert`
+//! over a store of the pinned anchors alone, with the anchor waivers,
+//! issuer narrowing and per-anchor runs that the adapter's `path.rs`
+//! documents) builds the path and checks its signatures,
 //! CA flags, path length constraints, validity windows and critical
 //! extensions. The core sets no path length of its own: the path holds at
 //! most the ten embedded certificates a receipt may carry, far inside
@@ -24,7 +26,8 @@
 
 use crate::error::{Failure, Reason};
 use crate::roots::TrustAnchor;
-use aprv_openssl::{verify_path, Certificate, PathOutcome, PathProblem, PathProblemKind};
+use aprv_openssl::__internal::{verify_path, PathOutcome, PathProblem, PathProblemKind};
+use aprv_openssl::Certificate;
 
 fn untrusted(detail: &'static str) -> Failure {
     Failure::new(Reason::UntrustedChain, detail)

@@ -27,7 +27,8 @@
 //! trust store, loaded explicitly through rust-openssl, must anchor the
 //! chain the isolated child refused.
 
-use aprv_openssl::{Certificate, PathProblemKind, SignedData};
+use aprv_openssl::__internal::{verify_path, PathProblemKind};
+use aprv_openssl::{Certificate, SignedData};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -58,18 +59,20 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 /// The receipt's signer and its intermediate, told apart by the adapter
-/// alone: the leaf may not issue certificates, and the root (left out)
-/// issued itself.
-fn chain(cms: &SignedData) -> (Certificate, Certificate) {
+/// alone and without a signature check, which the control child's broken
+/// configuration would fail: the leaf is the certificate the first
+/// `SignerInfo` names, and the intermediate is the one left once the leaf
+/// and the root are set aside.
+fn chain(cms: &SignedData, root: &Certificate) -> (Certificate, Certificate) {
     let certificates = cms.certificates();
     let leaf = certificates
         .iter()
-        .find(|c| !c.may_issue_certificates())
+        .find(|c| cms.names_signer(0, c))
         .expect("no leaf")
         .clone();
     let intermediate = certificates
         .iter()
-        .find(|c| c.may_issue_certificates() && !c.issued_by(c))
+        .find(|c| !c.same_as(&leaf) && !c.same_as(root))
         .expect("no intermediate")
         .clone();
     (leaf, intermediate)
@@ -96,12 +99,11 @@ fn child() {
         certificates: 10,
     };
     let mut cms = SignedData::parse(&fixture("receipt.der"), &limits).expect("fixture receipt");
-    let (leaf, intermediate) = chain(&cms);
     let root = Certificate::from_der(&fixture("receipt-root.der")).unwrap();
+    let (leaf, intermediate) = chain(&cms, &root);
     let unrelated = Certificate::from_der(&fixture("jws-root.der")).unwrap();
 
-    let anchored =
-        aprv_openssl::verify_path(&leaf, std::slice::from_ref(&intermediate), &[root], AT);
+    let anchored = verify_path(&leaf, std::slice::from_ref(&intermediate), &[root], AT);
     let signed = cms.verify_signer(0, &leaf);
     if mode == "control" {
         assert!(
@@ -112,7 +114,7 @@ fn child() {
     }
     assert!(anchored.passed(), "{:?}", anchored.problems);
     assert!(signed, "the receipt's signature does not verify");
-    let refused = aprv_openssl::verify_path(&leaf, &[intermediate], &[unrelated], AT);
+    let refused = verify_path(&leaf, &[intermediate], &[unrelated], AT);
     assert!(!refused.passed());
     assert!(
         refused

@@ -10,19 +10,28 @@ chain instant, the bounds, the reasons and their order) and holds
 It knows nothing about JSON, the C ABI or Wasm. Its surface is plain Rust
 values: DER in, certificates, facts and booleans out.
 
+It is not a general-purpose OpenSSL binding. It is published only because
+the core depends on it, at the core's version, and its API serves the core
+alone; use the core. It is also not free of policy: the path validation
+(`src/path.rs`) trusts an anchor by fiat, narrows the untrusted
+certificates to those that sign the path, runs once per candidate anchor
+and picks which run's problems to report, and groups `X509_V_ERR_*` codes
+into the kinds the core turns into reasons. A security review covers it
+together with the core.
+
 | Item | What it does |
 |---|---|
-| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability, the readability rules the 0.7 reader applied (version, octet-aligned signature, no duplicate extension, decodable basicConstraints and keyUsage) |
-| `verify_path` | builds and validates a path to the caller's anchors at a given second, and reports every problem with its depth |
+| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability (`test-seams` only), the readability rules the 0.7 reader applied (version, octet-aligned signature, no duplicate extension, decodable basicConstraints and keyUsage) |
+| `__internal::verify_path` | builds and validates a path to the caller's anchors at a given second, and reports every problem with its depth. Internal (`#[doc(hidden)]`, no semver): it checks the path's signatures with the keys of the certificates passed as untrusted, so the caller must pass only certificates a pinned anchor already vouched for, top-down, never a raw bag or `x5c` list |
 | `SignedData` | a CMS `SignedData`: `parse` bounds the envelope (`EnvelopeLimits`) before `d2i_CMS_ContentInfo`; then content, embedded certificates, per-`SignerInfo` signer matching, signed-attribute facts and the signature check |
 | `payload::*` | the receipt payload through the templates in `payload.c`, after the header walk, within a `Budget` |
 | `full_decodes_during` | how many full CMS decodes ran while a closure ran (the tests' seam for "refused before the full decode") |
 | `verify_es256`, `sha256` | the JWS signature and the digest |
 | `keys_used_during` | the SPKI of every key used while a closure runs (the tests' key-use seam) |
 
-The two seams, and the recording behind them, compile only under the
-`test-seams` feature, which the core's own tests turn on; `aprv.wasm`, the
-C ABI and `aprv-server` are built without them.
+The two seams, the recording behind them and the CA-capability check
+compile only under the `test-seams` feature, which the core's own tests
+turn on; `aprv.wasm`, the C ABI and `aprv-server` are built without them.
 
 ## The OpenSSL APIs, and why these
 

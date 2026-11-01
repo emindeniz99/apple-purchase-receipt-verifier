@@ -36,7 +36,9 @@ aprv-core           every security decision
 - **Wrappers** present the API in one language: names, idiomatic types,
   the clock read, instance pooling, trap recovery. Nothing else.
 
-Reviewing security means reviewing the core. Reviewing a wrapper is
+Reviewing security means reviewing the core and its OpenSSL adapter,
+`aprv-openssl`, whose path validation (`rust/openssl/src/path.rs`) holds
+part of the chain policy (ARCHITECTURE.md §1). Reviewing a wrapper is
 mechanical: read the clock, move bytes in, move JSON out, map the
 outcome.
 
@@ -127,6 +129,14 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
   value `"Production"`, `"Sandbox"` or `null`. The payload's JSON is 0.7's
   unchanged (DECISIONS.md R42).
 - The endpoint's answer crosses as Apple's response JSON, byte for byte.
+- **Rust departs from 0.7's "public constructors" rule** (owner,
+  2026-11-01). In the core crate a `ReceiptPayload`, `InAppPurchase`,
+  `JsonPayload` or `Failure` is built only by the `Verifier`: the two
+  receipt structs are `#[non_exhaustive]` without `Default`, and
+  `JsonPayload::new` and `Failure::new` are crate-private, so a value of
+  these types in a caller's code passed verification. The library's own
+  tests build them through `__internal` under the `test-seams` feature.
+  `aprv-surface`'s types, which only the bindings see, are unchanged.
 
 ## 5. The bounds
 

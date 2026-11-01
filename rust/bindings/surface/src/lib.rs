@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn attribute_types_cross_as_signed_integers_in_ascending_order() {
-        let mut core = core_api::ReceiptPayload::default();
+        let mut core = core_api::__internal::receipt_payload();
         core.unknown_attributes.insert(19_999, vec![vec![1]]);
         core.unknown_attributes.insert(13, vec![vec![2], vec![3]]);
         let ours = ReceiptPayload::from(core);
@@ -698,10 +698,8 @@ mod tests {
             (Some("Xcode"), None),
             (None, None),
         ] {
-            let core = core_api::ReceiptPayload {
-                receipt_type: receipt_type.map(str::to_owned),
-                ..core_api::ReceiptPayload::default()
-            };
+            let mut core = core_api::__internal::receipt_payload();
+            core.receipt_type = receipt_type.map(str::to_owned);
             assert_eq!(ReceiptPayload::from(core).environment, expected);
         }
     }

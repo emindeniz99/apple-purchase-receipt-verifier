@@ -75,6 +75,7 @@ extern "C" {
 
     pub(crate) fn X509_STORE_CTX_set_verify_cb(ctx: *mut ffi::X509_STORE_CTX, cb: VerifyCallback);
     pub(crate) fn BASIC_CONSTRAINTS_free(bc: *mut c_void);
+    #[cfg(feature = "test-seams")]
     pub(crate) fn X509_check_ca(x: *mut ffi::X509) -> c_int;
     /// New in OpenSSL 4.0, which made `ASN1_STRING` opaque.
     pub(crate) fn ASN1_BIT_STRING_get_length(
