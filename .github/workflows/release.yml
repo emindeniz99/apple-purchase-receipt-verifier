@@ -331,17 +331,105 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # Stage 1 of every aprv-server binary, once: the full build of
+  # rust/server (Cranelift with every backend, wasmtime/all-arch) for this
+  # Linux x86_64 runner, then `aprv precompile --target T` writes the
+  # release component's .ccwasm and its manifest for each build-server
+  # target, at that target's baseline ISA with the serving binary's Wasmtime
+  # settings. The precompiler is never shipped. The spike
+  # (docs/evidence/2026-10-31-cross-build-spike.md, sections 4 and 8)
+  # measured this precompiler writing the same bytes as each native leg's
+  # own, on all six targets, and its cheaper profile (LTO off, 16 codegen
+  # units, set below through Cargo's environment; Cargo.toml is unchanged)
+  # writing the same bytes as the release profile. build-server's Linux
+  # reproduction precompiles again with the release profile and must arrive
+  # at the same .ccwasm. No cache. Every file's SHA-256 is in the job's
+  # `sums` output, which build-server and the reproduction check.
+  precompile-server:
+    name: precompile the component for every server target
+    needs: build-wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      # sha256sum's lines for the twelve files, `<sha256>  aprv.<target>.ccwasm`
+      # and `<sha256>  aprv.<target>.ccwasm.json`: one output rather than
+      # one per file, so a matrix leg selects its own two lines in its shell
+      # instead of through a computed expression index.
+      sums: ${{ steps.precompile.outputs.sums }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aprv-wasm-release
+          path: ${{ runner.temp }}/aprv
+      - name: the component is build-wasm's
+        env:
+          COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+        run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+      - name: install the pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: build the precompiler once (every Cranelift backend, cheaper profile)
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+        run: |
+          set -euo pipefail
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          cargo build --release --locked --manifest-path rust/server/Cargo.toml --target "$host" \
+            --features compile,wasmtime/all-arch
+          echo "PRECOMPILER=$GITHUB_WORKSPACE/rust/server/target/$host/release/aprv" >> "$GITHUB_ENV"
+      # The targets are build-server's matrix, one for one.
+      - name: one .ccwasm and manifest per target
+        id: precompile
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/ccwasm"
+          mkdir -p "$out"
+          for t in x86_64-unknown-linux-musl \
+                   aarch64-unknown-linux-musl \
+                   x86_64-apple-darwin \
+                   aarch64-apple-darwin \
+                   x86_64-pc-windows-msvc \
+                   aarch64-pc-windows-msvc; do
+            "$PRECOMPILER" precompile "$RUNNER_TEMP/aprv/aprv.component.wasm" --target "$t" -o "$out/aprv.$t.ccwasm"
+          done
+          sums="$(cd "$out" && sha256sum -- *)"
+          printf '%s\n' "$sums"
+          if [ "$(grep -c '' <<<"$sums")" != 12 ]; then
+            echo "::error::expected a .ccwasm and a manifest for each of six targets"
+            exit 1
+          fi
+          { echo "sums<<EOF_SUMS"; printf '%s\n' "$sums"; echo "EOF_SUMS"; } >> "$GITHUB_OUTPUT"
+      # Not named aprv-*: sbom and release-assets download that pattern.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ccwasm-release
+          path: ${{ runner.temp }}/ccwasm/
+          if-no-files-found: error
+          retention-days: 30
+
   # The aprv-server binaries (R31): static musl for Linux, native builds for
-  # macOS and Windows, each on a runner of its own architecture, each built
-  # in two stages by rust/server/scripts/build-static.sh (precompile the
-  # release's component for an explicit baseline with the serving binary's
-  # Wasmtime features, then build the binary that embeds it). No cache. The
-  # Linux builds are rebuilt once by tools/reproduce-server.sh; the macOS
+  # macOS and Windows, each on a runner of its own architecture. Each leg
+  # checks its target's .ccwasm and manifest against precompile-server's
+  # hashes and runs stage 2 of rust/server/scripts/build-static.sh
+  # (--ccwasm): the runtime-only binary that embeds that file, its static
+  # check on Linux, and `aprv info`, which loads the embedded file on the
+  # target's own OS. No cache. The Linux builds are rebuilt once by
+  # tools/reproduce-server.sh, which precompiles again in its fresh clone
+  # and must reproduce both the shared .ccwasm and the binary; the macOS
   # and Windows linkers stamp their output, so those are attested but not
   # claimed to reproduce.
   build-server:
     name: build aprv-server (${{ matrix.target }})
-    needs: build-wasm
+    needs: [build-wasm, precompile-server]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -362,15 +450,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Only the aarch64 reproduction below reads the component itself.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.target == 'aarch64-unknown-linux-musl'
         with:
           name: aprv-wasm-release
           path: ${{ runner.temp }}/aprv
       - name: the component is build-wasm's
+        if: matrix.target == 'aarch64-unknown-linux-musl'
         shell: bash
         env:
           COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
         run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ccwasm-release
+          path: ${{ runner.temp }}/ccwasm
+      # This leg's two lines of precompile-server's sums; the .ccwasm's hash
+      # is also this step's output, for the reproduction.
+      - name: the .ccwasm and its manifest are precompile-server's
+        id: shared
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SUMS: ${{ needs.precompile-server.outputs.sums }}
+        run: |
+          set -euo pipefail
+          mine="$(awk -v c="aprv.$TARGET.ccwasm" -v m="aprv.$TARGET.ccwasm.json" '$2 == c || $2 == m' <<<"$SUMS")"
+          if [ "$(grep -c '^[0-9a-f]\{64\}  aprv\.' <<<"$mine" || true)" != 2 ]; then
+            echo "::error::precompile-server's sums name no .ccwasm and manifest for $TARGET"
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/ccwasm" && sha256sum -c - <<<"$mine")
+          echo "ccwasm-sha256=$(awk -v c="aprv.$TARGET.ccwasm" '$2 == c { print $1 }' <<<"$mine")" >> "$GITHUB_OUTPUT"
       - name: install the pinned Rust toolchain and the target
         shell: bash
         env:
@@ -385,10 +497,11 @@ jobs:
       - name: install musl-gcc
         if: endsWith(matrix.target, '-linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      # build-static.sh writes aprv-<target>[.exe] and the precompiled
-      # component's manifest (aprv.<target>.ccwasm.json), which goes into
-      # the artifact for the record; COMPONENT_SHA256 makes it refuse any
-      # component but build-wasm's.
+      # build-static.sh --ccwasm skips stage 1 and writes aprv-<target>[.exe]
+      # beside a copy of the .ccwasm and its manifest
+      # (aprv.<target>.ccwasm.json), which goes into the artifact for the
+      # record; COMPONENT_SHA256 makes it refuse a .ccwasm whose manifest
+      # names any component but build-wasm's.
       - name: build
         id: build
         shell: bash
@@ -398,7 +511,7 @@ jobs:
           COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
         run: |
           set -euo pipefail
-          rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$TARGET" "$RUNNER_TEMP/build"
+          rust/server/scripts/build-static.sh --ccwasm "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" "$TARGET" "$RUNNER_TEMP/build"
           out="$RUNNER_TEMP/server"
           mkdir -p "$out/build-info"
           cp "$RUNNER_TEMP/build/aprv-$TARGET$EXE" "$out/aprv-$TARGET$EXE"
@@ -423,14 +536,19 @@ jobs:
       # On x86_64 the fresh clone rebuilds the component too. The wasm
       # toolchain's pinned archives are x86_64 only (tools/wasm-toolchain.sh),
       # so the aarch64 leg hands the script build-wasm's component, which that
-      # job already rebuilt in a fresh clone, and reproduces the server stage
-      # (0.8.0's first run, 2026-10-04, failed here for want of this).
+      # job already rebuilt in a fresh clone, and reproduces both server
+      # stages (0.8.0's first run, 2026-10-04, failed here for want of this).
+      # On both legs the clone builds its own precompiler for this runner
+      # (build-static.sh's: release profile, only the runner's own Cranelift
+      # backend), and the .ccwasm it writes must equal precompile-server's
+      # before the binary is compared.
       - name: the Linux build reproduces in a fresh clone
         if: endsWith(matrix.target, '-linux-musl')
         env:
           TARGET: ${{ matrix.target }}
           EXPECTED: ${{ steps.build.outputs.sha256 }}
           APRV_EXPECTED_COMPONENT_SHA256: ${{ needs.build-wasm.outputs.component-sha256 }}
+          APRV_EXPECTED_CCWASM_SHA256: ${{ steps.shared.outputs.ccwasm-sha256 }}
           APRV_COMPONENT: ${{ startsWith(matrix.target, 'aarch64-') && format('{0}/aprv/aprv.component.wasm', runner.temp) || '' }}
         run: APRV_REPO_URL="file://$GITHUB_WORKSPACE" tools/reproduce-server.sh "$GITHUB_SHA" "$TARGET" "$EXPECTED"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
