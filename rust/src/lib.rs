@@ -112,23 +112,30 @@ const fn larger(a: usize, b: usize) -> usize {
 
 /// Not part of the public API, and not covered by semver.
 ///
-/// The internals this crate's own tests, fuzz targets and benchmark reach
-/// directly: the date reader, the path policy, the key-use and full-decode
-/// seams (under the `test-seams` feature), the input length the bindings
-/// hand over, and the two base64 decoders the shared decodeBase64 cases
-/// call. The shared cases name them as an internal hook; 0.7 exposes no
-/// decoder. The workspace's `aprv-surface` reads the configuration's
-/// base64 roots with the `receipt-data` decoder, so it moves with this
-/// crate in lockstep.
+/// Two groups. Always built: what the workspace's other crates and the fuzz
+/// targets need, which decides nothing about an input: the input length
+/// the bindings hand over, the `receipt-data` decoder `aprv-surface` reads
+/// the configuration's base64 roots with, and a base64 encoder for
+/// building inputs. Built only under the `test-seams` feature, which this
+/// crate's own tests and benchmark turn on through the dev-dependency on
+/// the crate itself: the date reader, the path policy over the OpenSSL
+/// adapter's certificates, the key-use and full-decode seams, the `x5c`
+/// decoder the shared decodeBase64 cases call, and hand-built payloads and
+/// failures. Outside this crate a [`Failure`](crate::Failure),
+/// [`JsonPayload`](crate::JsonPayload) or
+/// [`ReceiptPayload`](crate::ReceiptPayload) comes only from a
+/// [`Verifier`](crate::Verifier), unless that feature is on.
 #[doc(hidden)]
 pub mod __internal {
     /// Calendar arithmetic and Apple's date renderings.
+    #[cfg(feature = "test-seams")]
     pub mod datetime {
         pub use crate::datetime::*;
     }
 
     /// The certificate path policy, over the OpenSSL adapter's
     /// certificates.
+    #[cfg(feature = "test-seams")]
     pub mod path {
         pub use crate::path::{authenticated_top_down, receipt_path, validate_pair};
         pub use aprv_openssl::Certificate;
@@ -150,17 +157,40 @@ pub mod __internal {
         aprv_openssl::full_decodes_during(body)
     }
 
+    /// A failure built by hand, for a test of code that handles one.
+    #[cfg(feature = "test-seams")]
+    #[must_use]
+    pub fn failure(reason: crate::Reason, message: &str) -> crate::Failure {
+        crate::Failure::new(reason, message)
+    }
+
+    /// A JWS payload built by hand; its environment is read from `json` as
+    /// a verified payload's is.
+    #[cfg(feature = "test-seams")]
+    #[must_use]
+    pub fn json_payload(json: &str) -> crate::JsonPayload {
+        crate::JsonPayload::new(json)
+    }
+
+    /// An empty receipt payload, for a test to fill in.
+    #[cfg(feature = "test-seams")]
+    #[must_use]
+    pub fn receipt_payload() -> crate::ReceiptPayload {
+        crate::ReceiptPayload::default()
+    }
+
+    /// An empty in-app purchase, for a test to fill in.
+    #[cfg(feature = "test-seams")]
+    #[must_use]
+    pub fn in_app_purchase() -> crate::InAppPurchase {
+        crate::InAppPurchase::default()
+    }
+
     /// The most bytes of one input a host needs to hand the core: one
     /// over the largest size cap. A longer input may be cut to this length,
     /// and the core answers `TOO_LARGE` for it. `aprv.wasm`'s `init` answer
     /// states it as `max_input_bytes`.
     pub const MAX_INPUT_BYTES: usize = crate::MAX_INPUT_BYTES;
-
-    /// The linked OpenSSL, as it reports itself.
-    #[must_use]
-    pub fn openssl_version() -> &'static str {
-        aprv_openssl::library_version()
-    }
 
     /// Standard base64 with padding.
     #[must_use]
@@ -188,6 +218,7 @@ pub mod __internal {
     /// # Errors
     /// [`Failure`](crate::Failure) with
     /// [`Reason::InvalidCertificate`](crate::Reason::InvalidCertificate).
+    #[cfg(feature = "test-seams")]
     pub fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, crate::Failure> {
         crate::jws::decode_x5c_entry(text)
     }

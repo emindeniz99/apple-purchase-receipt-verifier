@@ -16,6 +16,13 @@ license = "MIT"
 path = "../.."
 default-features = false
 
+# The core's test seams, for this crate's own tests: outside the core, a
+# payload is built by hand only through them.
+[dev-dependencies.apple-purchase-receipt-verifier]
+path = "../.."
+default-features = false
+features = ["test-seams"]
+
 [features]
 default = ["vendored"]
 # OpenSSL 4.0.3 built from source (the core's feature). aprv.wasm turns it

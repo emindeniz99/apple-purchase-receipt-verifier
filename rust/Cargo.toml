@@ -53,10 +53,13 @@ default = ["vendored"]
 # wasm32-wasip1 build must, sets OPENSSL_NO_VENDOR=1 with OPENSSL_DIR, or
 # turns this off.
 vendored = ["aprv-openssl/vendored"]
-# The adapter's test seams, re-exported under `__internal`: the key-use
-# record and the full-decode counter. Internal and unstable. Only this
-# crate's own tests turn it on, through the dev-dependency on itself
-# below, so aprv.wasm, the C ABI and aprv-server never carry them.
+# The test seams under `__internal`: the adapter's key-use record and
+# full-decode counter, the date reader, the path policy and its
+# certificates, the `x5c` decoder, and hand-built payloads and failures.
+# Internal and unstable; a build with it on can forge a verdict value, so
+# no shipped build turns it on. Only this crate's own tests (through the
+# dev-dependency on itself below) and aprv-surface's tests do, so
+# aprv.wasm, the C ABI and aprv-server never carry them.
 test-seams = ["aprv-openssl/test-seams"]
 
 [dev-dependencies]

@@ -80,14 +80,16 @@ pub type UnknownAttributes = BTreeMap<u32, Vec<Vec<u8>>>;
 
 /// A verified legacy app receipt.
 ///
-/// Only a value returned by
-/// [`Verifier::verify_receipt`](crate::Verifier::verify_receipt) came from a
-/// receipt whose chain and signature passed. The fields are public, and the type implements
-/// [`Default`], so callers can build one by hand in their own tests.
+/// Outside this crate a value comes only from
+/// [`Verifier::verify_receipt`](crate::Verifier::verify_receipt), from a
+/// receipt whose chain and signature passed: the type is
+/// `#[non_exhaustive]` and does not implement [`Default`], so no code
+/// outside the crate can build one. The fields are public to read.
 ///
 /// Dates are epoch milliseconds, UTC. The 64-bit ids are `i64`: an ASN.1
 /// INTEGER can be negative, and the decoder reports what is there.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ReceiptPayload {
     /// Attribute 0, e.g. `Production` or `ProductionSandbox`.
     pub receipt_type: Option<String>,
@@ -124,8 +126,10 @@ pub struct ReceiptPayload {
     pub unknown_attributes: UnknownAttributes,
 }
 
-/// One in-app purchase (attribute 17) of a [`ReceiptPayload`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// One in-app purchase (attribute 17) of a [`ReceiptPayload`]. Like it,
+/// `#[non_exhaustive]` and without [`Default`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct InAppPurchase {
     /// 1701
     pub quantity: Option<i64>,
@@ -153,6 +157,53 @@ pub struct InAppPurchase {
     pub is_in_intro_offer_period: Option<bool>,
     /// Every attribute of this purchase that did not end up in a field.
     pub unknown_attributes: UnknownAttributes,
+}
+
+impl ReceiptPayload {
+    /// The empty payload the decoder fills in. Deliberately not the
+    /// [`Default`] trait, which would let any crate build a payload.
+    pub(crate) fn default() -> Self {
+        ReceiptPayload {
+            receipt_type: None,
+            app_item_id: None,
+            bundle_id: None,
+            bundle_id_bytes: None,
+            application_version: None,
+            opaque_value: None,
+            sha1_hash: None,
+            receipt_creation_date_ms: None,
+            download_id: None,
+            version_external_identifier: None,
+            in_app: Vec::new(),
+            original_purchase_date_ms: None,
+            preorder_date_ms: None,
+            original_application_version: None,
+            expiration_date_ms: None,
+            unknown_attributes: UnknownAttributes::new(),
+        }
+    }
+}
+
+impl InAppPurchase {
+    /// The empty purchase the decoder fills in; not [`Default`], as for
+    /// [`ReceiptPayload`].
+    pub(crate) fn default() -> Self {
+        InAppPurchase {
+            quantity: None,
+            product_id: None,
+            transaction_id: None,
+            purchase_date_ms: None,
+            original_transaction_id: None,
+            original_purchase_date_ms: None,
+            expires_date_ms: None,
+            web_order_line_item_id: None,
+            cancellation_date_ms: None,
+            cancellation_reason: None,
+            is_trial_period: None,
+            is_in_intro_offer_period: None,
+            unknown_attributes: UnknownAttributes::new(),
+        }
+    }
 }
 
 /// Why a payload could not be read at all. Carried as the
