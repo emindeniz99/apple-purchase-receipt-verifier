@@ -202,8 +202,11 @@ Both payloads state the environment Apple's value names:
 `ReceiptPayload::environment()` reads `receipt_type`, and
 `JsonPayload::environment()` the first of the top-level `environment`, a
 notification's `data.environment` and a summary notification's
-`summary.environment` that is present. Whether to accept Sandbox is
-yours to decide.
+`summary.environment` that is present. An `AppTransaction` names its
+environment in `receiptType`, which is not one of those three, so
+`JsonPayload::environment()` is `None` for every app transaction; read
+`receiptType` from the JSON yourself. The Java implementation reads the
+same three places. Whether to accept Sandbox is yours to decide.
 
 For a JWS, read the other claims with your own JSON parser:
 `bundleId`, `appAppleId` for a Production `AppTransaction`,

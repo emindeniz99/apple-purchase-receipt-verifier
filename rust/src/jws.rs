@@ -59,7 +59,9 @@ impl JsonPayload {
     /// notification). `Production` is [`Environment::Production`] and
     /// `Sandbox` [`Environment::Sandbox`]; anything else there (`Xcode`,
     /// `LocalTesting`, a value that is not a string), or none of the three,
-    /// is `None`. It states what Apple's value means and decides nothing;
+    /// is `None`. An `AppTransaction` names its environment in
+    /// `receiptType`, which is not read, so it is `None` for every app
+    /// transaction. It states what Apple's value means and decides nothing;
     /// whether to accept it is the caller's decision.
     #[must_use]
     pub fn environment(&self) -> Option<Environment> {
