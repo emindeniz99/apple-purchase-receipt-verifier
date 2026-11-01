@@ -487,7 +487,11 @@ jobs:
             while read -r sum file; do
               t="${file#aprv.}"; t="${t%.ccwasm}"
               a="$(awk -F'\t' '$3 == "ccwasm-file" { print $4 }' "$r/spike-a-$t/a-timings.tsv" 2>/dev/null || true)"
-              echo "| $t | \`$sum\` | \`${a:-missing}\` $([ "$sum" = "$a" ] && echo identical || echo DIFFERENT) |"
+              if [ -z "$a" ]; then
+                echo "| $t | \`$sum\` | not measured (no native A leg) |"
+              else
+                echo "| $t | \`$sum\` | \`$a\` $([ "$sum" = "$a" ] && echo identical || echo DIFFERENT) |"
+              fi
             done < "$r/spike-ccwasm/SHA256SUMS"
             echo
             echo "## A's stages"

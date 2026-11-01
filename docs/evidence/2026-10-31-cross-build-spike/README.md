@@ -13,6 +13,7 @@ parked here once it had answered, so it no longer runs on every change.
 | `inspect.sh` | What did the cross build produce: Mach-O minos, code signature and linked dylibs; PE machine, stack reserve and imported DLLs; whether the build path is baked into the test executables |
 | `ccwasm-compare.sh` | Does the `.ccwasm` depend on how the precompiler was built (`wasmtime/all-arch` or not, release profile or a cheaper one)? Builds the precompiler each way and hashes one `.ccwasm` per target |
 | `release-timings.py` | What do today's native `build-server` legs cost? The `build` step and job time per target over recent successful release.yml runs, from the public API |
+| `spike-cross-build.yml` | Do the native macOS and Windows runners build and verify each target, and does the Linux precompiler write `.ccwasm` files byte-identical to each native leg's? Ran from `.github/workflows/` (run 41257197635), parked here afterwards |
 | `results/` | The logs and tables the numbers in the note come from |
 
 `tools/cross/`:
@@ -34,8 +35,8 @@ python3 -m venv "$SCRATCH/venv"
 mkdir -p "$SCRATCH/bin" && ln -s "$(command -v clang)" "$SCRATCH/bin/clang-cl"   # cargo-xwin wants clang-cl
 export PATH="$SCRATCH/venv/bin:$SCRATCH/bin:$PATH"
 channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$REPO/rust/rust-toolchain.toml")"
-rustup target add --toolchain "$channel" aarch64-apple-darwin x86_64-apple-darwin \
-  x86_64-pc-windows-gnu x86_64-pc-windows-msvc
+rustup target add --toolchain "$channel" wasm32-wasip1 aarch64-apple-darwin x86_64-apple-darwin \
+  x86_64-pc-windows-gnu x86_64-pc-windows-msvc aarch64-pc-windows-msvc aarch64-unknown-linux-musl
 
 # the component, as ci.yml's rust-wasm job builds it (the toolchain first:
 # build.sh needs WASI_SDK_DIR and OPENSSL_WASM_DIR and installs neither)

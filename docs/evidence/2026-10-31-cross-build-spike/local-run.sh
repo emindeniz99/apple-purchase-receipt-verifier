@@ -48,7 +48,11 @@ for t in "${targets[@]}"; do
   status=$?
   echo "$t: exit $status after $(( $(date +%s) - start )) s" | tee -a "$SCRATCH/logs/summary.txt"
   [[ $status == 0 ]] || failed=1
-  [[ -n "${KEEP_TARGET_DIRS:-}" ]] || rm -rf "$repo/rust/target"
+  # A target directory left behind would let the next target build on it.
+  if [[ -z "${KEEP_TARGET_DIRS:-}" ]] && ! rm -rf "$repo/rust/target"; then
+    echo "$t: could not remove $repo/rust/target; stopping" | tee -a "$SCRATCH/logs/summary.txt"
+    exit 1
+  fi
 done
-[[ -n "${KEEP_TARGET_DIRS:-}" ]] || rm -rf "$repo/rust/server/target"
+[[ -n "${KEEP_TARGET_DIRS:-}" ]] || rm -rf "$repo/rust/server/target" || failed=1
 exit "$failed"
