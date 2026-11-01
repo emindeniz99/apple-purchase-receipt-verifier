@@ -1,9 +1,11 @@
 # Cross-build spike: sources
 
 The note is `../2026-10-31-cross-build-spike.md`. The scripts the spike
-workflow runs live in `tools/cross/` (the workflow is
-`.github/workflows/spike-cross-build.yml`), because a workflow can only
-call files in the tree; this folder holds the local half and the results.
+workflow runs live in `tools/cross/`, because a workflow can only call
+files in the tree; this folder holds the local half, the results, and the
+workflow itself, `spike-cross-build.yml`. It ran from
+`.github/workflows/` while the spike was open (run 41257197635) and was
+parked here once it had answered, so it no longer runs on every change.
 
 | File | Question it answered |
 |---|---|
@@ -53,5 +55,7 @@ SCRATCH="$SCRATCH" COMPONENT="$SCRATCH/aprv/aprv.component.wasm" \
 python3 "$REPO/docs/evidence/2026-10-31-cross-build-spike/release-timings.py" 10
 ```
 
-The runs on macOS and Windows are the spike workflow's: dispatch it, or
-open a pull request that touches `tools/cross/`.
+The runs on macOS and Windows are the spike workflow's. To run them
+again, copy `spike-cross-build.yml` back into `.github/workflows/` on a
+branch and open a pull request: it runs on a pull request that touches it
+or `tools/cross/`, and by dispatch.

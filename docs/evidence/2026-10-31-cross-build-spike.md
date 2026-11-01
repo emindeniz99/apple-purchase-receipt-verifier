@@ -2,7 +2,8 @@
 
 Date: 2026-10-31. Sources and results are in `2026-10-31-cross-build-spike/`
 (its `README.md` has the file table and the commands); the CI half is
-`.github/workflows/spike-cross-build.yml` with the scripts in `tools/cross/`.
+the workflow `spike-cross-build.yml`, parked in that folder after its run
+(it ran from `.github/workflows/`), with the scripts in `tools/cross/`.
 Nothing in `release.yml` or `ci.yml` changed.
 
 **Question.** Can Linux runners build the `aprv-server` binary
@@ -328,8 +329,9 @@ MEASURE on the real OS unless it says otherwise.
 
 ## 6. What the spike workflow measures
 
-`.github/workflows/spike-cross-build.yml` runs on a pull request that
-touches it or `tools/cross/`, and by hand. None of it has run yet.
+The workflow (now `2026-10-31-cross-build-spike/spike-cross-build.yml`;
+it ran from `.github/workflows/`) ran on a pull request that touched it or
+`tools/cross/`, and by hand. Section 8 has its run.
 
 | Job | Runs on | Measures |
 |---|---|---|
