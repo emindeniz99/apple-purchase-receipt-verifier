@@ -36,7 +36,9 @@ aprv-core           every security decision
 - **Wrappers** present the API in one language: names, idiomatic types,
   the clock read, instance pooling, trap recovery. Nothing else.
 
-Reviewing security means reviewing the core. Reviewing a wrapper is
+Reviewing security means reviewing the core and its OpenSSL adapter,
+`aprv-openssl`, whose path validation (`rust/openssl/src/path.rs`) holds
+part of the chain policy (ARCHITECTURE.md §1). Reviewing a wrapper is
 mechanical: read the clock, move bytes in, move JSON out, map the
 outcome.
 

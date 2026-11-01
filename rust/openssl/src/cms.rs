@@ -2,7 +2,7 @@
 //!
 //! This module never builds a store and never calls `CMS_verify`: the core
 //! picks the signer certificate and validates its path to the pinned
-//! anchors itself ([`crate::verify_path`]). Each `SignerInfo` is checked on
+//! anchors itself ([`crate::path::verify_path`]). Each `SignerInfo` is checked on
 //! its own with `CMS_SignerInfo_verify` (the signature over the signed
 //! attributes) and `CMS_SignerInfo_verify_content` (the content digest, or
 //! the signature over it when there are no signed attributes), digesting

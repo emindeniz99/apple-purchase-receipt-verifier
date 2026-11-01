@@ -224,6 +224,8 @@ impl Certificate {
 
     /// Whether the certificate may issue certificates, as `X509_verify_cert`
     /// judges a certificate above the target (`X509_check_ca` non-zero).
+    /// Only tests ask, so it compiles under `test-seams` alone.
+    #[cfg(feature = "test-seams")]
     #[must_use]
     pub fn may_issue_certificates(&self) -> bool {
         init();
