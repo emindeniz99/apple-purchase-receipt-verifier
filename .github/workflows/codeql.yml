@@ -29,6 +29,15 @@
 #      (c-cpp reads codeql-config-c-cpp.yml, which excludes docs/evidence/
 #      alone).
 #
+# On a pull request a language is analysed only when its area changed:
+# the `changes` job reads .github/scripts/changed-areas.sh, as ci.yml's
+# does, and `actions` runs when anything under .github/ changed. A
+# language that did not change still reports its `Analyze (<lang>)`
+# check, from an ubuntu-latest runner whose steps all skip, so the Swift
+# leg no longer takes a macOS runner for 20 minutes on a change that
+# cannot reach Swift; it uploads no SARIF for that category. A push to
+# main, the weekly cron and a manual run analyse every language.
+#
 # Kept deliberately from the template so existing alerts keep their
 # identity: the workflow name, the job name, the language list, the weekly
 # cron, and the `category: "/language:<lang>"` convention that maps each
@@ -56,10 +65,62 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Which languages this run analyses, as a JSON list. Every one, except on
+  # a pull request, where a language runs when changed-areas.sh selects its
+  # area (a path the script does not know selects every area, so an
+  # unknown path costs time, never a scan).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      languages: ${{ steps.languages.outputs.languages }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: languages
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            langs=(actions javascript-typescript python ruby rust c-cpp java-kotlin csharp go swift)
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            areas="$(.github/scripts/changed-areas.sh "$BASE_SHA" HEAD)"
+            on() { grep -qx "$1=true" <<<"$areas"; }
+            langs=()
+            if git diff --no-renames --name-only "$BASE_SHA" HEAD | grep -q '^\.github/'; then langs+=(actions); fi
+            if on node; then langs+=(javascript-typescript); fi
+            if on python; then langs+=(python); fi
+            if on ruby; then langs+=(ruby); fi
+            # rust/server is an area of its own; the rest of rust/ is `rust`
+            # or every area.
+            if on rust || on server; then langs+=(rust); fi
+            # The C worth reading lives under rust/: the OpenSSL adapter's
+            # ASN.1 templates and the WASI glue (every area) and the C ABI's
+            # header and examples (`rust`).
+            if on rust; then langs+=(c-cpp); fi
+            if on java; then langs+=(java-kotlin); fi
+            if on dotnet; then langs+=(csharp); fi
+            if on go; then langs+=(go); fi
+            if on swift; then langs+=(swift); fi
+          fi
+          json="$(jq -nc '$ARGS.positional' --args "${langs[@]}")"
+          echo "languages: $json"
+          echo "languages=$json" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ${{ matrix.runner }}
+    needs: changes
+    # A language this run does not analyse keeps its check name but takes
+    # an ubuntu-latest runner, never the matrix's (macOS for Swift), and
+    # skips every step.
+    runs-on: ${{ contains(fromJSON(needs.changes.outputs.languages), matrix.language) && matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: ${{ matrix.timeout }}
+    env:
+      ANALYZE: ${{ contains(fromJSON(needs.changes.outputs.languages), matrix.language) }}
     permissions:
       security-events: write # upload the SARIF results; the only write here
       actions: read # read run metadata, to attach results to this run
@@ -151,7 +212,14 @@ jobs:
             config: .github/codeql/codeql-config.yml
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: not analysed on this pull request
+        if: env.ANALYZE != 'true'
+        env:
+          LANGUAGE: ${{ matrix.language }}
+        run: echo "no change in the area of $LANGUAGE on this pull request, nothing to analyse"
+
+      - if: env.ANALYZE == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -162,7 +230,7 @@ jobs:
       # those three databases. An empty file satisfies the compile; nothing
       # built here is run or shipped.
       - name: an empty stand-in for aprv.wasm, for the compile only
-        if: contains(fromJSON('["go", "swift", "csharp"]'), matrix.language)
+        if: env.ANALYZE == 'true' && contains(fromJSON('["go", "swift", "csharp"]'), matrix.language)
         shell: bash
         run: |
           set -euo pipefail
@@ -170,7 +238,8 @@ jobs:
             [ -f "$d/aprv.wasm" ] || : > "$d/aprv.wasm"
           done
 
-      - name: Initialize CodeQL
+      - if: env.ANALYZE == 'true'
+        name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
@@ -189,7 +258,7 @@ jobs:
       # The same JDK ci.yml uses: Temurin 21. The library targets Java 8
       # bytecode (maven.compiler.release=8) and builds on any JDK 9+.
       - name: Set up Java for the CodeQL build
-        if: matrix.language == 'java-kotlin'
+        if: env.ANALYZE == 'true' && matrix.language == 'java-kotlin'
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -212,7 +281,7 @@ jobs:
       # extractor is wrapping, and staying on the lifecycle ci.yml uses means
       # a plugin that fails there fails here too instead of surprising us.
       - name: Build the Java library for CodeQL
-        if: matrix.language == 'java-kotlin'
+        if: env.ANALYZE == 'true' && matrix.language == 'java-kotlin'
         run: mvn -B -ntp -f java/pom.xml -Dmaven.test.skip=true install
 
       # The -wasm artifact's src/main/java (the public API, the server
@@ -224,7 +293,7 @@ jobs:
       # it stays out of this database; building the module here would cost
       # the pinned wasm toolchain on every scan.
       - name: Build the -wasm artifact's Java 8 sources for CodeQL
-        if: matrix.language == 'java-kotlin'
+        if: env.ANALYZE == 'true' && matrix.language == 'java-kotlin'
         run: mvn -B -ntp -f java-wasm/pom.xml compiler:compile@default-compile
 
       # jvm-interop is deliberately NOT built here, so the java-kotlin
@@ -248,7 +317,7 @@ jobs:
       # default is off and a scan has nothing to gain from a warm NuGet
       # cache it would also have to trust.
       - name: Set up .NET for the CodeQL build
-        if: matrix.language == 'csharp'
+        if: env.ANALYZE == 'true' && matrix.language == 'csharp'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
@@ -269,10 +338,11 @@ jobs:
       # also why no `--locked-mode` flag appears here — ci.yml does not pass
       # one either, for the same reason.
       - name: Build the .NET library for CodeQL
-        if: matrix.language == 'csharp'
+        if: env.ANALYZE == 'true' && matrix.language == 'csharp'
         run: dotnet build -c Release dotnet/src/ApplePurchaseReceiptVerifier/ApplePurchaseReceiptVerifier.csproj
 
-      - name: Perform CodeQL Analysis
+      - if: env.ANALYZE == 'true'
+        name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: "/language:${{ matrix.language }}"

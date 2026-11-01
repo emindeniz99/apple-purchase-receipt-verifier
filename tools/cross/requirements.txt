@@ -1,0 +1,10 @@
+# The cross linkers for the spike's build job (ubuntu-latest, x86_64 only:
+# each hash is the manylinux x86_64 wheel). Installed with
+# `pip install --require-hashes -r tools/cross/requirements.txt` into a
+# throwaway venv. Versions as of 2026-10-31; cargo-zigbuild 0.24.0 was nine
+# days old then, inside the repository's usual cooldown, and is what the
+# local half of the spike measured (docs/evidence/2026-10-31-cross-build-spike.md).
+ziglang==0.17.0 --hash=sha256:97079827064a7492cce5541ceb438ae8003ce1e54e399676da2d62fb7a5dc08b
+cargo-zigbuild==0.24.0 --hash=sha256:484412e39e4c6039474535ce97ee75a22bab22d58233056f8ec8a8f9034bb957
+cargo-xwin==0.23.1 --hash=sha256:76ae35181f7df60c76b3d37926a4a06d668267259f543a7e20db4b47c8b177e1
+ninja==1.13.2 --hash=sha256:65a24341b5ac09fcadcc37082660be40a94174e51a937fabf6e2cae26225fa2c

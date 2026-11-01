@@ -58,7 +58,7 @@ on any other line `pip install atheris` fails outright rather than falling
 back to a build. So the fuzzing interpreter is pinned to 3.13, the line covered
 by both current releases, and `FUZZ_PYTHON` overrides it. This is a property
 of the *fuzzer*, not of the library: the package still claims and tests
-3.10 through 3.14, and the `python` job's matrix is what proves that.
+3.11 through 3.14, and the `python` job's matrix is what proves that.
 
 The targets are also run without atheris, over the fixtures and a fixed
 mutation of them, by `../tests/test_fuzz_targets.py`, so a change that breaks a

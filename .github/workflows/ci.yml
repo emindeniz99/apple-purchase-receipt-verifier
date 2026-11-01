@@ -163,122 +163,20 @@ jobs:
       - run: mvn -B test -Djackson.version=2.16.1
         working-directory: java
 
-  # The same suite on every other JDK vendor setup-java installs. The java
-  # job covers the version lines on Temurin; this one covers the builds a
-  # consumer actually runs on: another vendor's crypto providers, default
-  # java.security. The port pins its own BouncyCastle instance and never
-  # asks the JCA for a provider by name, so a vendor difference should not
-  # reach a verdict; this job is what makes that a tested claim. Semeru
-  # (OpenJ9) is not in the list: OpenJ9 0.61.0's JIT miscompiles
-  # BouncyCastle's DERSet.encode after warm-up, so its legs failed on the
-  # JVM rather than on the library in some runs and passed in others
-  # (docs/evidence/2026-10-13-openj9-derset-jit.md; owner, 2026-10-13).
-  # Every vendor here runs HotSpot. Each vendor runs on 21 and 25 and, where
-  # it still ships one, on the Java 8 floor. Maven runs on Temurin 25 and
-  # surefire forks the vendor's JVM (the jdk8-runtime profile's `jvm`
-  # override), so javac and the build are the same for every leg and only
-  # the runtime varies. Which vendor ships which line was measured, not
-  # assumed: docs/evidence/2026-10-05-java-jdk-vendors.md. Pull requests
-  # only: a push to main is release.yml's ci-passed gate, and a vendor's
-  # download outage must not hold a release that Temurin already tested.
+  # The same suite on every other JDK vendor setup-java installs, defined
+  # once in java-vendors.yml (which says why each vendor and line is there)
+  # and called from here and from nightly.yml. A pull request runs two legs:
+  # corretto 8 and graalvm 25. A push to main runs the whole matrix with
+  # continue-on-error, since a push is release.yml's ci-passed gate and a
+  # vendor's download outage must not hold a release that Temurin already
+  # tested; the nightly runs it too, and its failures open the nightly issue.
   java-vendors:
-    name: java on ${{ matrix.vendor }} ${{ matrix.jdk }}
-    needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        vendor: [corretto, dragonwell, graalvm, jetbrains, kona, liberica,
-                 microsoft, oracle, redhat, sapmachine, zulu]
-        jdk: ["8", "21", "25"]
-        # Lines the vendor does not ship through setup-java (measured on
-        # 2026-10-05; the evidence note has each refusal). Drop an entry
-        # when the vendor starts shipping the line.
-        exclude:
-          - {vendor: graalvm, jdk: "8"}
-          - {vendor: jetbrains, jdk: "8"}
-          - {vendor: microsoft, jdk: "8"}
-          - {vendor: oracle, jdk: "8"}
-          - {vendor: sapmachine, jdk: "8"}
-          - {vendor: redhat, jdk: "25"}
-          # setup-java finds Red Hat builds through the Foojay Disco API,
-          # which stopped listing Red Hat 21 on 2026-10-06 (its packages
-          # query for Red Hat answers "No package(s) found"); the leg
-          # failed before any test ran. Drop this entry when Foojay lists
-          # Red Hat 21 again.
-          - {vendor: redhat, jdk: "21"}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The JVM under test first; its path comes from the step output, since
-      # JAVA_HOME_25_X64 is overwritten when the vendor line is also 25.
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        id: jut
-        with:
-          distribution: ${{ matrix.vendor }}
-          java-version: ${{ matrix.jdk }}
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
-      - name: the JVM under test
-        env:
-          JUT: ${{ steps.jut.outputs.path }}
-        run: |
-          set -euo pipefail
-          "$JUT/bin/java" -XshowSettings:properties -version 2>&1 \
-            | grep -E '^ +(java\.(vendor|version|vm\.name|vm\.version|runtime\.version)) ='
-      - name: the suite on that JVM
-        working-directory: java
-        env:
-          JUT: ${{ steps.jut.outputs.path }}
-        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"
-
-  # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
-  # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
-  # that disables SHA-1 outright (RHEL crypto policies, many enterprise
-  # images) makes the JDK refuse that chain. The Java port builds and
-  # validates chains with its own pinned BouncyCastle instance, which does not
-  # read that property (java/README.md, "One platform caveat"). This job pins
-  # that: under that policy the full conformance suite passes. Surefire names
-  # dynamic tests by index, so the discriminating case
-  # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
-  # ConformanceCasesTest's last test fails if any case in cases.json did not
-  # run, so 0 failures means it ran and passed (java-distroless asserts it by
-  # name). HostPolicyProbe then shows the premise on the same JDK: under the
-  # same policy the JDK's own PKIX refuses the chain the suite accepted.
-  java-hardened-policy:
     needs: changes
     if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Run the conformance suite with SHA-1 disabled for certpath
-        working-directory: java
-        run: |
-          set -euo pipefail
-          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
-          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
-          grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
-          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
-          mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
-          java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
-            -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
-            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/probe.log"
-          grep -F "premise: the JDK's own PKIX refuses the legacy chain" "$RUNNER_TEMP/probe.log"
-          grep -F 'legacy receipt verifies' "$RUNNER_TEMP/probe.log"
+    uses: ./.github/workflows/java-vendors.yml
+    with:
+      subset: ${{ github.event_name == 'pull_request' }}
+      continue-on-error: ${{ github.event_name != 'pull_request' }}
 
   # The deployment surface rather than the build surface: the suite on the
   # images the library is actually deployed on, with the image's own JVM and
@@ -462,7 +360,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
@@ -502,7 +400,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -525,7 +423,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -540,37 +438,6 @@ jobs:
           npx --no-install playwright install --with-deps chromium firefox webkit
           npm run build
           npm run runtime:browser -- chromium firefox webkit
-
-  # Proves jvm-interop/README.md's claim: the published jar is usable from
-  # other JVM languages, not just Java. Builds java/ first with install,
-  # not package, so jvm-interop resolves it as a real Maven coordinate the
-  # way a consumer would from Central, then runs the Kotlin and Scala 3
-  # interop tests. Never part of the release: jvm-interop has no
-  # release-please entry and no <module> anywhere.
-  jvm-interop:
-    needs: changes
-    if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      - run: mvn -B install -DskipTests
-        working-directory: java
-      - run: mvn -B test
-        working-directory: jvm-interop
-      # java-bench/ is another consumer of that installed coordinate, and
-      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
-      # annotation processor over it, so an API change that breaks a
-      # benchmark fails here; compile stops short of packaging the JMH jar,
-      # and nothing is measured. version.txt as in benchmark.yml.
-      - run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
 
   # A consumer on Spring Boot 4 imports the Boot BOM, which overrides the
   # library's Jackson 2 pin with its own and adds Jackson 3 (tools.jackson)
@@ -622,10 +489,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every supported line (endoflife.date/python); 3.10 is the
+        # Every supported line (endoflife.date/python); 3.11 is the
         # requires-python floor and stays tested while claimed.
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
+        # macOS and Windows runners are the scarce ones. On a pull request
+        # this job runs Linux only: every line on x86_64, the floor and the
+        # newest line (3.11, 3.14) on arm64. macos-wrappers runs 3.11 and
+        # 3.14 on Apple silicon and windows-wrappers runs them on
+        # windows-latest, in sequence on one runner each, and windows-11-arm
+        # and macos-15-intel sit out. A push to main, which every release is
+        # cut from, runs the whole grid here.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -634,29 +509,16 @@ jobs:
         with:
           host: python
       # setup-uv provisions the interpreter too (uv python install), from
-      # python-build-standalone, including the 3.10 floor.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # python-build-standalone, including the 3.11 floor.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
-      # python/uv.lock is committed and every leg installs from it, so no
-      # push resolves a version range. uv forks the resolution on the
-      # interpreter and records a version per marker, so one file covers 3.10
-      # through 3.14 without pinning the whole matrix to what the floor can
-      # take. `uv sync` installs the project editable, which keeps this a
-      # test of the SOURCE TREE rather than of a built wheel.
-      - run: uv sync --locked --extra dev
-        working-directory: python
-      # APRV_WASM_CACHE_DIR stays unset: test_cache.py sets it where it
-      # needs it, and the default cache directory under HOME is part of
-      # what it tests.
-      - run: uv run --locked --extra dev python -m unittest discover -s tests
-        working-directory: python
-      # Again with the compile cache warm: the second run is the one a
-      # deployment sees after its first start, and test_cache.py prints the
-      # cold and warm start times for the README's numbers.
-      - name: the suite again, with the compile cache warm
-        run: uv run --locked --extra dev python -m unittest discover -s tests
-        working-directory: python
+      # uv sync from the committed lock, the suite, and the suite again with
+      # the compile cache warm; the script says why each one is there.
+      - shell: bash
+        env:
+          PYTHON_LINE: ${{ matrix.python }}
+        run: .github/scripts/python-suite.sh "$PYTHON_LINE"
 
   # The musl legs: the uv image for each Python line, digest-pinned (the
   # comments name the tags), run with docker on the runner rather than as a
@@ -672,9 +534,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
         include:
-          - { python: "3.10", image: "ghcr.io/astral-sh/uv:python3.10-alpine@sha256:e2d2f86302f7afee240296e03124cf2337cfba1e517addecdd1e5667c29862d9" } # python3.10-alpine
           - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:97c6d480e7b214e5d7e8bf6db85a101078554de11cd6e677451a6174486a52a9" } # python3.11-alpine
           - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:262abc719041a446c354092e6b7730c9066de499089e16ef4edcb1a2e5d7b8b9" } # python3.12-alpine
           - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:8265a34ae4034f7f6d3f4146f97cf7ec8de6de803b0698f560df63b9a8dadd38" } # python3.13-alpine
@@ -750,9 +611,11 @@ jobs:
       - run: swift test -c release -Xswiftc -enable-testing --force-resolved-versions
   # macos-26: the package needs Swift tools 6.3, and macos-15's Xcode
   # carries Swift 6.1 (swift/CI-NOTES.md asks for 15+ with Swift 6.3+).
+  # On a pull request swift-apple runs this job's suite and swift-ios's
+  # build on one runner instead.
   swift-macos:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.swift == 'true'
+    if: needs.changes.outputs.swift == 'true' && github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -762,14 +625,13 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: swift
-      - run: swift --version && swift test -c release -Xswiftc -enable-testing --force-resolved-versions
+      - run: .github/scripts/swift-apple.sh test
 
-  # The iOS 18 compile the manifest claims, which Linux cannot do: the
-  # package and WasmKit build for a generic iOS device with the software
-  # bounds checking the package selects there. Nothing runs on a device.
+  # The iOS 18 compile the manifest claims (the script says what it
+  # builds). On a pull request it runs in swift-apple instead.
   swift-ios:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.swift == 'true'
+    if: needs.changes.outputs.swift == 'true' && github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -779,12 +641,29 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: swift
-      - run: |
-          set -euo pipefail
-          xcodebuild -version
-          xcodebuild -list
-          xcodebuild build -scheme apple-purchase-receipt-verifier \
-            -destination 'generic/platform=iOS' -skipPackagePluginValidation
+      - run: .github/scripts/swift-apple.sh ios
+
+  # On a pull request swift-macos and swift-ios share one macos-26 runner,
+  # so a pull request takes at most two macOS runners (this and
+  # macos-wrappers, when its areas are selected too). The iOS build runs under !cancelled(), so a test
+  # failure does not hide its result. A push to main runs the two jobs.
+  swift-apple:
+    needs: [changes, rust-wasm]
+    if: needs.changes.outputs.swift == 'true' && github.event_name == 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/place-module
+        with:
+          host: swift
+      - name: swift test (swift-macos)
+        run: .github/scripts/swift-apple.sh test
+      - name: the iOS build (swift-ios)
+        if: ${{ !cancelled() }}
+        run: .github/scripts/swift-apple.sh ios
 
   # The swift-crypto floor. The manifest admits "3.0.0" ..< "6.0.0" so the
   # package resolves next to app-store-server-library-swift (swift-crypto
@@ -864,9 +743,11 @@ jobs:
   # earns its place because wazero compiles to a different ISA there. One Go
   # version each, not a cross product; CGO off, as a consumer's static
   # build has it.
+  # On a pull request the macOS leg runs in macos-wrappers and the Windows
+  # leg in windows-wrappers instead, so the job runs on a push only.
   go-platforms:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' && github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -925,58 +806,6 @@ jobs:
           export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}"
           go build ./...
           go vet ./...
-
-  # The FROM-scratch claim without a container daemon: a static build of
-  # the package's own corpus runner, run by chroot in a directory that holds
-  # nothing else (no libc, no certificates, no /proc, an empty
-  # environment), must answer exactly what an ordinary run answers.
-  go-scratch:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27"
-          cache: true
-          cache-dependency-path: go/go.sum
-      - name: the same rows in an empty chroot
-        run: |
-          set -euo pipefail
-          D="$RUNNER_TEMP/scratch"
-          mkdir -p "$D"
-          (cd go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$D/corpusrun" ./internal/corpusrun)
-          if ldd "$D/corpusrun" 2>&1 | grep -qv 'not a dynamic executable'; then
-            ldd "$D/corpusrun" || true
-            echo "::error::corpusrun is not a static executable"; exit 1
-          fi
-          # Two calls: the genuine g5 receipt, and the same receipt with one
-          # signature bit flipped (a verdict each way).
-          python3 - "$D/calls.jsonl" <<'PY'
-          import base64, json, sys
-          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
-          der = bytearray(base64.b64decode(text))
-          der[-128] ^= 1
-          rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
-          with open(sys.argv[1], "w") as out:
-              for name, data in rows:
-                  out.write(json.dumps({"id": name, "fn": "verify-receipt", "env": 0, "config": "",
-                                        "now": 1790640000000, "b64": base64.b64encode(data).decode()}) + "\n")
-          PY
-          "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
-          sudo env -i "$(command -v chroot)" "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
-          diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
-          # Each row's "out" is the module's JSON as a string, so its
-          # quotes arrive escaped.
-          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
-          grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
 
   # -count=2 so a second run in the same process catches state left behind by
   # the first, which is what a cached buffer or a memoised location would be.
@@ -1053,8 +882,8 @@ jobs:
           : > "$list"
           failed=0
           for t in FuzzVerifyReceipt FuzzVerifySignedData; do
-            if go test . -run "^${t}\$" -fuzz "^${t}\$" -fuzztime=60s > "$logs/$t.log" 2>&1; then
-              echo "fuzz: $t ran 60 s without a finding"
+            if go test . -run "^${t}\$" -fuzz "^${t}\$" -fuzztime="${FUZZ_SECONDS}s" > "$logs/$t.log" 2>&1; then
+              echo "fuzz: $t ran $FUZZ_SECONDS s without a finding"
             else
               failed=1
               echo "fuzz: $t failed; its output stays on the runner"
@@ -1066,6 +895,8 @@ jobs:
           done
           exit "$failed"
         working-directory: go
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1076,7 +907,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-go
@@ -1084,17 +915,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
-  # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
-  # v0.8.1's requirement) never becomes the library's. staticcheck cannot lint
-  # another module in place, so the binaries are built in go/tools and run
-  # from go/.
-  go-lint:
+  # gofmt, go vet, staticcheck and govulncheck (go-lint), then the corpus
+  # runner in an empty chroot (go-scratch). Both on Go 1.27.
+  # One job instead of 2: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  go-checks:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      # --- go-lint -----------------------------------------------------------
+      # gofmt, vet, staticcheck and govulncheck. The linters are pinned in
+      # go/tools/go.mod, a module of its own so their Go floor (1.26, staticcheck
+      # v0.8.1's requirement) never becomes the library's. staticcheck cannot lint
+      # another module in place, so the binaries are built in go/tools and run
+      # from go/.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1139,6 +976,52 @@ jobs:
             exit 1
           fi
         working-directory: go
+      # --- go-scratch --------------------------------------------------------
+      # The FROM-scratch claim without a container daemon: a static build of
+      # the package's own corpus runner, run by chroot in a directory that holds
+      # nothing else (no libc, no certificates, no /proc, an empty
+      # environment), must answer exactly what an ordinary run answers.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: ${{ !cancelled() }}
+        name: the same rows in an empty chroot
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/scratch"
+          mkdir -p "$D"
+          (cd go && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$D/corpusrun" ./internal/corpusrun)
+          if ldd "$D/corpusrun" 2>&1 | grep -qv 'not a dynamic executable'; then
+            ldd "$D/corpusrun" || true
+            echo "::error::corpusrun is not a static executable"; exit 1
+          fi
+          # Two calls: the genuine g5 receipt, and the same receipt with one
+          # signature bit flipped (a verdict each way).
+          python3 - "$D/calls.jsonl" <<'PY'
+          import base64, json, sys
+          text = open("fixtures/public-receipts/receipt-sandbox-g5.b64", encoding="ascii").read().strip()
+          der = bytearray(base64.b64decode(text))
+          der[-128] ^= 1
+          rows = [("g5", text.encode()), ("g5-flipped", base64.b64encode(bytes(der)))]
+          with open(sys.argv[1], "w") as out:
+              for name, data in rows:
+                  out.write(json.dumps({"id": name, "fn": "verify-receipt", "env": 0, "config": "",
+                                        "now": 1790640000000, "b64": base64.b64encode(data).decode()}) + "\n")
+          PY
+          "$D/corpusrun" "$D/calls.jsonl" > "$RUNNER_TEMP/rows-host.jsonl"
+          sudo env -i "$(command -v chroot)" "$D" /corpusrun /calls.jsonl | tee "$RUNNER_TEMP/rows-scratch.jsonl"
+          diff "$RUNNER_TEMP/rows-host.jsonl" "$RUNNER_TEMP/rows-scratch.jsonl"
+          # Each row's "out" is the module's JSON as a string, so its
+          # quotes arrive escaped.
+          grep -q 'verified\\":true' "$RUNNER_TEMP/rows-scratch.jsonl"
+          grep -q 'INVALID_SIGNATURE' "$RUNNER_TEMP/rows-scratch.jsonl"
 
   # The gem has one runtime dependency, wasmtime, installed from the
   # committed Gemfile.lock (its prebuilt platform gems included, so no Rust
@@ -1159,7 +1042,7 @@ jobs:
         # Every supported line (endoflife.date/ruby: 4.0, 3.4, 3.3). 3.3 is
         # also the gemspec's required_ruby_version floor since 0.7 (for
         # Data), so it stays tested while it is claimed, even past its EOL:
-        # the java-runtime-8 / python-3.10 rule.
+        # the java-runtime-8 rule.
         ruby: ["3.3", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1168,7 +1051,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1211,7 +1094,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1219,11 +1102,190 @@ jobs:
       - run: APRV_PACKAGING=1 bundle exec rake test TEST=test/packaging_test.rb
         working-directory: ruby
 
+  # On a pull request every macOS leg except Swift's runs here, in sequence
+  # on one macos-latest runner: go-platforms, ruby-macos, dotnet, python
+  # (3.11 and 3.14 on Apple silicon), rust-ffi and aprv-server. macOS
+  # runners are the scarce ones (five at a time on this plan), and each leg
+  # runs for one to six minutes. Swift's two legs need Xcode on macos-26 and
+  # share swift-apple instead. A push to main runs each leg in its own job,
+  # so every release is cut from a tree that passed them separately. Each
+  # port's steps after the first carry `!cancelled()`, so one port's failure
+  # does not hide the others. The commands are those jobs' commands: Go,
+  # Ruby and .NET inline (change them together), Python, rust-ffi and
+  # aprv-server through the scripts their own jobs call.
+  macos-wrappers:
+    needs: [changes, rust-wasm]
+    if: >-
+      github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true'
+      || needs.changes.outputs.ruby == 'true' || needs.changes.outputs.dotnet == 'true'
+      || needs.changes.outputs.python == 'true' || needs.changes.outputs.rust == 'true'
+      || needs.changes.outputs.server == 'true')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.changes.outputs.go == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: needs.changes.outputs.go == 'true'
+        run: go test ./...
+        working-directory: go
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+      # !cancelled(): a Go failure must not hide the Ruby and .NET results.
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: ruby
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
+        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          working-directory: ruby
+        env:
+          BUNDLE_FROZEN: "true"
+      - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
+        run: bundle exec ruby -e 'require "wasmtime"; puts Wasmtime::VERSION' && bundle exec rake test
+        working-directory: ruby
+        env:
+          BUNDLE_FROZEN: "true"
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        run: dotnet test -c Release
+        working-directory: dotnet
+      # python: the floor and the newest line, not the python job's
+      # macos-15 and macos-15-intel grid.
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: python
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: python 3.11
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        run: .github/scripts/python-suite.sh 3.11
+      - name: python 3.14
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        run: .github/scripts/python-suite.sh 3.14
+      # rust-ffi: needs no module, only Node for the vector manifest.
+      - if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: rust-ffi, the C ABI suite
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: .github/scripts/rust-ffi-suite.sh
+      # aprv-server: the component from this run's rust-wasm, and the same
+      # target cache key as aprv-server's macOS leg on main, so a pull
+      # request restores main's build. Like every actions/cache step it
+      # saves only when the whole job succeeds.
+      - if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aprv-wasm
+          path: ${{ runner.temp }}/aprv
+      - if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/server/target
+          key: aprv-server-aarch64-apple-darwin-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
+      - name: aprv-server, lint and tests
+        if: ${{ !cancelled() && needs.changes.outputs.server == 'true' }}
+        run: .github/scripts/aprv-server-suite.sh aarch64-apple-darwin "$RUNNER_TEMP/aprv/aprv.component.wasm"
+
+  # On a pull request the Windows legs of go-platforms, dotnet and python
+  # share one windows-latest runner here, as macos-wrappers does for macOS:
+  # Go, .NET, then Python 3.11 and 3.14 (windows-11-arm sits out). Not
+  # folded: rust-ffi's Windows leg (about 10 minutes, the longest job of a
+  # full run) and aprv-server's (5 to 8 minutes with a cold target cache);
+  # either would make this the critical path. A push to main runs every
+  # leg in its own job. Go and .NET are those jobs' commands inline (change
+  # them together); Python is the script the python job calls.
+  windows-wrappers:
+    needs: [changes, rust-wasm]
+    if: >-
+      github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true'
+      || needs.changes.outputs.dotnet == 'true' || needs.changes.outputs.python == 'true')
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.changes.outputs.go == 'true'
+        uses: ./.github/actions/place-module
+        with:
+          host: go
+      - if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - if: needs.changes.outputs.go == 'true'
+        run: go test ./...
+        working-directory: go
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+      # !cancelled(): a Go failure must not hide the .NET and Python results.
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
+        run: dotnet test -c Release
+        working-directory: dotnet
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: ./.github/actions/place-module
+        with:
+          host: python
+      - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: python 3.11
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        shell: bash
+        run: .github/scripts/python-suite.sh 3.11
+      - name: python 3.14
+        if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
+        shell: bash
+        run: .github/scripts/python-suite.sh 3.14
+
   # The arm64-darwin platform gem of wasmtime, which the Linux legs never
-  # load. One current-Ruby leg is enough.
+  # load. One current-Ruby leg is enough. On a pull request this leg runs in
+  # macos-wrappers instead.
   ruby-macos:
     needs: [changes, rust-wasm]
-    if: needs.changes.outputs.ruby == 'true'
+    if: needs.changes.outputs.ruby == 'true' && github.event_name != 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 15
     env:
@@ -1235,7 +1297,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1271,7 +1333,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -1378,7 +1440,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -1407,22 +1469,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # On a pull request the macOS leg runs in macos-wrappers instead.
+        # The Windows leg stays here on every event: at about 10 minutes it
+        # is the longest job of a full run, and folding it into
+        # windows-wrappers would lengthen the critical path.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      # rust/ffi is a member of the rust/ workspace: rust/Cargo.lock is its
-      # lockfile and the library lands in rust/target/<profile>. --locked
-      # turns "cargo quietly rewrote the lockfile" into a failed job rather
-      # than an unnoticed bump.
-      - run: cargo build --locked
-        working-directory: rust/ffi
+      # Build, fmt, clippy, the Rust tests (layer 1), fixtures/cases.json
+      # through the ABI from C++17 (layer 2) and from Python's ctypes
+      # (layer 3), and both README examples. The script says what each
+      # layer proves; macos-wrappers runs the same script.
+      - name: the C ABI suite
+        shell: bash
+        run: .github/scripts/rust-ffi-suite.sh
       # The floor this crate's manifest claims, proven rather than asserted —
       # once, because a Rust version floor is not platform-specific. A `check`
       # rather than a `test`: the tests need no older toolchain to be honest,
@@ -1433,54 +1499,6 @@ jobs:
         run: |
           rustup toolchain install 1.85.0 --profile minimal
           cargo +1.85.0 check --locked --all-targets
-      - run: cargo fmt --check
-        working-directory: rust/ffi
-      - run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: rust/ffi
-      # Layer 1: null pointers, non-UTF-8 input, rejected configurations, and
-      # the panic guard every exported symbol runs its body inside.
-      - run: cargo test --locked
-        working-directory: rust/ffi
-
-      # Layer 2, the primary one: fixtures/cases.json driven through the
-      # ABI from C++17. A passing run is the evidence that the compiled-toolchain
-      # path works: header compiles as C++, symbols link, answers match the
-      # vectors every other port answers.
-      - name: flatten the shared vectors for a compiler
-        run: node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
-      - name: build the C++ consumers
-        shell: bash
-        run: |
-          cmake -S rust/ffi/examples/cpp -B rust/ffi/target/cppbuild
-          cmake --build rust/ffi/target/cppbuild --config Debug
-      - name: C++ conformance over the C ABI
-        shell: bash
-        run: rust/ffi/target/cppbuild/bin/aprv_conformance rust/ffi/target/manifest
-      - name: the README example
-        shell: bash
-        run: |
-          rust/ffi/target/cppbuild/bin/aprv_example \
-            fixtures/generated/jws-root.der \
-            fixtures/generated/transaction.jws \
-            fixtures/generated/receipt-b64/01-genuine.txt
-
-      # Layer 3: the same vectors again from a language with no compiler in
-      # the loop, checking the nested field paths the C++ harness cannot
-      # reach. This is what "any FFI-capable language" means, tested.
-      - name: ctypes conformance over the C ABI
-        shell: bash
-        working-directory: rust/ffi
-        run: |
-          interpreter=python3
-          command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" tests/conformance.py ../target/debug
-      - name: the README example, from Python
-        shell: bash
-        working-directory: rust/ffi
-        run: |
-          interpreter=python3
-          command -v python3 >/dev/null 2>&1 || interpreter=python
-          "$interpreter" examples/python/example.py ../target/debug
 
       # include/apple_purchase_receipt_verifier.h is generated from
       # src/lib.rs; a change that forgets to regenerate it ships a header
@@ -1530,7 +1548,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -1590,7 +1608,9 @@ jobs:
         working-directory: rust/fuzz
       - name: fuzz every target, findings kept out of this log
         working-directory: rust/fuzz
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1601,7 +1621,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-rust
@@ -1648,7 +1668,8 @@ jobs:
         working-directory: dotnet/fuzz
         env:
           FUZZ_PREBUILT: "1"
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1659,7 +1680,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-dotnet
@@ -1693,7 +1714,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/aprv-bin
@@ -1713,13 +1734,16 @@ jobs:
       - name: fetch the pinned php-fuzzer
         run: ./run.sh build
         working-directory: php/fuzz
-      # 60 s per target, four targets. A crasher leaves
+      # 60 s per target on a push, 10 s on a pull request; four targets.
+      # A crasher leaves
       # php/fuzz/crashes/<target>/crash-<hash>.txt and fails the job; reduce it
       # and pin it as a test under php/tests/, where it then runs on all five
       # PHP matrix legs rather than only here.
       - name: fuzz every target, findings kept out of this log
         working-directory: php/fuzz
-        run: ../../.github/scripts/fuzz-quiet.sh crashes 60
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh crashes "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1730,7 +1754,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-php
@@ -1772,7 +1796,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -1799,7 +1823,9 @@ jobs:
       # libFuzzer-capable clang is around.
       - name: fuzz every target, findings kept out of this log
         working-directory: ruby/fuzz
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1810,7 +1836,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-ruby
@@ -1819,10 +1845,11 @@ jobs:
           retention-days: 30
 
   # Three coverage-guided atheris targets over the verifiers (the receipt's
-  # base64 form, the JWS, the endpoint JSON), 60 s each -- the same budget and the same shape as
+  # base64 form, the JWS, the endpoint JSON), 60 s each on a push and 10 s
+  # on a pull request -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
-  # library's: the `python` matrix above is what proves 3.10 through 3.14, and
+  # library's: the `python` matrix above is what proves 3.11 through 3.14, and
   # every crasher these targets found is pinned as a test under python/tests/
   # so it runs on all of them. atheris stays out of the package's dependency
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
@@ -1839,7 +1866,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: python
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
       - name: the fuzzer's environment and the generated seed
@@ -1847,7 +1874,9 @@ jobs:
         working-directory: python/fuzz
       - name: fuzz every target, findings kept out of this log
         working-directory: python/fuzz
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1858,7 +1887,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-python
@@ -1879,7 +1908,8 @@ jobs:
   # library by path, so the published root manifest carries no executable
   # targets a consumer would never run (swift/fuzz/README.md).
   #
-  # 60 s per target, four targets, a fixed budget rather than a run count:
+  # 60 s per target on a push (10 s on a pull request), four targets, a
+  # fixed budget rather than a run count:
   # a fuzzer's job on a push is to keep proving the seeds and their neighbours
   # stay clean, not to search exhaustively. A crasher aborts the process and
   # fails the job; reduce it and pin it as a test under
@@ -1908,7 +1938,9 @@ jobs:
         working-directory: swift/fuzz
       - name: fuzz every target, findings kept out of this log
         working-directory: swift/fuzz
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+        env:
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # The swift image purges curl after installing the toolchain, and the
       # report step needs it for age and the notice. No secret here.
       - name: curl for the report step
@@ -1924,7 +1956,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-swift
@@ -1977,7 +2009,8 @@ jobs:
         working-directory: java/fuzz
         env:
           FUZZ_PREBUILT: "1"
-        run: ../../.github/scripts/fuzz-quiet.sh artifacts 60
+          FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '60' }}
+        run: ../../.github/scripts/fuzz-quiet.sh artifacts "$FUZZ_SECONDS"
       # Holds the Telegram secrets and runs no fuzzer: prints each listed
       # target and input hash, seals the input and the log, sends the
       # notice and fails (.github/scripts/fuzz-report.sh).
@@ -1988,7 +2021,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: .github/scripts/fuzz-report.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: fuzz-findings-sealed-java
@@ -2093,7 +2126,7 @@ jobs:
               echo "| $f | $(wc -c < "$RUNNER_TEMP/aprv/$f") | \`$(sha256sum "$RUNNER_TEMP/aprv/$f" | cut -c1-64)\` |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-wasm
           path: |
@@ -2115,11 +2148,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -2211,7 +2244,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -2297,7 +2330,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -2326,7 +2359,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -2347,7 +2380,37 @@ jobs:
         env:
           COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
         run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # release.yml builds every server binary with --ccwasm, around the
+      # .ccwasm its precompile-server job wrote; nothing else runs that mode.
+      # Rebuilding stage 2 here around the .ccwasm stage 1 just wrote must
+      # give the same binary, and a manifest naming another component must
+      # be refused, so a pull request that breaks the mode fails here
+      # rather than on release day.
+      - name: the release's --ccwasm build gives the same binary
+        env:
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          t=x86_64-unknown-linux-musl
+          given="$RUNNER_TEMP/ccwasm-in"
+          mkdir -p "$given"
+          cp "$RUNNER_TEMP/server/aprv.$t.ccwasm" "$RUNNER_TEMP/server/aprv.$t.ccwasm.json" "$given/"
+          if COMPONENT_SHA256="$(printf '0%.0s' $(seq 64))" \
+             rust/server/scripts/build-static.sh --ccwasm "$given/aprv.$t.ccwasm" "$t" "$RUNNER_TEMP/ccwasm-refused"; then
+            echo "::error::build-static.sh --ccwasm accepted a .ccwasm whose manifest names another component"
+            exit 1
+          fi
+          rust/server/scripts/build-static.sh --ccwasm "$given/aprv.$t.ccwasm" "$t" "$RUNNER_TEMP/ccwasm-out"
+          a="$(sha256sum < "$RUNNER_TEMP/server/aprv-$t" | cut -c1-64)"
+          b="$(sha256sum < "$RUNNER_TEMP/ccwasm-out/aprv-$t" | cut -c1-64)"
+          echo "component mode $a"
+          echo "--ccwasm mode  $b"
+          if [ "$a" != "$b" ]; then
+            echo "::error::build-static.sh --ccwasm built a different binary from the same .ccwasm"
+            exit 1
+          fi
+          cmp "$RUNNER_TEMP/server/aprv.$t.ccwasm.json" "$RUNNER_TEMP/ccwasm-out/aprv.$t.ccwasm.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server/aprv-x86_64-unknown-linux-musl
@@ -2387,51 +2450,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
-          - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+        # On a pull request the macOS leg runs in macos-wrappers instead, so
+        # its entry joins the list on a push only. A conditional `exclude`
+        # cannot drop it: GitHub applies `include` after `exclude`. The
+        # Windows leg stays here on every event: with a cold target cache it
+        # runs 5 to 8 minutes, enough to make windows-wrappers the longest
+        # job of a pull request.
+        include: >-
+          ${{ fromJSON(format('[{0}{1}]',
+          '{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},{"os":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-musl"},{"os":"windows-latest","target":"x86_64-pc-windows-msvc"}',
+          github.event_name != 'pull_request' && ',{"os":"macos-latest","target":"aarch64-apple-darwin"}' || '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
-      - name: install the pinned Rust toolchain and the target
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
-          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy --target "$TARGET"
-          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: rust/server/target
           key: aprv-server-${{ matrix.target }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/server/Cargo.lock') }}
-      - run: cargo fmt --check
-        working-directory: rust/server
-      - run: cargo clippy --locked --all-targets --features compile -- -D warnings
-        working-directory: rust/server
-      # The runtime-only feature set, which is what ships.
-      - run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: rust/server
-      # --include-ignored: the WIT and wire-schema comparisons with
-      # rust/bindings run too.
-      - name: the tests, with this tree's component
+      # The pinned toolchain with the target, cargo fmt, clippy over both
+      # feature sets, and the tests with this tree's component
+      # (--include-ignored); macos-wrappers runs the same script.
+      - name: lint and tests
         shell: bash
-        working-directory: rust/server
-        run: APRV_TEST_COMPONENT="$RUNNER_TEMP/aprv/aprv.component.wasm" cargo test --locked --features compile -- --include-ignored
+        env:
+          TARGET: ${{ matrix.target }}
+        run: .github/scripts/aprv-server-suite.sh "$TARGET" "$RUNNER_TEMP/aprv/aprv.component.wasm"
       - name: the aarch64 static binary
         if: matrix.target == 'aarch64-unknown-linux-musl'
         env:
           COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
         run: |
           set -euo pipefail
+          RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          export RUSTUP_TOOLCHAIN
           sudo apt-get update && sudo apt-get install -y musl-tools
           rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" aarch64-unknown-linux-musl "$RUNNER_TEMP/server"
           bin="$RUNNER_TEMP/server/aprv-aarch64-unknown-linux-musl"
@@ -2455,18 +2511,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
       - name: Spectral over the OpenAPI document
         working-directory: rust/server
         run: npx --yes @stoplight/spectral-cli@6.16.3 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: false
       - name: Schemathesis against a started server, without and with a token
@@ -2512,7 +2568,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
@@ -2528,7 +2584,7 @@ jobs:
             --build-arg VERSION="$(cat version.txt)-ci" --build-arg REVISION="$GITHUB_SHA" \
             --load -t aprv-server:ci .
           sh rust/server/scripts/docker-smoke.sh aprv-server:ci
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: matrix.arch == 'amd64'
         with:
           name: aprv-server-x86_64-unknown-linux-musl
@@ -2565,11 +2621,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
@@ -2613,11 +2669,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-wasm
           path: ${{ runner.temp }}/aprv
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
@@ -2728,8 +2784,7 @@ jobs:
   #
   # Every line the composer.json floor admits. 8.2 is the floor since 0.7 (for
   # readonly class); it stays here for exactly as long as the manifest claims
-  # it, even past its own security-support end, the same rule as node 20 and
-  # python 3.10.
+  # it, even past its own security-support end, the same rule as node 20.
   php:
     needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
@@ -2743,7 +2798,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/aprv-bin
@@ -2794,7 +2849,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/aprv-bin
@@ -2836,7 +2891,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/aprv-bin
@@ -2858,64 +2913,6 @@ jobs:
       - run: vendor/bin/phpunit
         working-directory: php
 
-  php-static:
-    needs: [changes, aprv-server-linux]
-    if: needs.changes.outputs.php == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: aprv-server-x86_64-unknown-linux-musl
-          path: ${{ runner.temp }}/aprv-bin
-      - name: the aprv binary this tree builds
-        run: |
-          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
-          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: "8.4"
-          extensions: json, curl, posix
-          coverage: none
-      # The consumer smoke and the drift guard are Node, like the rest of
-      # tools/. They live in this job rather than in `conformance` because
-      # what they check is the PHP package, and because the smoke needs the
-      # PHP that setup-php just installed.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      - run: composer install --no-scripts --no-progress --no-interaction
-        working-directory: php
-      # --strict also reports a composer.lock that no longer matches
-      # composer.json, which is the drift this port's lockfile can suffer.
-      - run: composer validate --strict
-        working-directory: php
-      # The root manifest is what Packagist reads and what Composer installs;
-      # php/composer.json is only the development one. Both get validated.
-      - run: composer validate --strict --no-check-lock composer.json
-      # src, tests and bin/ (phpstan.neon).
-      - run: vendor/bin/phpstan analyse --no-progress
-        working-directory: php
-      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
-      # a syntax check and nothing more.
-      - run: php -l bench/bench.php
-        working-directory: php
-      # Two manifests for one package drift, and the .gitattributes allowlist
-      # silently decides what a PHP consumer unpacks. This reads the real
-      # `git archive` rather than the rules that produce it: the manifests
-      # agree on bin and suggest, and the archive carries bin/aprv-install
-      # and SHA256SUMS.
-      - run: node tools/check-php-package.mjs
-      # Then install that archive into a throwaway project and verify a
-      # receipt through vendor/autoload.php and the default CLI transport
-      # (APRV_BIN): the only check here that runs against what a stranger
-      # downloads rather than against a checkout.
-      - run: node tools/php-consumer-smoke.mjs
-
   # The matrix that matters here is OS, not SDK: the Wasmtime package ships
   # a native library per platform (linux-x64, osx-arm64, win-x64 here), and
   # each is what runs the module there. The netstandard2.0 floor gets its
@@ -2930,7 +2927,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # On a pull request the macOS leg runs in macos-wrappers and the
+        # Windows leg in windows-wrappers instead.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2952,86 +2951,6 @@ jobs:
       - run: dotnet test -c Release
         working-directory: dotnet
 
-  # The netstandard2.0 asset is what a .NET Framework, Mono or Unity consumer
-  # loads. The dotnet job above runs the floor project on CoreCLR against that
-  # asset; this one loads it under Mono, the closest a hosted runner gets to
-  # Unity's scripting backend.
-  dotnet-mono:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # 10.0.x, the newest line this workflow installs, is the SDK that wrote
-      # packages.lock.json. Each SDK band bundles its own implicit
-      # Microsoft.NET.ILLink.Tasks version for a given target, and they do
-      # not always agree (2026-09-18: 9.0.318 asked 8.0.30 for net8.0 while
-      # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
-      # locked mode with NU1004 on a lock file that is correct.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-      - name: Load the netstandard2.0 asset under Mono
-        working-directory: dotnet
-        run: |
-          set -euo pipefail
-          dotnet build -c Release src/ApplePurchaseReceiptVerifier
-          # Mono comes from a digest-pinned image rather than apt. Installing
-          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
-          # mirror on every run; when that mirror was slow the job spent 24
-          # minutes fetching and was cancelled at its timeout, with nothing
-          # wrong in the code. Same reasoning as the swift jobs, which have
-          # been digest-pinned containers all along.
-          #
-          # A Mono host that cannot even load the assembly is the failure
-          # this job exists to catch; the full suite stays on CoreCLR, and
-          # monop reflects rather than executes, so this proves loadability
-          # and not behaviour.
-          docker run --rm -v "$PWD:/work" -w /work \
-            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
-            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
-              ApplePurchaseReceiptVerifier.Verifier
-
-  # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
-  # reflection-based serializer, an embedded resource or a dynamic code path
-  # would surface here as an IL2xxx warning or as a runtime failure. The
-  # sample verifies a receipt and asserts a foreign chain is still rejected,
-  # so a trimmer that silently removed a check fails the job.
-  dotnet-trim:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
-      # still targets net9.0, which this SDK builds and publishes.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-      - name: Publish fully trimmed and verify a receipt with it
-        working-directory: dotnet
-        run: |
-          set -euo pipefail
-          # No -r here: the sample's csproj pins RuntimeIdentifier itself.
-          # On the command line it becomes a global property and reaches the
-          # referenced library project too, whose packages.lock.json has no
-          # RID graph, so locked-mode restore fails with NU1004.
-          dotnet publish samples/TrimAotSmoke -c Release -o "$RUNNER_TEMP/trim" \
-            -warnaserror
-          "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
-
   # fixtures/cases.json is the normative cross-language contract: every
   # suite reads it, so a malformed vector file or an unregistered fixture
   # breaks every language at once. The linter validates the schema with
@@ -3043,7 +2962,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -3071,7 +2990,7 @@ jobs:
       # install step. Version deliberately unpinned, as it was under pip:
       # a new zizmor audit that fires on these workflows is a finding we
       # want to see, not one to defer behind a pin.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - run: uvx zizmor .github/workflows/ .github/actions/
 
   # Lint and formatting for the Node port. Separate from the `node` job
@@ -3091,7 +3010,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
@@ -3123,10 +3042,10 @@ jobs:
           '
 
   # ruff and mypy for the Python port. One job, not a matrix: ruff pins the
-  # language level with target-version = "py310" and mypy is told
-  # python_version = "3.10" in pyproject, so the interpreter this runs on
+  # language level with target-version = "py311" and mypy is told
+  # python_version = "3.11" in pyproject, so the interpreter this runs on
   # does not change either verdict. The floor's runtime behaviour is
-  # proven by the `python` job's 3.10 leg above, not by this one.
+  # proven by the `python` job's 3.11 leg above, not by this one.
   #
   # Installs the package rather than just the tools: mypy needs wasmtime
   # importable to resolve its types.
@@ -3139,7 +3058,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
@@ -3207,20 +3126,27 @@ jobs:
           persist-credentials: false
       - run: swift format lint --strict --recursive swift/Sources swift/Tests
 
-  # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
-  # Performance and Usage analyzer categories are silenced there because
-  # `dotnet format` with them on rewrote 28 files -- switch expressions,
-  # collection expressions, a primary constructor, GeneratedRegex source
-  # generators -- and in one file two fixers collided and wrote a literal
-  # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
-  # formatter that can corrupt a file is not one to run in apply mode over
-  # this port; this job only ever verifies.
-  dotnet-format:
-    needs: changes
+  # dotnet format (dotnet-format), the netstandard2.0 asset under Mono
+  # (dotnet-mono), the trimmed and AOT consumer (dotnet-trim) and the packed
+  # NuGet package in a clean consumer (smoke-nuget).
+  # One job instead of 4: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  dotnet-checks:
+    needs: [changes, rust-wasm]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
+      # --- dotnet-format -----------------------------------------------------
+      # A drift gate on dotnet/.editorconfig, not a restyle. The Style,
+      # Performance and Usage analyzer categories are silenced there because
+      # `dotnet format` with them on rewrote 28 files -- switch expressions,
+      # collection expressions, a primary constructor, GeneratedRegex source
+      # generators -- and in one file two fixers collided and wrote a literal
+      # <<<<<<< / ======= / >>>>>>> conflict marker into the source. A
+      # formatter that can corrupt a file is not one to run in apply mode over
+      # this port; this job only ever verifies.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3232,20 +3158,132 @@ jobs:
             10.0.x
       - run: dotnet format --verify-no-changes --severity info
         working-directory: dotnet
+      # --- dotnet-mono -------------------------------------------------------
+      # The netstandard2.0 asset is what a .NET Framework, Mono or Unity consumer
+      # loads. The dotnet job above runs the floor project on CoreCLR against that
+      # asset; this one loads it under Mono, the closest a hosted runner gets to
+      # Unity's scripting backend.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # 10.0.x, the newest line this workflow installs, is the SDK that wrote
+      # packages.lock.json. Each SDK band bundles its own implicit
+      # Microsoft.NET.ILLink.Tasks version for a given target, and they do
+      # not always agree (2026-09-18: 9.0.318 asked 8.0.30 for net8.0 while
+      # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
+      # locked mode with NU1004 on a lock file that is correct.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - if: ${{ !cancelled() }}
+        name: Load the netstandard2.0 asset under Mono
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          dotnet build -c Release src/ApplePurchaseReceiptVerifier
+          # Mono comes from a digest-pinned image rather than apt. Installing
+          # mono-complete pulled 163 packages and 80 MB from the Ubuntu
+          # mirror on every run; when that mirror was slow the job spent 24
+          # minutes fetching and was cancelled at its timeout, with nothing
+          # wrong in the code. Same reasoning as the swift jobs, which have
+          # been digest-pinned containers all along.
+          #
+          # A Mono host that cannot even load the assembly is the failure
+          # this job exists to catch; the full suite stays on CoreCLR, and
+          # monop reflects rather than executes, so this proves loadability
+          # and not behaviour.
+          docker run --rm -v "$PWD:/work" -w /work \
+            mono:6.12@sha256:34d816779b1248b5cfd095770b64ecbaf1798e2aca693a91c11a018dce9c7ad5 \
+            monop -r:src/ApplePurchaseReceiptVerifier/bin/Release/netstandard2.0/ApplePurchaseReceiptVerifier.dll \
+              ApplePurchaseReceiptVerifier.Verifier
+      # --- dotnet-trim -------------------------------------------------------
+      # Trimming is the closest CI-runnable proxy for Unity IL2CPP's stripping: a
+      # reflection-based serializer, an embedded resource or a dynamic code path
+      # would surface here as an IL2xxx warning or as a runtime failure. The
+      # sample verifies a receipt and asserts a foreign chain is still rejected,
+      # so a trimmer that silently removed a check fails the job.
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
+      # still targets net9.0, which this SDK builds and publishes.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - if: ${{ !cancelled() }}
+        name: Publish fully trimmed and verify a receipt with it
+        working-directory: dotnet
+        run: |
+          set -euo pipefail
+          # No -r here: the sample's csproj pins RuntimeIdentifier itself.
+          # On the command line it becomes a global property and reaches the
+          # referenced library project too, whose packages.lock.json has no
+          # RID graph, so locked-mode restore fails with NU1004.
+          dotnet publish samples/TrimAotSmoke -c Release -o "$RUNNER_TEMP/trim" \
+            -warnaserror
+          "$RUNNER_TEMP/trim/TrimAotSmoke" "$GITHUB_WORKSPACE/fixtures"
+      # --- smoke-nuget -------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/place-module
+        with:
+          host: dotnet
+      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
+      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - if: ${{ !cancelled() }}
+        run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
+        working-directory: dotnet
+      # The pack folder is added as a source beside nuget.org (the package's
+      # own dependencies come from there), and NUGET_PACKAGES is a scratch
+      # folder so a same-version package cached by an earlier restore on
+      # the runner cannot stand in for the one just packed.
+      - if: ${{ !cancelled() }}
+        name: restore the packed package outside the checkout
+        run: |
+          set -euo pipefail
+          SMOKE="$RUNNER_TEMP/nuget-smoke"
+          mkdir -p "$SMOKE"
+          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cd "$SMOKE"
+          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
+          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
+          VERSION="${VERSION%.nupkg}"
+          export NUGET_PACKAGES="$SMOKE/packages"
+          dotnet restore "-p:SmokeVersion=$VERSION" \
+            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
+          dotnet run --no-restore "-p:SmokeVersion=$VERSION"
 
-  # Spotless with palantir-java-format. Deliberately not bound to a Maven
-  # lifecycle phase (see java/pom.xml), so `mvn test` and the
-  # java-runtime-8 job never invoke it; this job runs it explicitly.
-  # palantir's own classes are class-file major 55, so running the check
-  # needs Maven itself on JDK 11+ -- which is why it is not in the build.
-  # palantir over google-java-format because google forces 2-space indent
-  # on a 4-space codebase: 8690 changed lines against palantir's 1967.
-  java-format:
+  # Spotless (java-format), the suite under a hardened security policy
+  # (java-hardened-policy), the Kotlin and Scala consumers (jvm-interop) and
+  # the packaged 0.7 artifact in a clean consumer (smoke-maven). All on
+  # Temurin 21.
+  # One job instead of 4: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  java-checks:
     needs: changes
     if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
+      # --- java-format -------------------------------------------------------
+      # Spotless with palantir-java-format. Deliberately not bound to a Maven
+      # lifecycle phase (see java/pom.xml), so `mvn test` and the
+      # java-runtime-8 job never invoke it; this job runs it explicitly.
+      # palantir's own classes are class-file major 55, so running the check
+      # needs Maven itself on JDK 11+ -- which is why it is not in the build.
+      # palantir over google-java-format because google forces 2-space indent
+      # on a 4-space codebase: 8690 changed lines against palantir's 1967.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3256,20 +3294,113 @@ jobs:
           cache: maven
       - run: mvn -B spotless:check
         working-directory: java
+      # --- java-hardened-policy ----------------------------------------------
+      # The genuine legacy receipt chain is SHA-1 end to end. The JDK's own PKIX
+      # code obeys jdk.certpath.disabledAlgorithms, so a hardened java.security
+      # that disables SHA-1 outright (RHEL crypto policies, many enterprise
+      # images) makes the JDK refuse that chain. The Java port builds and
+      # validates chains with its own pinned BouncyCastle instance, which does not
+      # read that property (java/README.md, "One platform caveat"). This job pins
+      # that: under that policy the full conformance suite passes. Surefire names
+      # dynamic tests by index, so the discriminating case
+      # receipt/verify-genuine-legacy-sha1-chain is not grepped by name here;
+      # ConformanceCasesTest's last test fails if any case in cases.json did not
+      # run, so 0 failures means it ran and passed (java-distroless asserts it by
+      # name). HostPolicyProbe then shows the premise on the same JDK: under the
+      # same policy the JDK's own PKIX refuses the chain the suite accepted.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - if: ${{ !cancelled() }}
+        name: Run the conformance suite with SHA-1 disabled for certpath
+        working-directory: java
+        run: |
+          set -euo pipefail
+          printf 'jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1, RSA keySize < 1024\n' > "$RUNNER_TEMP/hardened.properties"
+          mvn -B test -Dtest=ConformanceCasesTest "-DargLine=-Djava.security.properties=$RUNNER_TEMP/hardened.properties" | tee "$RUNNER_TEMP/hardened.log"
+          grep -E '^\[INFO\] Tests run: [0-9]+, Failures: 0, Errors: 0, Skipped: 0$' "$RUNNER_TEMP/hardened.log"
+          grep -F '"id": "receipt/verify-genuine-legacy-sha1-chain"' ../fixtures/cases.json
+          mvn -B -q dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/cp.txt"
+          java "-Djava.security.properties=$RUNNER_TEMP/hardened.properties" \
+            -cp "target/test-classes:target/classes:$(cat "$RUNNER_TEMP/cp.txt")" \
+            io.github.emindeniz99.applepurchasereceiptverifier.HostPolicyProbe | tee "$RUNNER_TEMP/probe.log"
+          grep -F "premise: the JDK's own PKIX refuses the legacy chain" "$RUNNER_TEMP/probe.log"
+          grep -F 'legacy receipt verifies' "$RUNNER_TEMP/probe.log"
+      # --- jvm-interop -------------------------------------------------------
+      # Proves jvm-interop/README.md's claim: the published jar is usable from
+      # other JVM languages, not just Java. Builds java/ first with install,
+      # not package, so jvm-interop resolves it as a real Maven coordinate the
+      # way a consumer would from Central, then runs the Kotlin and Scala 3
+      # interop tests. Never part of the release: jvm-interop has no
+      # release-please entry and no <module> anywhere.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - if: ${{ !cancelled() }}
+        run: mvn -B install -DskipTests
+        working-directory: java
+      - if: ${{ !cancelled() }}
+        run: mvn -B test
+        working-directory: jvm-interop
+      # java-bench/ is another consumer of that installed coordinate, and
+      # otherwise only benchmark.yml builds it, by hand. compile runs JMH's
+      # annotation processor over it, so an API change that breaks a
+      # benchmark fails here; compile stops short of packaging the JMH jar,
+      # and nothing is measured. version.txt as in benchmark.yml.
+      - if: ${{ !cancelled() }}
+        run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
+      # --- smoke-maven -------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # install puts the jar in ~/.m2, which Maven reads before any remote,
+      # so the smoke pom resolves this build and never Central's.
+      - if: ${{ !cancelled() }}
+        run: mvn -B install -DskipTests
+        working-directory: java
+      - if: ${{ !cancelled() }}
+        name: resolve the installed jar outside the checkout
+        run: |
+          set -euo pipefail
+          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
+          SMOKE="$RUNNER_TEMP/maven-smoke"
+          mkdir -p "$SMOKE"
+          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
+          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
+          cd "$SMOKE"
+          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
+          javac -cp "$(cat cp.txt)" Smoke.java -d .
+          java -cp ".:$(cat cp.txt)" Smoke
 
-  # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-fuzz
-  # jobs so a formatting drift fails on its own instead of inside a
-  # functional job's log. This is also the first CI run of the fixer at
-  # all: the committed .php-cs-fixer.dist.php declared the risky
-  # declare_strict_types rule while setting setRiskyAllowed(false), a
-  # combination the resolver rejects outright, so the config could never
-  # have run wherever it was invoked from.
-  php-format:
-    needs: changes
+  # php-cs-fixer (php-format), then PHPStan and the rest of php-static.
+  # Both on PHP 8.4; the job waits for aprv-server-linux, which php-static
+  # needs.
+  # One job instead of 2: each ran for under a minute or two
+  # after about 30 s of setup. Every step after the first group's runs
+  # under !cancelled(), so one check's failure does not hide the others.
+  php-checks:
+    needs: [changes, aprv-server-linux]
     if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
+      # --- php-format --------------------------------------------------------
+      # PHP-CS-Fixer, separate from the php/php-lowest/php-static/php-fuzz
+      # jobs so a formatting drift fails on its own instead of inside a
+      # functional job's log. This is also the first CI run of the fixer at
+      # all: the committed .php-cs-fixer.dist.php declared the risky
+      # declare_strict_types rule while setting setRiskyAllowed(false), a
+      # combination the resolver rejects outright, so the config could never
+      # have run wherever it was invoked from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -3282,6 +3413,66 @@ jobs:
         working-directory: php
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
         working-directory: php
+      # --- php-static --------------------------------------------------------
+      - if: ${{ !cancelled() }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aprv-server-x86_64-unknown-linux-musl
+          path: ${{ runner.temp }}/aprv-bin
+      - if: ${{ !cancelled() }}
+        name: the aprv binary this tree builds
+        run: |
+          chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
+          echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
+      - if: ${{ !cancelled() }}
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.4"
+          extensions: json, curl, posix
+          coverage: none
+      # The consumer smoke and the drift guard are Node, like the rest of
+      # tools/. They live in this job rather than in `conformance` because
+      # what they check is the PHP package, and because the smoke needs the
+      # PHP that setup-php just installed.
+      - if: ${{ !cancelled() }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - if: ${{ !cancelled() }}
+        run: composer install --no-scripts --no-progress --no-interaction
+        working-directory: php
+      # --strict also reports a composer.lock that no longer matches
+      # composer.json, which is the drift this port's lockfile can suffer.
+      - if: ${{ !cancelled() }}
+        run: composer validate --strict
+        working-directory: php
+      # The root manifest is what Packagist reads and what Composer installs;
+      # php/composer.json is only the development one. Both get validated.
+      - if: ${{ !cancelled() }}
+        run: composer validate --strict --no-check-lock composer.json
+      # src, tests and bin/ (phpstan.neon).
+      - if: ${{ !cancelled() }}
+        run: vendor/bin/phpstan analyse --no-progress
+        working-directory: php
+      # bench/bench.php otherwise runs only in benchmark.yml, by hand. This is
+      # a syntax check and nothing more.
+      - if: ${{ !cancelled() }}
+        run: php -l bench/bench.php
+        working-directory: php
+      # Two manifests for one package drift, and the .gitattributes allowlist
+      # silently decides what a PHP consumer unpacks. This reads the real
+      # `git archive` rather than the rules that produce it: the manifests
+      # agree on bin and suggest, and the archive carries bin/aprv-install
+      # and SHA256SUMS.
+      - if: ${{ !cancelled() }}
+        run: node tools/check-php-package.mjs
+      # Then install that archive into a throwaway project and verify a
+      # receipt through vendor/autoload.php and the default CLI transport
+      # (APRV_BIN): the only check here that runs against what a stranger
+      # downloads rather than against a checkout.
+      - if: ${{ !cancelled() }}
+        run: node tools/php-consumer-smoke.mjs
 
   # The consumer smoke programs under .github/smoke/, run against this
   # checkout. post-publish-smoke.yml runs the same programs after a release
@@ -3304,7 +3495,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: node
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "20"
           package-manager-cache: false
@@ -3347,7 +3538,7 @@ jobs:
           host: python
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       # pip builds a wheel from python/ (aprv.wasm included, as package data)
       # with the setuptools backend tools/build_dist.py drives for the
       # release, and installs that wheel, not the source tree.
@@ -3362,37 +3553,6 @@ jobs:
           "$SMOKE/venv/bin/pip" install "$GITHUB_WORKSPACE/python"
           cd "$SMOKE"
           venv/bin/python pypi-smoke.py
-
-  smoke-maven:
-    needs: changes
-    if: needs.changes.outputs.java == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      # install puts the jar in ~/.m2, which Maven reads before any remote,
-      # so the smoke pom resolves this build and never Central's.
-      - run: mvn -B install -DskipTests
-        working-directory: java
-      - name: resolve the installed jar outside the checkout
-        run: |
-          set -euo pipefail
-          VERSION="$(mvn -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
-          SMOKE="$RUNNER_TEMP/maven-smoke"
-          mkdir -p "$SMOKE"
-          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
-          cp .github/smoke/maven-smoke/pom.xml .github/smoke/maven-smoke/Smoke.java "$SMOKE/"
-          cd "$SMOKE"
-          mvn -B -q -Dsmoke.version="$VERSION" -Dmdep.outputFile=cp.txt dependency:build-classpath
-          javac -cp "$(cat cp.txt)" Smoke.java -d .
-          java -cp ".:$(cat cp.txt)" Smoke
 
   smoke-swiftpm:
     needs: [changes, rust-wasm]
@@ -3475,7 +3635,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
@@ -3531,43 +3691,63 @@ jobs:
           cargo +stable add apple-purchase-receipt-verifier --path "$(echo crate/apple-purchase-receipt-verifier-*)"
           cargo +stable run
 
-  smoke-nuget:
-    needs: [changes, rust-wasm]
-    if: needs.changes.outputs.dotnet == 'true'
+  # The one check branch protection should require. Every other job in this
+  # file is in its `needs:`, and it runs whatever they did (always()): it
+  # fails when any of them failed or was cancelled, and passes when each
+  # passed or was skipped, which is what a pull request's area filter and
+  # the event conditions do to the jobs that do not apply. Requiring the
+  # individual checks instead breaks whenever a job is renamed, merged or
+  # skipped. A job added to this file must join the list; the first step
+  # fails until it does.
+  ci-ok:
+    needs:
+      [changes, java, java-runtime-8, java-jackson-floor, java-vendors,
+       java-distroless, node, node-runtimes, node-browsers,
+       java-spring-boot, python, python-musl, swift, swift-macos,
+       swift-ios, swift-apple, swift-crypto-floor, go, go-platforms,
+       go-cross, go-race, go-fuzz, go-checks, ruby, ruby-gem,
+       macos-wrappers, windows-wrappers, ruby-macos, ruby-tools, rust,
+       rust-lint, rust-ffi, elixir-ffi, rust-fuzz, dotnet-fuzz,
+       php-fuzz, ruby-fuzz, python-fuzz, swift-fuzz, java-fuzz,
+       rust-supply-chain, rust-wasm, rust-wasm-checks, rust-wasm-abi,
+       wasm-copies, one-implementation, aprv-server-linux,
+       aprv-server, aprv-server-contract, aprv-server-image,
+       java-wasm-endive, java-wasm-runtime-8, java-wasm-consumers,
+       java-classpath-guard, php, php-lowest, php-symfony-process-8,
+       dotnet, conformance, zizmor, node-lint, python-tools,
+       swift-format, dotnet-checks, java-checks, php-checks,
+       smoke-npm, smoke-pypi, smoke-swiftpm, smoke-go, smoke-rubygems,
+       smoke-crates]
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/place-module
-        with:
-          host: dotnet
-      # 10.0 packs (it is the SDK that wrote packages.lock.json, see
-      # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
-      - run: dotnet pack src/ApplePurchaseReceiptVerifier -c Release -o "$RUNNER_TEMP/nupkg"
-        working-directory: dotnet
-      # The pack folder is added as a source beside nuget.org (the package's
-      # own dependencies come from there), and NUGET_PACKAGES is a scratch
-      # folder so a same-version package cached by an earlier restore on
-      # the runner cannot stand in for the one just packed.
-      - name: restore the packed package outside the checkout
+          sparse-checkout: .github/workflows/ci.yml
+          sparse-checkout-cone-mode: false
+      - name: every job in ci.yml is in ci-ok's needs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          SMOKE="$RUNNER_TEMP/nuget-smoke"
-          mkdir -p "$SMOKE"
-          cp -R .github/smoke/nuget-smoke/. "$SMOKE/"
-          cp fixtures/public-receipts/receipt-sandbox-g5.b64 "$SMOKE/"
-          cd "$SMOKE"
-          nupkg="$(echo "$RUNNER_TEMP"/nupkg/ApplePurchaseReceiptVerifier.*.nupkg)"
-          VERSION="${nupkg##*/ApplePurchaseReceiptVerifier.}"
-          VERSION="${VERSION%.nupkg}"
-          export NUGET_PACKAGES="$SMOKE/packages"
-          dotnet restore "-p:SmokeVersion=$VERSION" \
-            --source "$RUNNER_TEMP/nupkg" --source https://api.nuget.org/v3/index.json
-          dotnet run --no-restore "-p:SmokeVersion=$VERSION"
+          declared=$(awk '/^jobs:$/ { j = 1; next } j && /^  [a-z0-9_-]+:$/ { sub(/^  /, ""); sub(/:$/, ""); print }' .github/workflows/ci.yml | grep -vx ci-ok | sort)
+          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
+          if [ "$declared" != "$needed" ]; then
+            echo "::error::ci-ok's needs and the jobs in ci.yml differ:"
+            diff <(echo "$declared") <(echo "$needed") || true
+            exit 1
+          fi
+      - name: no needed job failed or was cancelled
+        if: always()
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS" | sort
+          bad=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "::error::failed or cancelled: $(echo $bad)"
+            exit 1
+          fi

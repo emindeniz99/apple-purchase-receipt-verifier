@@ -1,0 +1,370 @@
+######## aarch64-apple-darwin
+::group::server stage 1: the host's full build precompiles for aarch64-apple-darwin
++ cargo build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-unknown-linux-gnu --features compile,wasmtime/all-arch
+    Finished `release` profile [optimized] target(s) in 0.08s
++ $SRC/rust/server/target/x86_64-unknown-linux-gnu/release/aprv precompile $SCRATCH/component/aprv.component.wasm --target aarch64-apple-darwin -o $SCRATCH/out/aarch64-apple-darwin/aprv.aarch64-apple-darwin.ccwasm
+wrote $SCRATCH/out/aarch64-apple-darwin/aprv.aarch64-apple-darwin.ccwasm: 9176720 bytes, sha256 4b88b8def15507beb4b961a4e284e78def6cf56cd9ff558e9af83261d371bc4d, for aarch64-apple-darwin, from component sha256 ce2123fa7b27b6bcac71a3b6ba0bcfe33cb10a655cffd280ff9c09681d216a10; manifest $SCRATCH/out/aarch64-apple-darwin/aprv.aarch64-apple-darwin.ccwasm.json
+::endgroup::
+::group::server stage 2: the runtime-only build for aarch64-apple-darwin
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target aarch64-apple-darwin
+warning: invoking `"xcrun" "--sdk" "macosx" "--show-sdk-path"` to find MacOSX.sdk failed: No such file or directory (os error 2)
+  |
+  = note: the SDK is needed by the linker to know where to find symbols in system libraries and for embedding the SDK version in the final object file
+  = help: pass the path of an Xcode installation via the DEVELOPER_DIR environment variable, or an SDK with the SDKROOT environment variable
+
+warning: `aprv-server` (bin "aprv") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 28.75s
+::endgroup::
+::group::server test executables for aarch64-apple-darwin
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+::endgroup::
+::group::the C ABI library for aarch64-apple-darwin
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/ffi/Cargo.toml --target aarch64-apple-darwin
+warning: invoking `"xcrun" "--sdk" "macosx" "--show-sdk-path"` to find MacOSX.sdk failed: No such file or directory (os error 2)
+  |
+  = note: the SDK is needed by the linker to know where to find symbols in system libraries and for embedding the SDK version in the final object file
+  = help: pass the path of an Xcode installation via the DEVELOPER_DIR environment variable, or an SDK with the SDKROOT environment variable
+
+warning: `apple-purchase-receipt-verifier-ffi` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 06s
+::endgroup::
+::group::C ABI test executables for aarch64-apple-darwin
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+::endgroup::
+== aarch64-apple-darwin
+    11503280  aprv-aarch64-apple-darwin
+         687  aprv.aarch64-apple-darwin.ccwasm.json
+     8851056  ffi/libapple_purchase_receipt_verifier_ffi.dylib
+     8751592  tests/ffi/apple_purchase_receipt_verifier_ffi-fed8fb6ccafda12d
+     1293936  tests/ffi/exported_symbols-0d2b60da6dc5c2ae
+    51463192  tests/server/aprv-0fc5bfd767ba09e0
+
+######## x86_64-apple-darwin
+::group::server stage 1: the host's full build precompiles for x86_64-apple-darwin
++ cargo build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-unknown-linux-gnu --features compile
+    Finished `release` profile [optimized] target(s) in 3m 54s
++ $SRC/rust/server/target/x86_64-unknown-linux-gnu/release/aprv precompile $SCRATCH/component/aprv.component.wasm --target x86_64-apple-darwin -o $SCRATCH/out/x86_64-apple-darwin/aprv.x86_64-apple-darwin.ccwasm
+wrote $SCRATCH/out/x86_64-apple-darwin/aprv.x86_64-apple-darwin.ccwasm: 9517744 bytes, sha256 511683545817ecfbc4d1836751a165a96e0936a4f00dcd0e8996d1084a505d5d, for x86_64-apple-darwin, from component sha256 ce2123fa7b27b6bcac71a3b6ba0bcfe33cb10a655cffd280ff9c09681d216a10; manifest $SCRATCH/out/x86_64-apple-darwin/aprv.x86_64-apple-darwin.ccwasm.json
+::endgroup::
+::group::server stage 2: the runtime-only build for x86_64-apple-darwin
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-apple-darwin
+warning: invoking `"xcrun" "--sdk" "macosx" "--show-sdk-path"` to find MacOSX.sdk failed: No such file or directory (os error 2)
+  |
+  = note: the SDK is needed by the linker to know where to find symbols in system libraries and for embedding the SDK version in the final object file
+  = help: pass the path of an Xcode installation via the DEVELOPER_DIR environment variable, or an SDK with the SDKROOT environment variable
+
+warning: `aprv-server` (bin "aprv") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 23s
+::endgroup::
+::group::server test executables for x86_64-apple-darwin
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 20s
+::endgroup::
+::group::the C ABI library for x86_64-apple-darwin
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/ffi/Cargo.toml --target x86_64-apple-darwin
+warning: invoking `"xcrun" "--sdk" "macosx" "--show-sdk-path"` to find MacOSX.sdk failed: No such file or directory (os error 2)
+  |
+  = note: the SDK is needed by the linker to know where to find symbols in system libraries and for embedding the SDK version in the final object file
+  = help: pass the path of an Xcode installation via the DEVELOPER_DIR environment variable, or an SDK with the SDKROOT environment variable
+
+warning: `apple-purchase-receipt-verifier-ffi` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 07s
+::endgroup::
+::group::C ABI test executables for x86_64-apple-darwin
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 08s
+::endgroup::
+== x86_64-apple-darwin
+    11903096  aprv-x86_64-apple-darwin
+         686  aprv.x86_64-apple-darwin.ccwasm.json
+     8729840  ffi/libapple_purchase_receipt_verifier_ffi.dylib
+     8499460  tests/ffi/apple_purchase_receipt_verifier_ffi-5b00985dbdb0935f
+     1270806  tests/ffi/exported_symbols-b6d8096d2af20c92
+    52719005  tests/server/aprv-feee364e9d956340
+
+######## x86_64-pc-windows-gnu
+::group::server stage 1: the host's full build precompiles for x86_64-pc-windows-gnu
++ cargo build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-unknown-linux-gnu --features compile
+    Finished `release` profile [optimized] target(s) in 4m 01s
++ $SRC/rust/server/target/x86_64-unknown-linux-gnu/release/aprv precompile $SCRATCH/component/aprv.component.wasm --target x86_64-pc-windows-gnu -o $SCRATCH/out/x86_64-pc-windows-gnu/aprv.x86_64-pc-windows-gnu.ccwasm
+wrote $SCRATCH/out/x86_64-pc-windows-gnu/aprv.x86_64-pc-windows-gnu.ccwasm: 11082480 bytes, sha256 74ab680422f7333fc324765f24533aa3927a54f4024c8d0eeaf570a85c99de4b, for x86_64-pc-windows-gnu, from component sha256 ce2123fa7b27b6bcac71a3b6ba0bcfe33cb10a655cffd280ff9c09681d216a10; manifest $SCRATCH/out/x86_64-pc-windows-gnu/aprv.x86_64-pc-windows-gnu.ccwasm.json
+::endgroup::
+::group::server stage 2: the runtime-only build for x86_64-pc-windows-gnu
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-pc-windows-gnu
+    Finished `release` profile [optimized] target(s) in 2m 06s
+::endgroup::
+::group::server test executables for x86_64-pc-windows-gnu
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 21s
+::endgroup::
+::group::the C ABI library for x86_64-pc-windows-gnu
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/ffi/Cargo.toml --target x86_64-pc-windows-gnu
+    Finished `release` profile [optimized] target(s) in 2m 08s
+::endgroup::
+::group::C ABI test executables for x86_64-pc-windows-gnu
+warning: openssl-sys@0.9.117: zig: warning: argument unused during compilation: '-fno-rtlib-defaultlib' [-Wunused-command-line-argument]
+warning: aprv-openssl@0.12.0: zig: warning: argument unused during compilation: '-fno-rtlib-defaultlib' [-Wunused-command-line-argument]
+warning: aprv-openssl@0.12.0: zig: warning: argument unused during compilation: '-fno-rtlib-defaultlib' [-Wunused-command-line-argument]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 09s
+::endgroup::
+== x86_64-pc-windows-gnu
+    13542400  aprv-x86_64-pc-windows-gnu.exe
+         688  aprv.x86_64-pc-windows-gnu.ccwasm.json
+     8147968  ffi/apple_purchase_receipt_verifier_ffi.dll
+     4735128  ffi/libapple_purchase_receipt_verifier_ffi.dll.a
+    46540800  tests/ffi/apple_purchase_receipt_verifier_ffi-de60ca956a25f812.exe
+     7348224  tests/ffi/exported_symbols-cb6bc0943571cafd.exe
+   338164736  tests/server/aprv-10bebcfda5a7ead6.exe
+
+######## x86_64-pc-windows-msvc
+::group::server stage 1: the host's full build precompiles for x86_64-pc-windows-msvc
++ cargo build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-unknown-linux-gnu --features compile
+    Finished `release` profile [optimized] target(s) in 3m 54s
++ $SRC/rust/server/target/x86_64-unknown-linux-gnu/release/aprv precompile $SCRATCH/component/aprv.component.wasm --target x86_64-pc-windows-msvc -o $SCRATCH/out/x86_64-pc-windows-msvc/aprv.x86_64-pc-windows-msvc.ccwasm
+wrote $SCRATCH/out/x86_64-pc-windows-msvc/aprv.x86_64-pc-windows-msvc.ccwasm: 11082480 bytes, sha256 5b853266f3ef01a5786b09451b73a064917fdec977daf3722baba39cb698af67, for x86_64-pc-windows-msvc, from component sha256 ce2123fa7b27b6bcac71a3b6ba0bcfe33cb10a655cffd280ff9c09681d216a10; manifest $SCRATCH/out/x86_64-pc-windows-msvc/aprv.x86_64-pc-windows-msvc.ccwasm.json
+::endgroup::
+::group::server stage 2: the runtime-only build for x86_64-pc-windows-msvc
++ cargo xwin build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target x86_64-pc-windows-msvc
+⏬ Downloading MSVC CRT...
+✅ Downloaded MSVC CRT in 16m 59s.
+    Finished `release` profile [optimized] target(s) in 1m 09s
+::endgroup::
+::group::server test executables for x86_64-pc-windows-msvc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 32s
+::endgroup::
+::group::the C ABI library for x86_64-pc-windows-msvc
++ cargo xwin build --release --locked --manifest-path $SRC/rust/ffi/Cargo.toml --target x86_64-pc-windows-msvc
+warning: openssl-sys@0.9.117: configuring OpenSSL build: 'perl' reported failure with exit status: 255
+warning: openssl-sys@0.9.117: openssl-src: failed to build OpenSSL from source
+error: failed to run custom build command for `openssl-sys v0.9.117 ($SRC/rust/vendor/openssl-sys)`
+note: To improve backtraces for build dependencies, set the CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true environment variable to enable debug information generation.
+
+Caused by:
+  process didn't exit successfully: `$SRC/rust/target/release/build/openssl-sys-6cc06f6e3c60ac6d/build-script-main` (exit status: 1)
+  --- stdout
+  cargo:rustc-check-cfg=cfg(osslconf, values("OPENSSL_NO_OCB", "OPENSSL_NO_SM4", "OPENSSL_NO_SEED", "OPENSSL_NO_CHACHA", "OPENSSL_NO_CAST", "OPENSSL_NO_IDEA", "OPENSSL_NO_CAMELLIA", "OPENSSL_NO_RC4", "OPENSSL_NO_BF", "OPENSSL_NO_PSK", "OPENSSL_NO_DEPRECATED_3_0", "OPENSSL_NO_SCRYPT", "OPENSSL_NO_SM3", "OPENSSL_NO_RMD160", "OPENSSL_NO_EC2M", "OPENSSL_NO_OCSP", "OPENSSL_NO_CMS", "OPENSSL_NO_COMP", "OPENSSL_NO_SOCK", "OPENSSL_NO_STDIO", "OPENSSL_NO_EC", "OPENSSL_NO_SSL3_METHOD", "OPENSSL_NO_KRB5", "OPENSSL_NO_TLSEXT", "OPENSSL_NO_SRP", "OPENSSL_NO_SRTP", "OPENSSL_NO_RFC3779", "OPENSSL_NO_SHA", "OPENSSL_NO_NEXTPROTONEG", "OPENSSL_NO_ENGINE", "OPENSSL_NO_BUF_FREELISTS", "OPENSSL_NO_RC2"))
+  cargo:rustc-check-cfg=cfg(openssl)
+  cargo:rustc-check-cfg=cfg(libressl)
+  cargo:rustc-check-cfg=cfg(boringssl)
+  cargo:rustc-check-cfg=cfg(awslc)
+  cargo:rustc-check-cfg=cfg(awslc_pregenerated)
+  cargo:rustc-check-cfg=cfg(libressl250)
+  cargo:rustc-check-cfg=cfg(libressl251)
+  cargo:rustc-check-cfg=cfg(libressl252)
+  cargo:rustc-check-cfg=cfg(libressl261)
+  cargo:rustc-check-cfg=cfg(libressl270)
+  cargo:rustc-check-cfg=cfg(libressl271)
+  cargo:rustc-check-cfg=cfg(libressl273)
+  cargo:rustc-check-cfg=cfg(libressl280)
+  cargo:rustc-check-cfg=cfg(libressl281)
+  cargo:rustc-check-cfg=cfg(libressl291)
+  cargo:rustc-check-cfg=cfg(libressl310)
+  cargo:rustc-check-cfg=cfg(libressl321)
+  cargo:rustc-check-cfg=cfg(libressl332)
+  cargo:rustc-check-cfg=cfg(libressl340)
+  cargo:rustc-check-cfg=cfg(libressl350)
+  cargo:rustc-check-cfg=cfg(libressl360)
+  cargo:rustc-check-cfg=cfg(libressl361)
+  cargo:rustc-check-cfg=cfg(libressl370)
+  cargo:rustc-check-cfg=cfg(libressl380)
+  cargo:rustc-check-cfg=cfg(libressl381)
+  cargo:rustc-check-cfg=cfg(libressl382)
+  cargo:rustc-check-cfg=cfg(libressl390)
+  cargo:rustc-check-cfg=cfg(libressl400)
+  cargo:rustc-check-cfg=cfg(libressl410)
+  cargo:rustc-check-cfg=cfg(libressl420)
+  cargo:rustc-check-cfg=cfg(libressl430)
+  cargo:rustc-check-cfg=cfg(ossl101)
+  cargo:rustc-check-cfg=cfg(ossl102)
+  cargo:rustc-check-cfg=cfg(ossl102f)
+  cargo:rustc-check-cfg=cfg(ossl102h)
+  cargo:rustc-check-cfg=cfg(ossl110)
+  cargo:rustc-check-cfg=cfg(ossl110f)
+  cargo:rustc-check-cfg=cfg(ossl110g)
+  cargo:rustc-check-cfg=cfg(ossl110h)
+  cargo:rustc-check-cfg=cfg(ossl111)
+  cargo:rustc-check-cfg=cfg(ossl111b)
+  cargo:rustc-check-cfg=cfg(ossl111c)
+  cargo:rustc-check-cfg=cfg(ossl111d)
+  cargo:rustc-check-cfg=cfg(ossl300)
+  cargo:rustc-check-cfg=cfg(ossl310)
+  cargo:rustc-check-cfg=cfg(ossl320)
+  cargo:rustc-check-cfg=cfg(ossl330)
+  cargo:rustc-check-cfg=cfg(ossl340)
+  cargo:rustc-check-cfg=cfg(ossl400)
+  cargo:rerun-if-env-changed=X86_64_PC_WINDOWS_MSVC_OPENSSL_NO_VENDOR
+  X86_64_PC_WINDOWS_MSVC_OPENSSL_NO_VENDOR unset
+  cargo:rerun-if-env-changed=OPENSSL_NO_VENDOR
+  OPENSSL_NO_VENDOR unset
+  cargo:rerun-if-env-changed=X86_64_PC_WINDOWS_MSVC_OPENSSL_CONFIG_DIR
+  X86_64_PC_WINDOWS_MSVC_OPENSSL_CONFIG_DIR unset
+  cargo:rerun-if-env-changed=OPENSSL_CONFIG_DIR
+  OPENSSL_CONFIG_DIR unset
+  running cd "$SRC/rust/target/x86_64-pc-windows-msvc/release/build/openssl-sys-de183cedab614fe7/out/openssl-build/build/src" && "perl" "./Configure" "--prefix=$SRC/rust/target/x86_64-pc-windows-msvc/release/build/openssl-sys-de183cedab614fe7/out/openssl-build/install" "--openssldir=SYS$MANAGER:[OPENSSL]" "no-shared" "no-module" "no-tests" "no-comp" "no-zlib" "no-zlib-dynamic" "--libdir=lib" "no-ssl3" "no-md2" "no-rc5" "no-weak-ssl-ciphers" "no-camellia" "no-idea" "no-seed" "no-capieng" "no-asm" "VC-WIN64A"
+  Configuring OpenSSL version 4.0.3 for target VC-WIN64A
+  Using os-specific seed configuration
+  cargo:warning=configuring OpenSSL build: 'perl' reported failure with exit status: 255
+  cargo:warning=openssl-src: failed to build OpenSSL from source
+
+  --- stderr
+  ***** Deprecated options: no-capieng, no-ssl3
+
+  Failure!  makefile wasn't produced.
+  Please read INSTALL.md and associated NOTES-* files.  You may also have to
+  look over your available compiler tool chain or change your configuration.
+
+
+  ******************************************************************************
+  This perl implementation doesn't produce Windows like paths (with backward
+  slash directory separators).  Please use an implementation that matches your
+  building platform.
+
+  This Perl version: 5.38.2 for x86_64-linux-gnu-thread-multi
+  ******************************************************************************
+
+
+
+  Error configuring OpenSSL build:
+      'perl' reported failure with exit status: 255
+      Command failed: cd "$SRC/rust/target/x86_64-pc-windows-msvc/release/build/openssl-sys-de183cedab614fe7/out/openssl-build/build/src" && "perl" "./Configure" "--prefix=$SRC/rust/target/x86_64-pc-windows-msvc/release/build/openssl-sys-de183cedab614fe7/out/openssl-build/install" "--openssldir=SYS$MANAGER:[OPENSSL]" "no-shared" "no-module" "no-tests" "no-comp" "no-zlib" "no-zlib-dynamic" "--libdir=lib" "no-ssl3" "no-md2" "no-rc5" "no-weak-ssl-ciphers" "no-camellia" "no-idea" "no-seed" "no-capieng" "no-asm" "VC-WIN64A"
+
+
+
+warning: build failed, waiting for other jobs to finish...
+
+######## aarch64-unknown-linux-musl
+::group::the runtime-only server for aarch64-unknown-linux-musl
++ cargo zigbuild --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target aarch64-unknown-linux-musl
+    Finished `release` profile [optimized] target(s) in 1m 44s
+c	aarch64-unknown-linux-musl	server-final	105
+::endgroup::
+::group::server test executables for aarch64-unknown-linux-musl
++ cargo-zigbuild test --no-run --locked --manifest-path $SRC/rust/server/Cargo.toml --target aarch64-unknown-linux-musl --features compile --message-format=json
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 10s
+c	aarch64-unknown-linux-musl	server-tests	191
+::endgroup::
+C ABI: skipped, Rust builds no cdylib for aarch64-unknown-linux-musl
+== aarch64-unknown-linux-musl
+    11589696  aprv-aarch64-unknown-linux-musl
+   287230912  tests/server/aprv-f1114b3cfccac1a3
+
+######## aarch64-pc-windows-msvc
+::group::the runtime-only server for aarch64-pc-windows-msvc
++ cargo xwin build --release --locked --manifest-path $SRC/rust/server/Cargo.toml --target aarch64-pc-windows-msvc
+    Finished `release` profile [optimized] target(s) in 1m 15s
+c	aarch64-pc-windows-msvc	server-final	76
+::endgroup::
+::group::server test executables for aarch64-pc-windows-msvc
++ cargo xwin test --no-run --locked --manifest-path $SRC/rust/server/Cargo.toml --target aarch64-pc-windows-msvc --features compile --message-format=json
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 01s
+c	aarch64-pc-windows-msvc	server-tests	122
+::endgroup::
+::group::the C ABI library for aarch64-pc-windows-msvc
++ cargo xwin build --release --locked --manifest-path $SRC/rust/ffi/Cargo.toml --target aarch64-pc-windows-msvc
+warning: openssl-sys@0.9.117: configuring OpenSSL build: 'perl' reported failure with exit status: 255
+warning: openssl-sys@0.9.117: openssl-src: failed to build OpenSSL from source
+error: failed to run custom build command for `openssl-sys v0.9.117 ($SRC/rust/vendor/openssl-sys)`
+note: To improve backtraces for build dependencies, set the CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true environment variable to enable debug information generation.
+
+Caused by:
+  process didn't exit successfully: `$SRC/rust/target/release/build/openssl-sys-6cc06f6e3c60ac6d/build-script-main` (exit status: 1)
+  --- stdout
+  cargo:rustc-check-cfg=cfg(osslconf, values("OPENSSL_NO_OCB", "OPENSSL_NO_SM4", "OPENSSL_NO_SEED", "OPENSSL_NO_CHACHA", "OPENSSL_NO_CAST", "OPENSSL_NO_IDEA", "OPENSSL_NO_CAMELLIA", "OPENSSL_NO_RC4", "OPENSSL_NO_BF", "OPENSSL_NO_PSK", "OPENSSL_NO_DEPRECATED_3_0", "OPENSSL_NO_SCRYPT", "OPENSSL_NO_SM3", "OPENSSL_NO_RMD160", "OPENSSL_NO_EC2M", "OPENSSL_NO_OCSP", "OPENSSL_NO_CMS", "OPENSSL_NO_COMP", "OPENSSL_NO_SOCK", "OPENSSL_NO_STDIO", "OPENSSL_NO_EC", "OPENSSL_NO_SSL3_METHOD", "OPENSSL_NO_KRB5", "OPENSSL_NO_TLSEXT", "OPENSSL_NO_SRP", "OPENSSL_NO_SRTP", "OPENSSL_NO_RFC3779", "OPENSSL_NO_SHA", "OPENSSL_NO_NEXTPROTONEG", "OPENSSL_NO_ENGINE", "OPENSSL_NO_BUF_FREELISTS", "OPENSSL_NO_RC2"))
+  cargo:rustc-check-cfg=cfg(openssl)
+  cargo:rustc-check-cfg=cfg(libressl)
+  cargo:rustc-check-cfg=cfg(boringssl)
+  cargo:rustc-check-cfg=cfg(awslc)
+  cargo:rustc-check-cfg=cfg(awslc_pregenerated)
+  cargo:rustc-check-cfg=cfg(libressl250)
+  cargo:rustc-check-cfg=cfg(libressl251)
+  cargo:rustc-check-cfg=cfg(libressl252)
+  cargo:rustc-check-cfg=cfg(libressl261)
+  cargo:rustc-check-cfg=cfg(libressl270)
+  cargo:rustc-check-cfg=cfg(libressl271)
+  cargo:rustc-check-cfg=cfg(libressl273)
+  cargo:rustc-check-cfg=cfg(libressl280)
+  cargo:rustc-check-cfg=cfg(libressl281)
+  cargo:rustc-check-cfg=cfg(libressl291)
+  cargo:rustc-check-cfg=cfg(libressl310)
+  cargo:rustc-check-cfg=cfg(libressl321)
+  cargo:rustc-check-cfg=cfg(libressl332)
+  cargo:rustc-check-cfg=cfg(libressl340)
+  cargo:rustc-check-cfg=cfg(libressl350)
+  cargo:rustc-check-cfg=cfg(libressl360)
+  cargo:rustc-check-cfg=cfg(libressl361)
+  cargo:rustc-check-cfg=cfg(libressl370)
+  cargo:rustc-check-cfg=cfg(libressl380)
+  cargo:rustc-check-cfg=cfg(libressl381)
+  cargo:rustc-check-cfg=cfg(libressl382)
+  cargo:rustc-check-cfg=cfg(libressl390)
+  cargo:rustc-check-cfg=cfg(libressl400)
+  cargo:rustc-check-cfg=cfg(libressl410)
+  cargo:rustc-check-cfg=cfg(libressl420)
+  cargo:rustc-check-cfg=cfg(libressl430)
+  cargo:rustc-check-cfg=cfg(ossl101)
+  cargo:rustc-check-cfg=cfg(ossl102)
+  cargo:rustc-check-cfg=cfg(ossl102f)
+  cargo:rustc-check-cfg=cfg(ossl102h)
+  cargo:rustc-check-cfg=cfg(ossl110)
+  cargo:rustc-check-cfg=cfg(ossl110f)
+  cargo:rustc-check-cfg=cfg(ossl110g)
+  cargo:rustc-check-cfg=cfg(ossl110h)
+  cargo:rustc-check-cfg=cfg(ossl111)
+  cargo:rustc-check-cfg=cfg(ossl111b)
+  cargo:rustc-check-cfg=cfg(ossl111c)
+  cargo:rustc-check-cfg=cfg(ossl111d)
+  cargo:rustc-check-cfg=cfg(ossl300)
+  cargo:rustc-check-cfg=cfg(ossl310)
+  cargo:rustc-check-cfg=cfg(ossl320)
+  cargo:rustc-check-cfg=cfg(ossl330)
+  cargo:rustc-check-cfg=cfg(ossl340)
+  cargo:rustc-check-cfg=cfg(ossl400)
+  cargo:rerun-if-env-changed=AARCH64_PC_WINDOWS_MSVC_OPENSSL_NO_VENDOR
+  AARCH64_PC_WINDOWS_MSVC_OPENSSL_NO_VENDOR unset
+  cargo:rerun-if-env-changed=OPENSSL_NO_VENDOR
+  OPENSSL_NO_VENDOR unset
+  cargo:rerun-if-env-changed=AARCH64_PC_WINDOWS_MSVC_OPENSSL_CONFIG_DIR
+  AARCH64_PC_WINDOWS_MSVC_OPENSSL_CONFIG_DIR unset
+  cargo:rerun-if-env-changed=OPENSSL_CONFIG_DIR
+  OPENSSL_CONFIG_DIR unset
+  running cd "$SRC/rust/target/aarch64-pc-windows-msvc/release/build/openssl-sys-5a08bdc8ec34b4dd/out/openssl-build/build/src" && "perl" "./Configure" "--prefix=$SRC/rust/target/aarch64-pc-windows-msvc/release/build/openssl-sys-5a08bdc8ec34b4dd/out/openssl-build/install" "--openssldir=SYS$MANAGER:[OPENSSL]" "no-shared" "no-module" "no-tests" "no-comp" "no-zlib" "no-zlib-dynamic" "--libdir=lib" "no-ssl3" "no-md2" "no-rc5" "no-weak-ssl-ciphers" "no-camellia" "no-idea" "no-seed" "no-capieng" "no-asm" "VC-WIN64-ARM"
+  Configuring OpenSSL version 4.0.3 for target VC-WIN64-ARM
+  Using os-specific seed configuration
+  cargo:warning=configuring OpenSSL build: 'perl' reported failure with exit status: 255
+  cargo:warning=openssl-src: failed to build OpenSSL from source
+
+  --- stderr
+  ***** Deprecated options: no-ssl3, no-capieng
+
+  Failure!  makefile wasn't produced.
+  Please read INSTALL.md and associated NOTES-* files.  You may also have to
+  look over your available compiler tool chain or change your configuration.
+
+
+  ******************************************************************************
+  This perl implementation doesn't produce Windows like paths (with backward
+  slash directory separators).  Please use an implementation that matches your
+  building platform.
+
+  This Perl version: 5.38.2 for x86_64-linux-gnu-thread-multi
+  ******************************************************************************
+
+
+
+  Error configuring OpenSSL build:
+      'perl' reported failure with exit status: 255
+      Command failed: cd "$SRC/rust/target/aarch64-pc-windows-msvc/release/build/openssl-sys-5a08bdc8ec34b4dd/out/openssl-build/build/src" && "perl" "./Configure" "--prefix=$SRC/rust/target/aarch64-pc-windows-msvc/release/build/openssl-sys-5a08bdc8ec34b4dd/out/openssl-build/install" "--openssldir=SYS$MANAGER:[OPENSSL]" "no-shared" "no-module" "no-tests" "no-comp" "no-zlib" "no-zlib-dynamic" "--libdir=lib" "no-ssl3" "no-md2" "no-rc5" "no-weak-ssl-ciphers" "no-camellia" "no-idea" "no-seed" "no-capieng" "no-asm" "VC-WIN64-ARM"
+
+
+
+warning: build failed, waiting for other jobs to finish...
+
+######## summary (wall clock per target, local-run.sh)
+aarch64-apple-darwin: exit 0 after 653 s
+aarch64-apple-darwin: exit 0 after 100 s
+x86_64-apple-darwin: exit 0 after 599 s
+x86_64-pc-windows-gnu: exit 0 after 832 s
+x86_64-pc-windows-msvc: exit 101 after 1484 s
+ALL-DONE
+precompile: exit 0 after 341 s
+aarch64-unknown-linux-musl: exit 0 after 296 s
+aarch64-pc-windows-msvc: exit 101 after 202 s
+compare: exit 0 after 750 s
+B-DONE

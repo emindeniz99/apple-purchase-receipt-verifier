@@ -1,0 +1,6 @@
+4b88b8def15507beb4b961a4e284e78def6cf56cd9ff558e9af83261d371bc4d  aprv.aarch64-apple-darwin.ccwasm
+2ede6a86e8dfb86272210314341f80bd7be1d4b56a5f6cdededce99b8c810d79  aprv.aarch64-pc-windows-msvc.ccwasm
+f17173c87c5a47360aea1969b391fd9e38ead21c663cadf49c8423116a9bf8f1  aprv.aarch64-unknown-linux-musl.ccwasm
+511683545817ecfbc4d1836751a165a96e0936a4f00dcd0e8996d1084a505d5d  aprv.x86_64-apple-darwin.ccwasm
+5b853266f3ef01a5786b09451b73a064917fdec977daf3722baba39cb698af67  aprv.x86_64-pc-windows-msvc.ccwasm
+4d3b61b0ef3ee734de85eaee793856f1ab1f68388181994edeb164de0c2b0912  aprv.x86_64-unknown-linux-musl.ccwasm

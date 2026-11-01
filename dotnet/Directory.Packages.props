@@ -10,13 +10,13 @@
     <PackageVersion Include="Wasmtime" Version="48.0.2" />
     <!-- netstandard2.0 only: net8.0 and later have it in the box. The newest
          stable release; it still ships a netstandard2.0 asset. -->
-    <PackageVersion Include="System.Text.Json" Version="10.0.12" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.13" />
     <!-- Build-time only: makes new X509Chain() and DateTime.UtcNow compile errors. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
   </ItemGroup>
 
   <ItemGroup Label="test-only">
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
-    <PackageVersion Include="Microsoft.Testing.Platform" Version="2.3.3" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <PackageVersion Include="Microsoft.Testing.Platform" Version="2.5.1" />
   </ItemGroup>
 </Project>

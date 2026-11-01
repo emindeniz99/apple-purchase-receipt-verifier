@@ -399,6 +399,17 @@ fn precompile(_: &str, _: &str, _: &str) -> i32 {
 
 // ------------------------------------------------------------ serve
 
+/// The token in `--token-file`, trimmed. A file that holds no token is a
+/// mistake, never a way to turn the token off, so it stops the server.
+fn token_from_file(p: &str) -> Result<Vec<u8>, String> {
+    let t = std::fs::read(p).map_err(|e| format!("--token-file {p}: {e}"))?;
+    let t = t.trim_ascii();
+    if t.is_empty() {
+        return Err(format!("--token-file {p}: the file holds no token"));
+    }
+    Ok(t.to_vec())
+}
+
 fn serve(o: ServeArgs) -> i32 {
     let t0 = Instant::now();
     let (listen, token, roots) = if o.managed {
@@ -416,9 +427,9 @@ fn serve(o: ServeArgs) -> i32 {
             .or_else(|| std::env::var("APRV_LISTEN").ok().filter(|s| !s.is_empty()))
             .unwrap_or_else(|| "127.0.0.1:8080".into());
         let token = match &o.token_file {
-            Some(p) => match std::fs::read(p) {
-                Ok(t) => Some(t.trim_ascii().to_vec()).filter(|t| !t.is_empty()),
-                Err(e) => return usage(&format!("--token-file {p}: {e}")),
+            Some(p) => match token_from_file(p) {
+                Ok(t) => Some(t),
+                Err(e) => return usage(&e),
             },
             None => std::env::var("APRV_TOKEN")
                 .ok()
@@ -461,10 +472,15 @@ fn serve(o: ServeArgs) -> i32 {
         .map_or(runtime::DEFAULT_TIME_LIMIT_MS, NonZeroU64::get)
         .into();
     info["token_required"] = token.is_some().into();
+    let open = token.is_none();
     let lifecycle = verifier.lifecycle_name();
     let app = Arc::new(http::App {
         verifier: Arc::new(verifier),
-        permits: tokio::sync::Semaphore::new(workers),
+        permits: Arc::new(tokio::sync::Semaphore::new(workers)),
+        uploads: Arc::new(tokio::sync::Semaphore::new(
+            workers.saturating_mul(http::UPLOADS_PER_WORKER),
+        )),
+        body_timeout: http::BODY_TIMEOUT,
         token,
         info,
     });
@@ -488,6 +504,11 @@ fn serve(o: ServeArgs) -> i32 {
             "aprv: listening on {addr}; lifecycle {lifecycle}, {workers} workers; load {load_ms:.1} ms, ready {:.1} ms",
             t0.elapsed().as_secs_f64() * 1e3
         );
+        if open && !addr.ip().is_loopback() {
+            eprintln!(
+                "aprv: warning: listening on {addr} with no token; any client that reaches it can call /v1/ (--token-file or APRV_TOKEN sets one)"
+            );
+        }
         // One line on stdout, flushed: a managed parent reads the port here.
         println!("APRV_LISTEN={addr}");
         let _ = std::io::stdout().flush();

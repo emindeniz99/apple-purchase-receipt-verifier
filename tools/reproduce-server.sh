@@ -19,7 +19,10 @@
 #
 # which precompiles the component and builds the binary that embeds it,
 # leaving <out-dir>/aprv-<target-triple> (rust/server's own interface,
-# OD-08).
+# OD-08). The precompile runs here too, with a precompiler built in this
+# clone for this host, even though the release itself takes its .ccwasm
+# from one shared precompiler (release.yml's precompile-server, built on
+# Linux x86_64 with every Cranelift backend).
 #
 # Environment: APRV_REPO_URL, APRV_TOOLCHAIN_DIR and APRV_REPRODUCE_OUT as
 # for tools/reproduce-wasm.sh. APRV_COMPONENT names a component file to
@@ -27,9 +30,14 @@
 # archives only, so on an aarch64 host the component cannot be rebuilt here;
 # the release hands this script build-wasm's component, which build-wasm
 # already rebuilt in a fresh clone on x86_64, and the rebuild below covers
-# the server stage alone. APRV_EXPECTED_COMPONENT_SHA256 is then required
-# and the file must match it. Exit status: 0 on a match, 1 on a mismatch or
-# a failed step, 2 on a usage error.
+# the server's two stages alone. APRV_EXPECTED_COMPONENT_SHA256 is then required
+# and the file must match it. APRV_EXPECTED_CCWASM_SHA256, when set, is the
+# SHA-256 of the .ccwasm the release embedded (precompile-server's output
+# for <target-triple>): the .ccwasm this rebuild precompiled must equal it,
+# which checks the shared precompiler against this independent one on
+# every release. A different .ccwasm would also change the binary; this
+# check names the cause. Exit status: 0 on a match, 1 on a mismatch or a
+# failed step, 2 on a usage error.
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
@@ -45,6 +53,11 @@ case "$TARGET" in
 esac
 if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
   echo "reproduce-server: '$EXPECTED' is not a lowercase hex SHA-256" >&2
+  exit 2
+fi
+EXPECTED_CCWASM="${APRV_EXPECTED_CCWASM_SHA256:-}"
+if [[ -n "$EXPECTED_CCWASM" && ! "$EXPECTED_CCWASM" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "reproduce-server: APRV_EXPECTED_CCWASM_SHA256 '$EXPECTED_CCWASM' is not a lowercase hex SHA-256" >&2
   exit 2
 fi
 if [[ "$(uname -m)" != "${TARGET%%-*}" ]]; then
@@ -96,6 +109,17 @@ if [[ -n "${APRV_EXPECTED_COMPONENT_SHA256:-}" && "$component_sha" != "$APRV_EXP
 fi
 
 (cd "$src" && rust/server/scripts/build-static.sh "$out/wasm/aprv.component.wasm" "$TARGET" "$out" >&2)
+if [[ -n "$EXPECTED_CCWASM" ]]; then
+  [[ -f "$out/aprv.$TARGET.ccwasm" ]] \
+    || { echo "reproduce-server: $REF's build-static.sh left no $out/aprv.$TARGET.ccwasm to compare" >&2; exit 1; }
+  ccwasm_sha="$(sha256sum "$out/aprv.$TARGET.ccwasm" | cut -c1-64)"
+  echo "reproduce-server: .ccwasm     $ccwasm_sha (precompiled here)"
+  echo "reproduce-server: shared      $EXPECTED_CCWASM (the release's .ccwasm)"
+  if [[ "$ccwasm_sha" != "$EXPECTED_CCWASM" ]]; then
+    echo "reproduce-server: MISMATCH: this precompile does not reproduce the release's .ccwasm" >&2
+    exit 1
+  fi
+fi
 actual="$(sha256sum "$out/aprv-$TARGET" | cut -c1-64)"
 echo "reproduce-server: aprv ($TARGET) $actual (rebuilt from $commit)"
 echo "reproduce-server: expected      $EXPECTED"

@@ -669,6 +669,17 @@ sets the property below 9 would refuse every genuine receipt as
 the property after create is not caught by create; the
 [canary](#running-in-production) catches it.
 
+**What the nesting costs.** Measured 2026-10-31 on OpenJDK 21 with
+bcprov 1.86 in one shared 4-core container, by `WorstCaseDepthCostTest`'s
+shape after 30 warm-up calls: a receipt at the 3 MiB cap filled with
+nested SETs takes a median of 104, 177, 264 and 478 ms to refuse at 2,
+16, 32 and 59 levels. A genuine receipt at the cap verifies in about
+33 ms. The JIT barely helps: the first call at 59 levels took 457 ms. The
+cost grows with the bytes and the depth and stops at the bound, and the
+library has no depth guard of its own (DECISIONS.md R20 says why). A
+host that needs a lower ceiling bounds concurrent calls and the time per
+call, as `aprv-server` does.
+
 Apple's own endpoint answers a request body of exactly 3,145,728 bytes and
 sends HTTP 413 for 3,145,729 (measured 2026-09-23 against both of Apple's
 verifyReceipt URLs; counted in UTF-8 bytes, not characters). Any HTTP layer
@@ -1154,20 +1165,32 @@ the `parse(...)` call, and add the fingerprint Apple lists on its PKI page
 (check it with `sha256sum` on the DER file) to `AppleRootCertsTest`, which
 pins the set against both.
 
-**The tests need the shared fixtures.** They read `../fixtures`
-relative to the test JVM's working directory (Maven: the project basedir),
-which is `fixtures/` beside your project directory, or the directory
+**The tests need the shared fixtures.** They read the directory
 `-Daprv.fixtures.dir=...` names. Maven forwards that property to the tests;
-Gradle needs `test { systemProperty 'aprv.fixtures.dir', '...' }`. The subset they
+Gradle needs `test { systemProperty 'aprv.fixtures.dir', '...' }`. With the
+property unset, as under an IDE's own JUnit runner, they read `../fixtures`
+relative to the test JVM's working directory if it holds `cases.json`, else
+the nearest `fixtures/` holding `cases.json` at or above the directory the
+compiled tests sit in. So an IDE run with `fixtures/` at your project root,
+or beside your project directory, needs no runner setting. Maven always
+passes the property (the pom defaults it to `fixtures/` beside the project
+directory), so under Maven any other layout needs `-Daprv.fixtures.dir=...`.
+A vendored copy that keeps the data inside its own module can put
+`fixtures/` and `certs/` under `src/test/resources/`: the build copies them
+beside the compiled tests, where the lookup finds them, and its own build
+then passes no property. The subset they
 use is `cases.json`, `generated/`, `generated-0.7/`, `limits/`,
 `public-receipts/` and `apple-official/`; `cases.schema.json` is not
 read. `AppleRootCertsTest` also reads `certs/`, the sibling of the
 fixtures directory. If either directory is missing, the tests that read it
 fail with one message that names the path expected and points here; they do
 not skip. Two tests read the build itself, relative to the working
-directory. `TrustStoreIsolationTest` scans whichever of `src/main/java`
-and `src/shared/java` exists, so step 1's merged root passes when it is
-`src/main/java`, and fails only when neither is there.
+directory. `TrustStoreIsolationTest` scans the library's package
+directory, the test's own package, under whichever of `src/main/java` and
+`src/shared/java` exists. So step 1's merged root passes when it is
+`src/main/java`, a relocated copy scans its own package and not the rest
+of the host's sources, and the test fails only when neither root holds
+the package.
 `BouncyCastleFloorTest` has one method that reads `./pom.xml` for
 `<bouncycastle.version>X.Y[.Z]</bouncycastle.version>` and compares it with
 the bcprov loaded; it is the one test to adapt to your own build. Declare

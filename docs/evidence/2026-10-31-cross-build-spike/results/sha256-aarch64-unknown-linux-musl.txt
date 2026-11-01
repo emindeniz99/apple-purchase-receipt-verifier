@@ -1,0 +1,2 @@
+9972a3a3b7da527c394ef3b67750d1d67fee1c2cd44cb9fd8a4957fcd378c8a7  aprv-aarch64-unknown-linux-musl
+8cdcb1b5a1a090e07c6f924c34e7f64fcde4f0aafa34cd7209d734b1beb5c941  tests/server/aprv-f1114b3cfccac1a3

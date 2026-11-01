@@ -99,7 +99,7 @@ npm ci --ignore-scripts --prefix node && npm test --prefix node
 # Go (1.25+)
 go -C go test ./...
 
-# Python (3.10+)
+# Python (3.11+)
 (cd python && uv run --locked --extra dev python -m unittest discover -s tests)
 
 # Ruby (3.3+)

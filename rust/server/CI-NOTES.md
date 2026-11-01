@@ -43,6 +43,14 @@ COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh $COMPONENT       
 COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh $COMPONENT aarch64-unknown-linux-musl  # arm leg
 BIN=dist/aprv-<target>
 
+# the release's mode (x86_64 leg): stage 2 alone around the .ccwasm stage 1
+# wrote, copied elsewhere first, must build the same binary, and with
+# COMPONENT_SHA256 set to another hash it must refuse
+mkdir -p /tmp/in
+cp dist/aprv.<target>.ccwasm dist/aprv.<target>.ccwasm.json /tmp/in/
+COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh --ccwasm /tmp/in/aprv.<target>.ccwasm <target> /tmp/out
+cmp $BIN /tmp/out/aprv-<target>
+
 # a static binary runs with nothing around it
 mkdir -p /tmp/empty && cp $BIN /tmp/empty/aprv && sudo chroot /tmp/empty /aprv info
 
@@ -115,7 +123,10 @@ attaches its SBOM (MIGRATION.md step 2.10, lane D).
 
 ## Release (`release.yml`, lane D)
 
-`build-server` runs `scripts/build-static.sh` per Linux target with no
-cache and with `COMPONENT_SHA256` set to the `build-wasm` output, and
-uploads `dist/aprv-<target>` (and its `.ccwasm.json` manifest for the
-record). The classifier jars (R26) take those binaries.
+`precompile-server` builds the full binary once on Linux x86_64 with
+`wasmtime/all-arch` and runs `aprv precompile` for every release target.
+`build-server` runs `scripts/build-static.sh --ccwasm` per target with no
+cache and with `COMPONENT_SHA256` set to the `build-wasm` output, so it
+builds stage 2 around that target's `.ccwasm`, and uploads
+`aprv-<target>` (and its `.ccwasm.json` manifest for the record). The
+classifier jars (R26) take those binaries.

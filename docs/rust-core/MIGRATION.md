@@ -261,7 +261,8 @@ publishing matches it). A `build-wasm` job builds `aprv.wasm` and the
 component once with no cache, attests both (SLSA provenance) and attaches
 their SBOMs; a `build-server` job builds the server binaries per platform
 with no cache, embedding a `.ccwasm` precompiled from that component for
-an explicit baseline target with the serving binary's Wasmtime features;
+an explicit baseline target with the serving binary's Wasmtime features
+(one `precompile-server` job writes every target's `.ccwasm` on Linux);
 the publish jobs take those artifacts and never rebuild them. `publish-maven` deploys both
 artifactIds and the classifiers; a `publish-image` job pushes to GHCR;
 a `release-assets` job with `contents: write` uploads `aprv.wasm`, the

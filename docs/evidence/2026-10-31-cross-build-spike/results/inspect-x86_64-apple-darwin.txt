@@ -1,0 +1,47 @@
+== aprv-x86_64-apple-darwin (11903096 bytes)
+   Mach-O 64-bit x86_64 executable
+   LC_VERSION_MIN_MACOSX
+     version 10.12
+     sdk 27.0
+   code signature: no
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+== ffi/libapple_purchase_receipt_verifier_ffi.dylib (8729840 bytes)
+   Mach-O 64-bit x86_64 dynamically linked shared library
+   LC_VERSION_MIN_MACOSX
+     version 10.12
+     sdk 27.0
+   code signature: no
+   links @rpath/libapple_purchase_receipt_verifier_ffi.dylib (compatibility version 1.0.0, current version 1.0.0)
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+== tests/ffi/apple_purchase_receipt_verifier_ffi-5b00985dbdb0935f (8499460 bytes)
+   Mach-O 64-bit x86_64 executable
+   LC_VERSION_MIN_MACOSX
+     version 10.12
+     sdk 27.0
+   code signature: no
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+   lines holding $SRC/rust/: 3
+== tests/ffi/exported_symbols-b6d8096d2af20c92 (1270806 bytes)
+   Mach-O 64-bit x86_64 executable
+   LC_VERSION_MIN_MACOSX
+     version 10.12
+     sdk 27.0
+   code signature: no
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   lines holding $SRC/rust/: 1
+== tests/server/aprv-feee364e9d956340 (52719005 bytes)
+   Mach-O 64-bit x86_64 executable
+   LC_VERSION_MIN_MACOSX
+     version 10.12
+     sdk 27.0
+   code signature: no
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+   lines holding $SRC/rust/: 10
