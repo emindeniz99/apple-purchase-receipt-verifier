@@ -46,7 +46,7 @@ what the evidence ran; CI adds the legs MIGRATION.md lists.
 | RubyGems | the `wasmtime` gem | prebuilt gems for `x86_64-linux`, `x86_64-linux-musl`, `aarch64-linux`, `aarch64-linux-musl`, `x86_64-darwin`, `arm64-darwin`, `x64-mingw-ucrt`, `aarch64-mingw-ucrt` | Linux x86-64, Ruby 3.3.6 ([Ruby][ruby]) |
 | NuGet | the `Wasmtime` package | `linux-x64` (glibc 2.28), `linux-arm64` (glibc 2.18), `osx-x64`, `osx-arm64`, `win-x64`, `win-arm64` | Linux x86-64, .NET 8 and 10 ([.NET][dotnet]) |
 | Packagist | `aprv-server` | where a server binary exists, or through a server URL | Linux x86-64, PHP 8.4 ([aprv-server §7][server]) |
-| `aprv-server` | Wasmtime 49 in its own process | Linux x86_64 and aarch64 (static musl); macOS x86_64 and arm64; Windows x86_64 and arm64 | Linux x86-64 glibc and musl; aarch64 musl under QEMU for correctness only ([static musl][musl]) |
+| `aprv-server` | Wasmtime 49 in its own process | Linux x86_64 and aarch64 (static musl); macOS x86_64 (10.12+) and arm64 (11.0+); Windows x86_64 and arm64 | Linux x86-64 glibc and musl; aarch64 musl under QEMU for correctness only ([static musl][musl]) |
 | C ABI | native, from source | wherever stable Rust and OpenSSL build | Ubuntu, macOS and Windows in `rust-ffi`, as today |
 
 Notes on the rows:

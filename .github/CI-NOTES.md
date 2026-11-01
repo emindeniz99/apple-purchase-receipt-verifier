@@ -150,7 +150,10 @@ run.
   `sums` and builds `aprv-<target>[.exe]` around them with
   `build-static.sh --ccwasm` (stage 2 only; musl legs install
   `musl-tools`), which refuses a `.ccwasm` precompiled from any component
-  but build-wasm's (`COMPONENT_SHA256`).
+  but build-wasm's (`COMPONENT_SHA256`). The macOS legs check the minimum
+  macOS each binary declares (`otool -l`: `LC_BUILD_VERSION` minos, or
+  `LC_VERSION_MIN_MACOSX` below 10.14) against the matrix's `minos`,
+  rustc's default deployment target, which `SUPPORT-MATRIX.md` states.
 - `reproduce-server` rebuilds the two Linux builds in a fresh clone
   (`tools/reproduce-server.sh` with `-` for the expected hash) beside
   build-server: it needs build-wasm only, so the x86_64 leg no longer
