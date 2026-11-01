@@ -78,8 +78,8 @@ const IAP_CANCELLATION_REASON: u32 = 1720;
 /// type in ascending order, each type's value octets in receipt order. That
 /// covers an attribute type the library does not model, the second and
 /// later copies of a known attribute, and a known attribute whose value
-/// does not parse (its typed field is then `None`). Nothing Apple signed is
-/// lost.
+/// does not parse (its typed field is then `None`). Each entry keeps the
+/// attribute's value octets; its `version` integer is not kept.
 pub type UnknownAttributes = BTreeMap<u32, Vec<Vec<u8>>>;
 
 /// A verified legacy app receipt.
