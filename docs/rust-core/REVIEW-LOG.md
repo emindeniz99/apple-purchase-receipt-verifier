@@ -4,6 +4,8 @@ Status: written 2026-09-29 for the owner's one read at the final pull
 request, in three rounds. Round 1 (sections 2 to 9) reviewed the OpenSSL
 core; round 2 (section 10) reviewed round 1's fix commits and the ABI crate;
 round 3 (section 11) reviewed round 2's fix commits and lane A3's core work.
+Round 4 (section 12, 2026-10-31) is a later pass over the shipped core and
+`aprv-server`, with the owner's decision on every finding.
 This log records what each review found, what was done about it, and what
 nobody looked at. It works toward MIGRATION.md step 1.10: section 11.9 names
 the last commits with no second reader and what closes the step.
@@ -1032,3 +1034,75 @@ author except lane A-fix3's 18 commits above. The host wrappers, `aprv-server`,
 the CI wiring and the Phase 7 lane were outside all three reviews' scope. The step closes with the owner's
 read of this log at the end, or with a round 4 on those commits if the owner
 asks for one.
+
+## 12. Round 4: the 2026-10-31 pass
+
+### 12.1 What was reviewed and how
+
+Main at 7581135 and the commits after it, against crate version 0.12.0:
+
+- **Two adversarial reviews** by agents that did not write the code. One
+  covered the legacy receipt path: `receipt.rs`, `path.rs`, `roots.rs` and
+  the OpenSSL adapter's CMS, X.509 and ASN.1 code, with OpenSSL 4.0.3's own
+  sources. The other covered the rest: JWS, JSON, base64, the endpoint, the
+  ABI crate, the C ABI and `aprv-server`. Each built a proof only where a
+  finding needed one.
+- **Coverage and mutation testing** of `rust/src` and `rust/openssl/src`
+  ([coverage and mutants](../evidence/2026-10-31-core-coverage-mutants.md)).
+- **Two external audit lists** written with ChatGPT. Each finding on them
+  was checked against main, and only the dispositions are recorded here.
+
+### 12.2 The result
+
+No input verified without a valid signature under a configured root, and
+none moved the instant the chain is judged at. No genuine Apple input was
+refused. No memory-safety problem, and no panic reachable from input. Lines
+are 95.9 % covered, branches 85.8 %, and 91.6 % of the mutants that compile
+are caught.
+
+### 12.3 Findings fixed
+
+| Finding | Where | Fix |
+|---|---|---|
+| A client that disconnected freed its worker while the guest call ran on, so calls ran past `--workers` and the pool grew past them | `rust/server/src/http.rs` | #467: the permit moves into the blocking closure |
+| An empty or whitespace-only `--token-file` started the server with no token | `rust/server/src/main.rs` | #468: such a file stops the server at start |
+| Request bodies were read before any limit, with no deadline | `rust/server/src/http.rs` | #468: four upload permits per worker, held until a worker takes the call; 408 after 30 s |
+| No warning when binding beyond loopback without a token | `rust/server/src/main.rs` | #468: a warning on stderr |
+| A failing `readelf` passed the static-binary checks | `release.yml`, `build-static.sh` | #469: each `readelf` runs on its own first |
+| `build-static.sh` treated a target of the same CPU but another OS as native | `build-static.sh` | #469: the OS must match too |
+| The permit test timed out on a macOS runner, whose sleep-counted guest limit ran long | `rust/server/src/tests.rs` | #468: a 1 s guest and a loose bound on the wait |
+
+### 12.4 Findings accepted, with the reason (owner, 2026-10-31)
+
+| Finding | Reason |
+|---|---|
+| Many unsigned ASN.1 attributes raise the cost of a call | Measured on 2026-10-14: every hostile shape costs at most 77 ms natively at the 3 MiB cap and grows linearly ([cost scan](../evidence/2026-10-14-core-october-cost-scan.md)). `aprv-server` bounds calls by workers, guest time and, since #468, bodies in flight. |
+| The JWS `crit` header is ignored | R44: Apple's own library ignores it too, and the header is signed by Apple's key. |
+| The return of `OPENSSL_init_crypto` is not checked | It fails only when allocation fails at start, and every later OpenSSL call then fails, so no input verifies. Checking it would break the adapter's "nothing panics" rule or change all 18 callers. |
+| `DigestBio` does not tell a read error from end of input | A memory BIO under SHA-2 cannot fail partway. The worst theoretical outcome is a genuine receipt refused, never a forged one accepted. No error handling is added for a case that cannot happen. |
+| The path search returns at the first `None` | `None` means an allocation failed, never a failed path, which moves on to the next anchor. Stopping on an internal error fails closed. |
+| The C ABI's string calls stop at the first NUL | Documented. The `_bytes` calls are the ones for untrusted input. |
+| The ABI crate trusts the pointers a host passes | Exploiting it needs a deliberately malicious host, which is outside the trust boundary. |
+| The core may hash the content up to 36 times for one envelope that repeats the signer certificate | Bounded: 4 SignerInfos and 9 copies, linear in the input. The fix, removing duplicate matches, changes no verdict and goes with the test pull request. |
+| On macOS the guest time limit can run longer in wall time than `--time-limit-ms` | The limit is counted in sleep ticks. `aprv-server` deployments run on Linux; not changed. |
+
+### 12.5 No longer applicable
+
+- `signer_digest_known` (round 1's residual): the function no longer
+  exists.
+- The keyless target path accepting issuers `X509_verify_cert` would refuse
+  affects only the reason, and R20 keeps it on its own grounds.
+- The .NET `NU1004` nightly failure: fixed by #459.
+
+### 12.6 Test gaps, closed in the pull request that follows this log
+
+From the mutants and the reviews: a signed `contentType` attribute whose
+value is not an OID; a duplicate extension other than basicConstraints and
+keyUsage; a JWS leaf that is RSA or on a curve other than P-256; an anchor
+trusted outside its validity or without the CA flag; a digest OpenSSL
+cannot initialise; the shared cases for a high-S JWS signature, an ignored
+`crit` header, a JWS path that is not leaf, `x5c[1]` and root, and a
+receipt with no eContent. The rest of the missed mutants change only a
+reason's order, Display output, or code that cannot be reached, and are
+accepted as listed in the evidence note.
+

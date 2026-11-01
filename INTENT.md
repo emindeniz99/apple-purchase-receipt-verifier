@@ -41,7 +41,7 @@ answers the same shared cases beside it:
 | [`java/`](./java) | Java 8+ | the independent Java implementation |
 | [`java-wasm/`](./java-wasm) | Java 8+ | the core, on Endive (Java 11+) or `aprv-server` (Java 8) |
 | [`node/`](./node) | Node.js 20+ | the core, as `aprv.wasm` |
-| [`python/`](./python) | Python 3.10+ | the core, as `aprv.wasm` |
+| [`python/`](./python) | Python 3.11+ | the core, as `aprv.wasm` |
 | [`swift/`](./swift) | Swift 6.3+ | the core, as `aprv.wasm` |
 | [`go/`](./go) | Go 1.25+ | the core, as `aprv.wasm` |
 | [`ruby/`](./ruby) | Ruby 3.3+ | the core, as `aprv.wasm` |

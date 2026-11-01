@@ -773,7 +773,7 @@ the signature, and has not been re-measured.
 
 | Host | Memory | CPU and time |
 |---|---|---|
-| `aprv-server` | 256 MiB of linear memory and one instance per store; a larger grow traps | 10 s of guest time per call by default (epoch interruption); a semaphore of one worker per CPU; the 3 MiB body cap, answered with 413 |
+| `aprv-server` | 256 MiB of linear memory and one instance per store; a larger grow traps; at most four request bodies per worker received or queued at once, each cut to the 3 MiB cap | 10 s of guest time per call by default (epoch interruption); a semaphore of one worker per CPU, held until the guest call ends; a body must arrive within 30 s of admission or gets 408; the 3 MiB body cap, answered with 413 |
 | Go, Python, Ruby, .NET | 256 MiB of linear memory per instance; an instance past it traps and is discarded (.NET also drops an instance that grew past 64 MiB) | no guest time limit |
 | Swift | no per-instance limit in WasmKit's public API; an instance whose memory grew past 64 MiB is dropped | no guest time limit |
 | Node | the engine's limit for a 32-bit memory; workerd's 128 MB isolate | the platform's own CPU limits |
@@ -793,8 +793,11 @@ the core's bounds are what keep every call short (§3.7). Only
   `-p 127.0.0.1:8080:8080`.
 - **Token.** With a token configured (`--token-file` or `APRV_TOKEN`), a
   `/v1/` request without the right `X-Aprv-Token` gets 401. A server bound
-  beyond loopback should always have one. The health, readiness and
-  OpenAPI routes need no token.
+  beyond loopback should always have one, and `aprv serve` prints a
+  warning on stderr when it binds beyond loopback without one. A
+  `--token-file` that holds no token (empty or only whitespace) stops the
+  server at start rather than turning the token off. The health, readiness
+  and OpenAPI routes need no token.
 - **Plain HTTP.** The server speaks HTTP without TLS. It is meant for
   loopback, a sidecar or a private network; TLS termination belongs to the
   deployment.

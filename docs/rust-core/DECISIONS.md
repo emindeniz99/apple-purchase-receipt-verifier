@@ -607,6 +607,7 @@ cRLDistributionPoints, 2026-10-06).
   | A certificate-bag entry beside Apple's chain whose issuer and subject each hold a SET as a commonName value | not measured | ok since Q140 a (2026-10-13): `PreTrustScreen.convertible` passes over a bag entry whose names hold a value that is not a string, and Apple's chain verifies | `MALFORMED`, "malformed CMS structure: not a CMS ContentInfo", measured 2026-10-14 with `cargo test`; the scan measured the shape nested 23 deep from 5.7 KB to the cap ([October cost scan][octscan]) | OpenSSL's Name grammar refuses a SET as an attribute value at any size or depth (`tag2bit` maps tag 17 outside `ASN1_PRINTABLE`'s mask), so the whole ContentInfo fails to decode whatever the bounds. Apple's names hold PrintableString and UTF8String; the core fails closed on unsigned packaging, the direction the nesting rows above record, and nothing unsigned is accepted either way | `receipt/accept-genuine-beside-a-stranger-whose-names-hold-a-set`, which allows both |
   | A genuine RSASSA-PSS signature on a receipt, under the test PKI | not measured | ok since Q142 a (2026-10-13): the saltLength is bounded by the signer's key before BouncyCastle builds a verifier, because building one allocates it. Earlier the same day, under Q137 a, the label was refused and the receipt was `INVALID_SIGNATURE` | ok (measured 2026-10-13) | OpenSSL verifies PSS. Apple does not sign receipts with RSA-PSS today, but an input Apple signed must not be refused after a future change on its side (Q142 a), so Java bounds the salt instead of refusing the label and the case, which allowed both, now expects ok of both | `receipt/signer-rsa-pss-does-not-crash` |
   | A receipt date whose offset moves the instant past 9999-12-31T23:59:59.999Z or before 0000-01-01T00:00:00Z (`9999-12-31T23:59:59-00:01`, `0000-01-01T00:00:00+00:01`) | not measured | read (owner, 2026-10-12): a `long` holds the instant and the endpoint's `uuuu` renders the year | null, kept raw | jiff's calendar ends at 9999, so the core reads only dates it can render. Before trust only the creation date is read, and such a date only moves the chain instant to where no certificate is valid (`INVALID_CERTIFICATE`); the other dates are informational | `receipt/rfc3339-date-forms` (purchases 318 and 319 are not pinned) |
+  | A JWS whose `x5c` is leaf, root, root: the pinned root issued the leaf directly and stands in `x5c[1]`, carrying the WWDR marker, every signature genuine | not measured | ok: `authenticateTopDown` finds the root signed by a pinned root (itself) and a CA, and the leaf signed by it; PKIX validates `[leaf, root]` against the anchor; both markers are there | `UNTRUSTED_CHAIN` (measured 2026-10-31 with `cargo test`): OpenSSL builds leaf, root, two certificates, and `validate_pair` accepts only leaf, `x5c[1]`, pinned root ("path is not leaf, x5c[1], pinned root", read from the source) | Every certificate is signed under the pinned root, so nothing unsigned is accepted either way. Apple's roots carry no WWDR marker, so a leaf one of them signed directly would fail Java's marker check as `INVALID_CERTIFICATE_PURPOSE` (read from `JwsCore`, not measured), and Apple's chains are leaf, intermediate, root (recorded 2026-10-31, no code in either implementation) | `signed-data/reject-an-x5c-whose-intermediate-is-the-root`, which allows ok and `UNTRUSTED_CHAIN` |
   | A genuinely signed JWS whose header nests 65 deep, or carries a member name of 50,001 characters or an integer of 1,001 digits | `MALFORMED` | `MALFORMED` for the name and the integer (Jackson's defaults: names 50,000, numbers 1,000); ok for the nesting since 2026-10-05 (Jackson's default depth, 1,000; `BoundedJson`'s 64 before) | ok (port-defined 2026-10-01) | The core reads a document into a map of raw member values and skips what nobody reads, with no nesting or length bound of its own (R40); the size caps bound the work. An Apple header carries `alg` and `x5c`, two levels deep, so the cases allow both | `signed-data/reject-a-header-nested-65-deep`, `signed-data/reject-a-header-member-name-of-50001-characters`, `signed-data/reject-a-header-number-of-1001-digits` |
   | A genuinely signed JWS payload nested 65 deep | `UNREADABLE_PAYLOAD` | ok since 2026-10-05 (Jackson's default depth, 1,000; `UNREADABLE_PAYLOAD` before) | ok (port-defined 2026-10-01) | The same reader: the payload is read, `signedDate` with it, and the signature verifies. Nothing unsigned is accepted; the case allows both | `signed-data/unreadable-payload-nested-65-deep` |
   | A JWS payload whose `signedDate` is a number of more than 1,000 digits, beside a `receiptCreationDate` | not measured | the chain at the clock: Jackson's `maxNumberLength` (1,000) fails the whole read, so no date is read, and a payload whose signature verifies ends at `UNREADABLE_PAYLOAD` | the chain at `receiptCreationDate` | A number past `i64` is no instant, so the core skips `signedDate` and takes its stand-in (Q67). Apple never emits such a number, so a JWS that carries one is forged; there each implementation still fails, and only the reason can differ | none: no case pins it |
@@ -619,7 +620,7 @@ cRLDistributionPoints, 2026-10-06).
   | Signed attributes in DER order, one of which holds its values out of DER order | not measured | since Q140 a (2026-10-13) ok when the signature covers the bytes as sent and `INVALID_SIGNATURE` when it covers the values sorted; the reverse before | ok when the signature covers the values sorted, `INVALID_SIGNATURE` over the bytes as sent | OpenSSL re-encodes the attributes in the order sent and each attribute's SET OF values in DER order (measured 2026-10-13, `SignedAttrsOrderProbe`); Java hashes the bytes as sent, so that a cap-sized nested value is not sorted before trust. RFC 5652 5.3 requires DER, so neither input comes from a conforming signer, and each answer still needs a signature by a key under a pinned chain. Apple's receipts carry no signed attributes | none: measured by an evidence probe, not a case |
   | A leaf whose AuthorityKeyIdentifier names a key other than the issuing intermediate's SubjectKeyIdentifier, in a JWS `x5c` chain that otherwise verifies | not measured | ok: BouncyCastle's PKIX validator matches issuer by name and signature, not by key identifier | `UNTRUSTED_CHAIN` (OpenSSL checks the identifiers) | The signature still has to verify under the intermediate's real key, and Apple's chains carry matching identifiers (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | An ES256 JWS whose leaf key is on a curve other than P-256 with a 32-byte order (secp256k1, brainpoolP256r1) | not measured | ok: the 64-byte signature verifies under whatever curve the leaf names | `INVALID_SIGNATURE` | RFC 7518 ties ES256 to P-256. Apple's leaves are P-256 and a foreign leaf chains to no pinned root; a P-384 leaf is `INVALID_SIGNATURE` in both (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
-  | A version 1 or 2 certificate that carries extensions, on the path | not measured | refused at parse (BouncyCastle: "version 1 certificate contains extra data") | ok | OpenSSL and the core accept any version from 1 to 3 and read the extensions whatever it says. Apple's certificates are v3, and the path is signed either way (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
+| A version 1 or 2 certificate that carries extensions, on the path | not measured | refused at parse (BouncyCastle: "version 1 certificate contains extra data") | ok | OpenSSL and the core accept any version from 1 to 3 and read the extensions whatever it says. Apple's certificates are v3, and the path is signed either way (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
   | An authorityInfoAccess or certificatePolicies extension whose value does not decode, on a certificate on the path | not measured | refused at parse: BouncyCastle decodes both | ok | OpenSSL does not cache either (`crypto/x509/v3_purp.c:443-733`) and the core asks for no policy check, so nothing decodes them. The certificate is still signed by its issuer, and Apple's certificates carry extensions that decode (recorded 2026-10-05, owner: no code) | none: measured by a review probe, not a case |
 
   The four rows recorded on 2026-10-05 above the last two came out of
@@ -1196,6 +1197,48 @@ cRLDistributionPoints, 2026-10-06).
   1,000), which the size caps make sufficient. The three inputs nested
   65 deep now read in both, so the group names only the member name and
   the integer.
+- **Java keeps no ASN.1 depth guard of its own** (owner, 2026-10-31). A
+  receipt at the 3 MiB cap filled with nested SETs costs Java about
+  480 ms warm at 59 levels against 33 ms for a genuine receipt at the cap
+  (java/README.md, "Resource bounds"). A guard at the core's 32 would
+  roughly halve that, but it needs one at each of the three parses Java
+  makes before trust (the envelope, the payload read for the creation
+  date, the JWS chain) and leaves the stack figures unchanged. If one is
+  ever added, it refuses past 32 levels, counted as the core counts, at
+  all three sites, so it adds no divergence and turns the 33-deep
+  `oneOf` cases into single answers. Revisit when a BouncyCastle release
+  moves its 64-level bound or a host measures this cost as an incident.
+- **Neither implementation refuses an RSA public exponent of 1** (owner,
+  2026-10-31). Under e = 1 any crafted PKCS#1 block is a valid
+  signature, so a CA certificate on such a key would let its holder
+  sign anything with no private key. Only a CA the pinned intermediate
+  really signed gets that far, and issuing one takes the intermediate's
+  private key, which can issue any certificate anyway. So Java and the
+  core both accept that chain and agree. The worst-case test that
+  claimed otherwise passed only when BouncyCastle refused its random
+  modulus for a small prime factor, which is most draws but not all.
+  It now crafts the CA's signature too: the attack with no key at all,
+  refused under every modulus it tries. Refusing exponents below 3 would
+  be a behavior change in both implementations with a shared case; Apple
+  issues 65537.
+- **A bag certificate with an untagged RSASSA-PSS label** (recorded
+  2026-10-31, from the Rust port of the worst-case suites). The entry is
+  a garbage-signed stranger whose signature label is RSASSA-PSS with its
+  parameters in BouncyCastle's untagged form: a plain SEQUENCE of the
+  hash, the MGF1 algorithm and two INTEGERs, without RFC 8017's
+  `[0]` to `[3]` tags. Beside a genuine chain, Java refuses the whole
+  receipt as `MALFORMED`, because BouncyCastle's certificate converter
+  throws on those parameters
+  (`WorstCaseLegacyDeepTest.nonstandardPssParameterFormsAreRefusedCleanlyAtTheBagDecode`).
+  The core passes the entry over, since no pinned root vouches for it,
+  and the receipt verifies. As the receipt's signer, the entry is refused
+  by both: `MALFORMED` in Java and `UNTRUSTED_CHAIN` in the core. The
+  difference runs the safe way: the core accepts nothing unsigned, and
+  Java refuses a receipt whose signature is genuine because of unsigned
+  packaging Apple never writes. Apple's chains carry no PSS labels. By
+  the rule above it is recorded, not fixed.
+  `rust/tests/worst_case_legacy_deep.rs` prints the core's verdict for
+  the junk half, and no shared case pins it.
 
 ---
 
@@ -1610,7 +1653,7 @@ owner chose neither.
 ## R30. Floors
 
 **Status: accepted** (owner, 2026-09-28; Q54). Amended 2026-09-30: the
-policy and Go's floor, below.
+policy and Go's floor, below; 2026-10-31: Python's floor.
 
 Java 8 (both artifacts); Python 3.10; Swift 6.3 with macOS 15 and iOS 18;
 Ruby 3.3; .NET netstandard2.0, tested on net8+; Node 20; Go as today; PHP
@@ -1627,6 +1670,12 @@ does not move it. Go moves from 1.22 to 1.25, because wazero 1.12 needs
 8.2, Ruby 3.3, .NET 8 (netstandard2.0), Swift 6.3 and Java 8 stay. The
 Go change (the `go` directive, wazero and the CI legs) landed with the
 dependency sweep (#204).
+
+**2026-10-31 (owner).** Python moves from 3.10 to 3.11. platformdirs, one
+of the package's two runtime dependencies, needs 3.11 from 4.13, so the
+3.10 floor held it at 4.12; CPython 3.10's support had also ended. The
+`python` and `python-musl` matrices drop their 3.10 legs, and the
+install-failure and post-publish smoke jobs move to 3.11.
 
 ---
 

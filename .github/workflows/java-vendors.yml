@@ -1,0 +1,106 @@
+# The Java suite on every other JDK vendor setup-java installs, as a
+# reusable workflow, so ci.yml and nightly.yml run the one definition.
+#
+# The java job covers the version lines on Temurin; this one covers the
+# builds a consumer actually runs on: another vendor's crypto providers,
+# default java.security. The port pins its own BouncyCastle instance and
+# never asks the JCA for a provider by name, so a vendor difference should
+# not reach a verdict; this job is what makes that a tested claim. Semeru
+# (OpenJ9) is not in the list: OpenJ9 0.61.0's JIT miscompiles
+# BouncyCastle's DERSet.encode after warm-up, so its legs failed on the JVM
+# rather than on the library in some runs and passed in others
+# (docs/evidence/2026-10-13-openj9-derset-jit.md; owner, 2026-10-13). Every
+# vendor here runs HotSpot. Each vendor runs on 21 and 25 and, where it
+# still ships one, on the Java 8 floor. Maven runs on Temurin 25 and
+# surefire forks the vendor's JVM (the jdk8-runtime profile's `jvm`
+# override), so javac and the build are the same for every leg and only the
+# runtime varies. Which vendor ships which line was measured, not assumed:
+# docs/evidence/2026-10-05-java-jdk-vendors.md.
+#
+# Callers:
+#   ci.yml, pull request  `subset: true`, two legs (see the matrix)
+#   ci.yml, push          the whole matrix, `continue-on-error: true`: a
+#                         push to main is release.yml's ci-passed gate, and
+#                         a vendor's download outage must not hold a release
+#                         that Temurin already tested
+#   nightly.yml           the whole matrix, failures open the nightly issue
+name: java-vendors
+
+on:
+  workflow_call:
+    inputs:
+      subset:
+        description: Run only the two pull-request legs.
+        type: boolean
+        default: false
+      continue-on-error:
+        description: Let a failed leg leave the calling run green.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  java-vendors:
+    name: java on ${{ matrix.vendor }} ${{ matrix.jdk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.continue-on-error }}
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [corretto, dragonwell, graalvm, jetbrains, kona, liberica,
+                 microsoft, oracle, redhat, sapmachine, zulu]
+        jdk: ["8", "21", "25"]
+        # The first list: lines the vendor does not ship through setup-java
+        # (measured on 2026-10-05; the evidence note has each refusal). Drop
+        # an entry when the vendor starts shipping the line.
+        #   graalvm, jetbrains, microsoft, oracle, sapmachine: no 8
+        #   redhat: no 25
+        #   redhat 21: setup-java finds Red Hat builds through the Foojay
+        #     Disco API, which stopped listing Red Hat 21 on 2026-10-06 (its
+        #     packages query for Red Hat answers "No package(s) found"); the
+        #     leg failed before any test ran. Drop the entry when Foojay
+        #     lists Red Hat 21 again.
+        #
+        # The second list, with `subset` only, keeps two legs:
+        #   corretto 8   the Java 8 floor on a non-Temurin build that is still
+        #                updated (Amazon Corretto 8), on the jdk8-runtime
+        #                path;
+        #   graalvm 25   the newest line on the one HotSpot vendor here whose
+        #                JIT is not C2 (Oracle GraalVM compiles hot code with
+        #                the Graal compiler), the closest a single leg gets to
+        #                the JIT-sensitive failure that removed Semeru.
+        exclude: >-
+          ${{ fromJSON(format('[{0}{1}]',
+          '{"vendor":"graalvm","jdk":"8"},{"vendor":"jetbrains","jdk":"8"},{"vendor":"microsoft","jdk":"8"},{"vendor":"oracle","jdk":"8"},{"vendor":"sapmachine","jdk":"8"},{"vendor":"redhat","jdk":"25"},{"vendor":"redhat","jdk":"21"}',
+          inputs.subset && ',{"vendor":"dragonwell"},{"vendor":"jetbrains"},{"vendor":"kona"},{"vendor":"liberica"},{"vendor":"microsoft"},{"vendor":"oracle"},{"vendor":"redhat"},{"vendor":"sapmachine"},{"vendor":"zulu"},{"vendor":"corretto","jdk":"21"},{"vendor":"corretto","jdk":"25"},{"vendor":"graalvm","jdk":"21"}' || '')) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The JVM under test first; its path comes from the step output, since
+      # JAVA_HOME_25_X64 is overwritten when the vendor line is also 25.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        id: jut
+        with:
+          distribution: ${{ matrix.vendor }}
+          java-version: ${{ matrix.jdk }}
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: the JVM under test
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: |
+          set -euo pipefail
+          "$JUT/bin/java" -XshowSettings:properties -version 2>&1 \
+            | grep -E '^ +(java\.(vendor|version|vm\.name|vm\.version|runtime\.version)) ='
+      - name: the suite on that JVM
+        working-directory: java
+        env:
+          JUT: ${{ steps.jut.outputs.path }}
+        run: mvn -B test -Pjdk8-runtime "-Djdk8.jvm=$JUT/bin/java"

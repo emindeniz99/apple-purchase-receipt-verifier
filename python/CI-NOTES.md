@@ -10,13 +10,13 @@ sets `APRV_WASM` for them (only `tests/_support.py`, `tests/corpus_rows.py` and
 `tools/build_dist.py` read it; the package never does, and a test greps for that).
 A missing or mismatched file is an error at the first `Verifier`.
 The file to copy is the release build's `aprv.wasm` (SHA-256 in `aprv.wasm.sha256`). The package has two runtime dependencies,
-`wasmtime>=49` and `platformdirs>=4.12.0` (the compile cache's default
+`wasmtime>=50.0.1` and `platformdirs>=4.12.0` (the compile cache's default
 directory); the `dev` extra adds ruff, mypy and setuptools (the
 install-failure test builds this source tree with it).
 
 ## 1. Test matrix (job `python`, replaces the current one)
 
-CPython 3.10, 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.10 floor and
+CPython 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.11 floor and
 the platform claims are legs and not sentences:
 
 | Leg | Runner | Why |
@@ -163,7 +163,7 @@ The wheels carry OpenSSL's licence and NOTICE, wasi-libc's and Rust std's texts
 (ARCHITECTURE.md §9, "Licences ship with the code"): add them to
 `package-data` and the sdist's `MANIFEST.in` when Phase 1 produces them.
 
-Post-publish smoke (gate G5): in a clean venv on Python 3.10,
+Post-publish smoke (gate G5): in a clean venv on Python 3.11,
 `pip install apple-purchase-receipt-verifier==$VERSION` from PyPI, then verify
 the genuine sandbox receipt as `check-install.sh` does.
 

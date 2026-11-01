@@ -91,9 +91,18 @@ import org.junit.jupiter.api.io.TempDir;
 class TrustStoreIsolationTest {
 
     private static final Path FIXTURES = TestFixtures.root();
-    /** Every source root the jar compiles: {@code src/main/java} and {@code src/shared/java}. */
-    private static final List<Path> MAIN_SOURCES =
-            Arrays.asList(Paths.get("src", "main", "java"), Paths.get("src", "shared", "java"));
+    /** This class's package as a relative directory, which follows a vendored copy's own package. */
+    private static final Path PACKAGE_DIR =
+            Paths.get("", TrustStoreIsolationTest.class.getPackage().getName().split("\\."));
+    /**
+     * The library's package directory under every source root the jar compiles,
+     * {@code src/main/java} and {@code src/shared/java}. Only the package is
+     * scanned, so a vendored copy whose host keeps its own code in the same
+     * source root scans the library and nothing else, with no edit.
+     */
+    private static final List<Path> MAIN_SOURCES = Arrays.asList(
+            Paths.get("src", "main", "java").resolve(PACKAGE_DIR),
+            Paths.get("src", "shared", "java").resolve(PACKAGE_DIR));
 
     private static final String BUNDLE = "com.example.app";
     private static final String GENUINE_BUNDLE = "dev.bonzer.weeka.app";

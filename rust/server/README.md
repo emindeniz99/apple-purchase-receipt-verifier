@@ -32,7 +32,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--roots FILE` | serve, CLI | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. An empty file is refused. Without the flag, the three Apple roots built into the module |
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
-| `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN` |
+| `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN`. A file that holds no token stops the server (exit 2) |
 | `--lifecycle pool\|fresh` | serve | `pool` (default): instances are kept, one request at a time each, at most one per worker, and one that trapped or broke the interface is destroyed, never reused. `fresh`: a new store, instance and `init` per request. The default follows DECISIONS.md R23: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4 times a pooled call (`docs/evidence/2026-09-29-init-cost.md`) |
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
@@ -173,7 +173,9 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 | Instances per store | one component instance (3 core instances: wit-component's shim, the module, the fixup) |
 | Guest time per call | 10 s by default (`--time-limit-ms`), by epoch interruption with a 10 ms tick |
 | `random-get` | at most 65,536 bytes per call; OpenSSL asks for tens |
-| Concurrent verifications | a semaphore of `--workers`, default the CPU count |
+| Concurrent verifications | a semaphore of `--workers`, default the CPU count; a call holds its worker until the guest call ends, even when the client has gone |
+| Request bodies in flight | four per worker, received or waiting for a worker; a request takes its place before reading the body and gives it back when a worker takes the call |
+| Body deadline | 30 s from admission; a body that has not arrived by then gets 408 and the connection closed |
 
 A trapped instance is discarded in both lifecycles. In the default pool
 an instance that answered normally serves later requests, so its guest
@@ -211,6 +213,12 @@ SHA-256, the Wasmtime version, its features and the Wasm features.
 musl's own malloc, no INTERP and no NEEDED, which the script checks with
 `readelf`. For `aarch64-unknown-linux-musl` it needs a cross linker; see
 the script's header (not tested in this repository's container).
+`scripts/build-static.sh --ccwasm FILE.ccwasm [TARGET]` runs stage 2
+alone around a file `aprv precompile` already wrote, with its manifest
+beside it. The release does that: one precompiler built on Linux x86_64
+with `wasmtime/all-arch` writes every target's `.ccwasm`, and each
+target's runner builds and checks the binary
+(`docs/evidence/2026-10-31-cross-build-spike.md`).
 
 ## Docker
 

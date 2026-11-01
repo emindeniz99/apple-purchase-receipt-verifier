@@ -25,7 +25,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- The oldest supported Boot line; CI overrides this per matrix leg. -->
-    <spring-boot.version>4.0.8</spring-boot.version>
+    <spring-boot.version>4.0.9</spring-boot.version>
     <!-- Overridden by CI from ../../pom.xml; see the comment above. -->
     <verifier.version>0.0.0-set-me</verifier.version>
     <!-- The artifact under test: the main one, or its alternative
@@ -69,7 +69,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
       </plugin>
     </plugins>
   </build>

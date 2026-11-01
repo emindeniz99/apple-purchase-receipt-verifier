@@ -1,10 +1,12 @@
 //! Shared helpers for the native suite: fixture loading, a DER writer and
-//! a BER reader over `asn1-rs`, and a CMS rebuilder that lets a test state
-//! one structural fault at a time.
+//! a BER reader over `asn1-rs`, a CMS rebuilder that lets a test state
+//! one structural fault at a time, and (`pki`) an RSA test PKI with the
+//! X.509, CMS and payload writers the worst-case suites build from.
 #![allow(dead_code)]
 
 pub mod ber;
 pub mod cms;
+pub mod pki;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
 use apple_purchase_receipt_verifier::{

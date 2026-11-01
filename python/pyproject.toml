@@ -8,7 +8,7 @@ version = "0.12.0"
 description = "Verify Apple in-app purchases locally (StoreKit 2 JWS + legacy PKCS#7 receipts) with zero Apple server calls"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 # wasmtime runs aprv.wasm (docs/rust-core R27): at or above the tested
 # major, deliberately with no upper pin to one major. platformdirs names the
 # compile cache's default directory. Its floor, 4.12.0, is the oldest
@@ -18,7 +18,7 @@ requires-python = ">=3.10"
 # relative "~/..." path (since 4.12.0); see
 # docs/evidence/2026-10-04-python-platformdirs-floor.md.
 dependencies = [
-    "wasmtime>=49",
+    "wasmtime>=50.0.1",
     "platformdirs>=4.12.0",
 ]
 
@@ -45,7 +45,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 # The existing source already wraps at ~100 (longest line was 102); 88 would
 # have reflowed nearly every signature and docstring in the package.
 line-length = 100
@@ -64,9 +64,8 @@ select = [
 ]
 
 [tool.mypy]
-# python_version pinned to the package's floor (requires-python = ">=3.10"),
-# the lowest mypy 2.x supports.
-python_version = "3.10"
+# python_version pinned to the package's floor (requires-python = ">=3.11").
+python_version = "3.11"
 files = ["apple_purchase_receipt_verifier", "tests"]
 strict = true
 

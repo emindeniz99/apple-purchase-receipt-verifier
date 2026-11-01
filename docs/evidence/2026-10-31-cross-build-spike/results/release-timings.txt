@@ -1,0 +1,50 @@
+38694697483             main x86_64-unknown-linux-musl    job   616s build   239s repro   329s
+38694697483             main x86_64-apple-darwin          job  1086s build  1043s repro     0s
+38694697483             main aarch64-unknown-linux-musl   job   464s build   210s repro   218s
+38694697483             main aarch64-pc-windows-msvc      job   445s build   398s repro     0s
+38694697483             main x86_64-pc-windows-msvc       job   487s build   457s repro     0s
+38694697483             main aarch64-apple-darwin         job   396s build   375s repro     0s
+37845798653          v0.11.0 x86_64-unknown-linux-musl    job   781s build   306s repro   437s
+37845798653          v0.11.0 x86_64-apple-darwin          job   832s build   767s repro     0s
+37845798653          v0.11.0 aarch64-unknown-linux-musl   job   498s build   232s repro   233s
+37845798653          v0.11.0 aarch64-apple-darwin         job   432s build   401s repro     0s
+37845798653          v0.11.0 x86_64-pc-windows-msvc       job   632s build   596s repro     0s
+37845798653          v0.11.0 aarch64-pc-windows-msvc      job   457s build   412s repro     0s
+37691876831          v0.10.0 x86_64-apple-darwin          job   818s build   770s repro     0s
+37691876831          v0.10.0 x86_64-pc-windows-msvc       job   611s build   582s repro     0s
+37691876831          v0.10.0 aarch64-unknown-linux-musl   job   507s build   242s repro   240s
+37691876831          v0.10.0 x86_64-unknown-linux-musl    job   791s build   309s repro   422s
+37691876831          v0.10.0 aarch64-pc-windows-msvc      job   484s build   439s repro     0s
+37691876831          v0.10.0 aarch64-apple-darwin         job   514s build   484s repro     0s
+37407854588             main aarch64-pc-windows-msvc      job   486s build   447s repro     0s
+37407854588             main aarch64-unknown-linux-musl   job   530s build   248s repro   251s
+37407854588             main aarch64-apple-darwin         job   461s build   436s repro     0s
+37407854588             main x86_64-pc-windows-msvc       job   592s build   564s repro     0s
+37407854588             main x86_64-unknown-linux-musl    job   745s build   300s repro   417s
+37407854588             main x86_64-apple-darwin          job   538s build   515s repro     0s
+37400893889             main x86_64-unknown-linux-musl    job   774s build   307s repro   437s
+37400893889             main x86_64-apple-darwin          job   957s build   906s repro     0s
+37400893889             main aarch64-apple-darwin         job   437s build   405s repro     0s
+37400893889             main x86_64-pc-windows-msvc       job   627s build   594s repro     0s
+37400893889             main aarch64-unknown-linux-musl   job   578s build   264s repro   276s
+37400893889             main aarch64-pc-windows-msvc      job   470s build   428s repro     0s
+37397339108  ci/dry-run-pins aarch64-unknown-linux-musl   job   532s build   248s repro   245s
+37397339108  ci/dry-run-pins x86_64-pc-windows-msvc       job   499s build   467s repro     0s
+37397339108  ci/dry-run-pins x86_64-unknown-linux-musl    job   762s build   317s repro   413s
+37397339108  ci/dry-run-pins x86_64-apple-darwin          job   780s build   724s repro     0s
+37397339108  ci/dry-run-pins aarch64-pc-windows-msvc      job   484s build   442s repro     0s
+37397339108  ci/dry-run-pins aarch64-apple-darwin         job   479s build   455s repro     0s
+37232874197           v0.8.1 x86_64-unknown-linux-musl    job   777s build   308s repro   434s
+37232874197           v0.8.1 aarch64-pc-windows-msvc      job   486s build   443s repro     0s
+37232874197           v0.8.1 x86_64-pc-windows-msvc       job   470s build   442s repro     0s
+37232874197           v0.8.1 aarch64-unknown-linux-musl   job   502s build   235s repro   239s
+37232874197           v0.8.1 aarch64-apple-darwin         job   407s build   381s repro     0s
+37232874197           v0.8.1 x86_64-apple-darwin          job   610s build   569s repro     0s
+
+target                        n build median   build range job median
+aarch64-apple-darwin          7         405s   375-  484s       437s
+aarch64-pc-windows-msvc       7         439s   398-  447s       484s
+aarch64-unknown-linux-musl    7         242s   210-  264s       507s
+x86_64-apple-darwin           7         767s   515- 1043s       818s
+x86_64-pc-windows-msvc        7         564s   442-  596s       592s
+x86_64-unknown-linux-musl     7         307s   239-  317s       774s

@@ -204,11 +204,36 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
 /// version INTEGER content given and signed as it stands; and the root to
 /// pin.
 fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
-    use common::mint::{
-        certificate, key, name, spki, ECDSA_WITH_SHA256, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
-    };
+    let leaf_key = common::mint::key(13);
+    minted_jws_with(
+        leaf_version,
+        common::mint::spki(&leaf_key),
+        &[leaf_marker()],
+        |input| leaf_key.sign_raw(input),
+    )
+}
+
+/// The leaf's Apple marker extension, as `common::mint` writes it.
+fn leaf_marker() -> Vec<u8> {
+    use common::{der, der_oid, der_seq, tag};
+    der_seq(&[
+        der_oid(common::mint::RECEIPT_SIGNER_MARKER),
+        der(tag::OCTET_STRING, &[0x05, 0x00]),
+    ])
+}
+
+/// As [`minted_jws`], with the leaf's key given as its SPKI, its extensions
+/// given in order, and the JWS signature made by `sign` over the signing
+/// input.
+fn minted_jws_with(
+    leaf_version: &[u8],
+    leaf_spki: Vec<u8>,
+    leaf_extensions: &[Vec<u8>],
+    sign: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> (TrustAnchor, String) {
+    use common::mint::{certificate, key, name, ECDSA_WITH_SHA256, WWDR_MARKER};
     use common::{der, der_int, der_oid, der_seq, tag};
-    let (root_key, intermediate_key, leaf_key) = (key(11), key(12), key(13));
+    let (root_key, intermediate_key) = (key(11), key(12));
     let root = certificate("JWS Root", &root_key, "JWS Root", &root_key, 1, true, None);
     let intermediate = certificate(
         "JWS WWDR",
@@ -219,12 +244,9 @@ fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
         true,
         Some(WWDR_MARKER),
     );
-    // `common::mint::tbs` for the leaf, but with the version given.
+    // `common::mint::tbs` for the leaf, but with the version, key and
+    // extensions given.
     let algorithm = der_seq(&[der_oid(ECDSA_WITH_SHA256)]);
-    let marker = der_seq(&[
-        der_oid(RECEIPT_SIGNER_MARKER),
-        der(tag::OCTET_STRING, &[0x05, 0x00]),
-    ]);
     let tbs = der_seq(&[
         der(tag::CONTEXT_0, &der(tag::INTEGER, leaf_version)),
         der_int(3),
@@ -232,8 +254,8 @@ fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
         name("JWS WWDR"),
         der_seq(&[der(0x17, b"200101000000Z"), der(0x18, b"20991231000000Z")]),
         name("JWS Leaf"),
-        spki(&leaf_key),
-        der(0xA3, &der_seq(&[marker])),
+        leaf_spki,
+        der(0xA3, &der_seq(leaf_extensions)),
     ]);
     let signature = intermediate_key.sign_der(&tbs);
     let leaf = common::mint::assemble(tbs, algorithm, &signature);
@@ -248,7 +270,7 @@ fn minted_jws(leaf_version: &[u8]) -> (TrustAnchor, String) {
         common::base64url(header.as_bytes()),
         common::base64url(br#"{"signedDate":1735689600000}"#)
     );
-    let signature = leaf_key.sign_raw(signing_input.as_bytes());
+    let signature = sign(signing_input.as_bytes());
     let jws = format!("{signing_input}.{}", common::base64url(&signature));
     (TrustAnchor::from_der(&root).unwrap(), jws)
 }
@@ -268,6 +290,119 @@ fn an_x5c_version_past_32_bits_is_invalid_certificate() {
             .unwrap_err()
             .reason(),
         Reason::InvalidCertificate
+    );
+}
+
+/// RFC 5280 section 4.2: no extension twice, whichever it is. The duplicate
+/// cases above duplicate basicConstraints, which the reader also refuses
+/// because it cannot decode a repeated one; these repeat extensions nothing
+/// else reads twice (`Certificate::is_readable`'s own duplicate check), on a
+/// leaf a pinned anchor issued, signed genuinely.
+#[test]
+fn an_x5c_leaf_carrying_any_extension_twice_is_invalid_certificate() {
+    use common::{der, der_oid, der_seq, tag};
+    // A private, non-critical extension under the IANA example arc.
+    let private = der_seq(&[
+        der_oid("1.3.6.1.4.1.32473.2"),
+        der(tag::OCTET_STRING, &[0x05, 0x00]),
+    ]);
+    let leaf_key = common::mint::key(13);
+    let jws = |extensions: &[Vec<u8>]| {
+        minted_jws_with(&[2], common::mint::spki(&leaf_key), extensions, |input| {
+            leaf_key.sign_raw(input)
+        })
+    };
+    // The control: each extension once verifies.
+    let (root, once) = jws(&[leaf_marker(), private.clone()]);
+    assert!(common::verifier([root]).verify_signed_data(&once).is_ok());
+    for extensions in [
+        vec![leaf_marker(), leaf_marker()],
+        vec![leaf_marker(), private.clone(), private.clone()],
+    ] {
+        let (root, twice) = jws(&extensions);
+        assert_eq!(
+            common::verifier([root])
+                .verify_signed_data(&twice)
+                .unwrap_err()
+                .to_string(),
+            "INVALID_CERTIFICATE: x5c entry is not a valid certificate"
+        );
+    }
+}
+
+/// A key on `curve` from a fixed scalar: its SPKI, and an ES256-shaped
+/// signer, SHA-256 and ECDSA with `r` and `s` padded to 32 octets each,
+/// which fits any curve whose order fits in 256 bits.
+fn ec_leaf(curve: openssl::nid::Nid) -> (Vec<u8>, impl Fn(&[u8]) -> Vec<u8>) {
+    use openssl::bn::{BigNum, BigNumContext};
+    use openssl::ec::{EcGroup, EcKey, EcPoint};
+    use openssl::ecdsa::EcdsaSig;
+    use openssl::pkey::PKey;
+    let group = EcGroup::from_curve_name(curve).unwrap();
+    let private = BigNum::from_u32(13).unwrap();
+    let mut public = EcPoint::new(&group).unwrap();
+    public
+        .mul_generator2(&group, &private, &mut BigNumContext::new().unwrap())
+        .unwrap();
+    let key = EcKey::from_private_components(&group, &private, &public).unwrap();
+    let spki = PKey::from_ec_key(key.clone())
+        .unwrap()
+        .public_key_to_der()
+        .unwrap();
+    let sign = move |input: &[u8]| {
+        let signature = EcdsaSig::sign(&openssl::sha::sha256(input), &key).unwrap();
+        let mut raw = signature.r().to_vec_padded(32).unwrap();
+        raw.extend(signature.s().to_vec_padded(32).unwrap());
+        raw
+    };
+    (spki, sign)
+}
+
+/// ES256 only (RFC 7518 section 3.4): a JWS whose leaf key is not EC on
+/// P-256 is `INVALID_SIGNATURE`, even when the 64 octets are a genuine
+/// ECDSA-SHA256 signature by that key, on a curve whose `r` and `s` fit
+/// them (secp256k1, P-224). An RSA key never verifies one either. Each
+/// leaf is issued by a pinned anchor's intermediate and carries the marker,
+/// so the signature is the only thing left to judge.
+#[test]
+fn a_jws_whose_leaf_key_is_not_p256_is_an_invalid_signature() {
+    use openssl::nid::Nid;
+    // The control: the same signer on P-256 verifies.
+    let (spki, sign) = ec_leaf(Nid::X9_62_PRIME256V1);
+    let (root, jws) = minted_jws_with(&[2], spki, &[leaf_marker()], sign);
+    assert!(common::verifier([root]).verify_signed_data(&jws).is_ok());
+
+    for curve in [Nid::SECP256K1, Nid::SECP224R1] {
+        let (spki, sign) = ec_leaf(curve);
+        let (root, jws) = minted_jws_with(&[2], spki, &[leaf_marker()], sign);
+        assert_eq!(
+            common::verifier([root])
+                .verify_signed_data(&jws)
+                .unwrap_err()
+                .to_string(),
+            "INVALID_SIGNATURE: ES256 signature does not match the leaf key",
+            "{curve:?}"
+        );
+    }
+
+    // An RSA public key, the shared receipt root's: only its SPKI is used.
+    let rsa = openssl::x509::X509::from_der(common::receipt_root().der())
+        .unwrap()
+        .public_key()
+        .unwrap();
+    assert!(rsa.rsa().is_ok(), "the shared receipt root is RSA");
+    let (root, jws) = minted_jws_with(
+        &[2],
+        rsa.public_key_to_der().unwrap(),
+        &[leaf_marker()],
+        |_| vec![0x5a; 64],
+    );
+    assert_eq!(
+        common::verifier([root])
+            .verify_signed_data(&jws)
+            .unwrap_err()
+            .to_string(),
+        "INVALID_SIGNATURE: ES256 signature does not match the leaf key"
     );
 }
 

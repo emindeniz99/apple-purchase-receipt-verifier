@@ -57,6 +57,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestTimeout'
         '413':
           description: The body is over the component's size cap. The component answered its first `max_input_bytes` (`GET /v1/info`) with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
           content:
@@ -87,6 +89,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestTimeout'
         '413':
           description: The body is over the component's size cap. The component answered its first `max_input_bytes` (`GET /v1/info`) with its own size refusal (`TOO_LARGE`), sent byte for byte as for a 200.
           content:
@@ -116,6 +120,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestTimeout'
         '413':
           $ref: '#/components/responses/EndpointTooLarge'
         '500':
@@ -138,6 +144,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestTimeout'
         '413':
           $ref: '#/components/responses/EndpointTooLarge'
         '500':
@@ -264,6 +272,12 @@ components:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: A token is configured and `X-Aprv-Token` is missing or wrong (code UNAUTHORIZED).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RequestTimeout:
+      description: The body did not arrive within the server's body deadline, 30 s from admission (code REQUEST_TIMEOUT). The connection is closed.
       content:
         application/problem+json:
           schema:

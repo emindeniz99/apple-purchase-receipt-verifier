@@ -1,0 +1,330 @@
+== openssl/src/certificate.rs  lines 194/208  regions 301/318  branches 32/44
+   region 18:5-18:73
+   region 19:9-19:10
+   region 19:9-19:38
+   region 19:39-19:60
+   region 20:5-20:6
+   region 54:53-54:54
+   branch 58:12-58:25 true=0 false=539
+   region 59:13-59:25
+   region 60:20-60:24
+   branch 76:25-76:65 true=533 false=0
+   branch 131:13-131:27 true=59548 false=0
+   region 132:20-132:25
+   branch 160:12-160:37 true=0 false=22953
+   region 161:20-161:25
+   branch 163:13-163:23 true=22953 false=0
+   region 164:13-164:25
+   region 165:20-165:25
+   branch 183:13-183:20 true=38404 false=0
+   region 184:13-184:25
+   region 185:20-185:25
+   branch 261:9-261:29 true=59558 false=0
+   branch 269:5-269:9 true=59558 false=0
+   branch 295:12-295:26 true=0 false=109668
+   branch 295:30-295:41 true=0 false=109668
+   region 296:13-296:21
+   branch 311:12-311:31 true=0 false=109668
+   region 312:20-312:24
+   branch 315:12-315:28 true=0 false=109668
+   region 316:13-316:17
+== openssl/src/cms.rs  lines 249/279  regions 432/478  branches 39/58
+   region 60:34-60:35
+   region 60:36-60:45
+   region 60:46-60:79
+   region 61:39-61:40
+   region 61:41-61:50
+   region 61:51-61:91
+   region 63:42-63:47
+   region 63:52-63:58
+   region 63:59-63:60
+   region 64:43-64:48
+   region 64:53-64:59
+   region 64:60-64:61
+   region 124:5-124:73
+   region 125:9-125:10
+   region 125:9-125:37
+   region 125:9-126:51
+   region 126:14-126:19
+   region 126:20-126:29
+   region 127:14-127:35
+   region 128:5-128:6
+   branch 187:12-187:18 true=0 false=15680
+   region 188:20-188:43
+   branch 228:12-228:27 true=0 false=96212
+   region 229:13-229:25
+   region 230:20-230:21
+   branch 241:13-241:21 true=47148 false=0
+   region 242:20-242:25
+   branch 260:13-260:21 true=8899 false=0
+   region 261:20-261:24
+   branch 291:13-291:21 true=8820 false=0
+   region 292:20-292:25
+   region 336:48-336:49
+   branch 337:12-337:63 true=0 false=64867
+   region 337:62-337:63
+   region 338:20-338:24
+   branch 372:12-372:26 true=0 false=15680
+   branch 383:8-383:24 true=0 false=894625
+   region 384:16-384:24
+   branch 395:23-395:37 true=0 false=887097
+   branch 424:8-424:24 true=0 false=8820
+   region 425:16-425:25
+   branch 462:9-462:25 true=8448 false=0
+   branch 463:16-463:52 true=8448 false=0
+   region 477:54-477:55
+   branch 485:16-485:32 true=0 false=7946
+   branch 485:36-485:52 true=0 false=7946
+   branch 486:20-486:37 true=0 false=0
+   region 486:20-486:37
+   region 486:38-488:18
+   region 488:17-488:18
+   branch 489:20-489:37 true=0 false=0
+   region 489:20-489:37
+   region 489:38-491:18
+   region 491:17-491:18
+   region 492:17-492:29
+   region 493:24-493:28
+   branch 498:16-498:86 true=0 false=7946
+   region 499:17-499:34
+   region 499:35-499:41
+   region 500:17-500:34
+   region 500:35-500:41
+   region 501:17-501:29
+   region 502:24-502:28
+== openssl/src/envelope.rs  lines 43/43  regions 65/65  branches 10/10
+== openssl/src/item.rs  lines 42/42  regions 70/70  branches 2/2
+== openssl/src/keys.rs  lines 22/23  regions 42/43  branches 3/4
+   branch 17:16-17:28 true=69231 false=0
+   region 21:9-21:10
+== openssl/src/lib.rs  lines 27/31  regions 38/43  branches 2/2
+   region 96:1-96:41
+   region 97:5-97:9
+   region 98:5-98:30
+   region 99:1-99:2
+   region 114:53-114:54
+== openssl/src/path.rs  lines 217/223  regions 356/373  branches 26/32
+   branch 83:9-83:22 true=178 false=0
+   region 189:79-189:80
+   branch 195:19-195:34 true=44 false=0
+   region 197:9-197:10
+   region 268:51-268:52
+   region 270:56-270:57
+   region 272:48-272:49
+   region 273:56-273:57
+   region 274:57-274:58
+   region 275:35-275:36
+   region 277:38-277:39
+   region 279:55-279:56
+   region 283:51-283:52
+   branch 307:8-307:17 true=0 false=11735
+   branch 307:21-307:40 true=0 false=0
+   region 307:21-307:29
+   region 307:30-307:38
+   region 307:41-312:6
+   region 308:9-308:17
+   branch 363:9-363:22 true=434 false=0
+   region 364:16-364:21
+   region 391:48-391:72
+== openssl/src/payload.rs  lines 99/101  regions 195/200  branches 22/24
+   region 58:54-58:55
+   region 65:49-65:50
+   branch 83:9-83:22 true=57230 false=0
+   region 84:16-84:22
+   branch 93:24-93:61 true=29 false=0
+   region 144:34-144:74
+   region 148:57-148:58
+== openssl/src/signature.rs  lines 26/27  regions 46/53  branches 3/4
+   region 19:48-19:49
+   region 20:35-20:36
+   branch 21:12-21:66 true=0 false=2539
+   region 22:20-22:31
+   region 24:56-24:57
+   region 26:39-26:40
+   region 27:39-27:40
+   region 29:14-29:15
+== openssl/src/walk.rs  lines 161/170  regions 276/315  branches 66/76
+   region 119:49-119:50
+   region 142:47-142:48
+   region 143:31-143:32
+   region 215:76-215:77
+   region 247:71-247:72
+   region 256:74-256:75
+   branch 267:20-267:31 true=18924 false=0
+   region 268:72-268:73
+   region 271:13-271:14
+   region 296:30-296:31
+   branch 300:19-300:35 true=0 false=660683
+   region 301:9-301:14
+   region 301:15-301:18
+   region 301:19-301:31
+   region 301:32-301:33
+   region 303:53-303:54
+   region 308:34-308:35
+   branch 309:12-309:28 true=0 false=2413925
+   branch 309:32-309:57 true=0 false=0
+   region 309:32-309:36
+   region 309:37-309:48
+   region 309:49-309:56
+   region 310:20-310:31
+   region 312:39-312:40
+   region 313:36-313:37
+   branch 334:8-334:27 true=38 false=0
+   region 337:9-337:35
+   region 346:60-346:61
+   branch 347:50-347:87 true=0 false=170
+   branch 354:8-354:25 true=0 false=132
+   region 356:17-356:21
+   region 356:24-356:29
+   region 356:30-356:33
+   region 356:34-356:38
+   region 356:40-356:45
+   region 356:46-356:67
+   region 356:68-356:69
+   branch 357:16-357:41 true=0 false=0
+   region 357:16-357:20
+   region 357:21-357:32
+   region 357:33-357:40
+   region 358:24-358:34
+   region 359:13-359:14
+   region 360:19-360:31
+   region 360:32-360:36
+   region 360:37-360:38
+   region 365:75-365:76
+== src/base64.rs  lines 56/56  regions 80/80  branches 2/2
+== src/config.rs  lines 37/51  regions 45/68  branches 2/2
+   region 41:5-41:60
+   region 42:9-42:21
+   region 43:5-43:6
+   region 51:5-51:61
+   region 52:9-52:10
+   region 52:9-52:33
+   region 52:9-53:47
+   region 53:14-53:19
+   region 53:20-53:27
+   region 54:14-54:35
+   region 55:5-55:6
+   region 119:5-119:61
+   region 120:9-120:10
+   region 120:9-120:40
+   region 120:9-121:64
+   region 120:9-122:51
+   region 121:14-121:19
+   region 121:20-121:27
+   region 121:30-121:40
+   region 122:14-122:19
+   region 122:20-122:27
+   region 123:14-123:20
+   region 124:5-124:6
+== src/datetime.rs  lines 108/108  regions 246/254  branches 22/22
+   region 83:49-83:50
+   region 103:70-103:71
+   region 105:14-105:15
+   region 106:53-106:54
+   region 165:42-165:43
+   region 185:63-185:64
+   region 199:56-199:57
+   region 199:78-199:79
+== src/endpoint.rs  lines 185/189  regions 296/306  branches 22/22
+   region 209:6-209:7
+   region 215:6-215:7
+   region 216:70-216:71
+   region 217:74-217:75
+   region 224:36-224:37
+   region 243:71-243:72
+   region 248:6-248:7
+   region 249:69-249:70
+   region 254:6-254:7
+   region 321:37-321:38
+== src/environment.rs  lines 20/20  regions 30/30  branches 0/0
+== src/error.rs  lines 81/88  regions 82/95  branches 1/2
+   region 153:5-153:61
+   region 154:9-154:10
+   region 154:9-154:34
+   region 154:9-155:43
+   region 154:9-156:45
+   region 154:9-157:77
+   region 155:14-155:19
+   region 156:14-156:19
+   region 157:14-157:19
+   region 157:20-157:28
+   region 157:31-157:42
+   region 158:14-158:20
+   region 159:5-159:6
+   branch 170:9-170:36 true=54 false=0
+== src/json.rs  lines 128/128  regions 263/264  branches 14/14
+   region 84:39-84:40
+== src/jws.rs  lines 234/244  regions 337/355  branches 22/22
+   region 100:5-100:61
+   region 101:15-101:19
+   region 102:33-102:36
+   region 102:41-102:47
+   region 102:48-102:49
+   region 103:37-103:40
+   region 103:45-103:51
+   region 103:52-103:53
+   region 105:5-105:6
+   region 109:5-109:67
+   region 110:15-110:19
+   region 111:33-111:36
+   region 111:41-111:50
+   region 112:37-112:40
+   region 112:45-112:54
+   region 114:5-114:6
+   region 176:28-176:29
+   region 404:17-404:25
+== src/lib.rs  lines 15/23  regions 20/28  branches 0/0
+   region 105:1-105:45
+   region 106:8-106:13
+   region 107:9-107:10
+   region 109:9-109:10
+   region 111:1-111:2
+   region 161:5-161:45
+   region 162:9-162:38
+   region 163:5-163:6
+== src/path.rs  lines 184/194  regions 238/248  branches 42/52
+   region 156:37-156:46
+   branch 184:8-184:25 true=0 false=9032
+   region 185:16-185:68
+   branch 249:12-249:25 true=0 false=2638
+   region 249:17-249:24
+   branch 252:19-252:40 true=0 false=166
+   region 252:44-252:76
+   region 254:16-254:53
+   branch 267:8-267:40 true=0 false=2586
+   region 268:16-268:58
+   branch 276:8-276:24 true=0 false=2576
+   region 277:16-277:53
+   branch 279:8-279:36 true=0 false=2576
+   region 280:16-282:11
+   branch 284:9-284:48 true=2576 false=0
+   region 285:16-285:71
+   branch 287:8-287:25 true=0 false=2576
+   branch 287:29-287:53 true=0 false=2576
+   branch 287:57-287:97 true=0 false=2576
+   region 288:16-288:71
+== src/receipt.rs  lines 178/181  regions 231/235  branches 20/20
+   region 172:55-172:64
+   region 176:59-176:83
+   region 176:84-176:97
+   region 185:41-185:50
+== src/receipt_payload.rs  lines 635/635  regions 1223/1223  branches 20/20
+== src/roots.rs  lines 105/105  regions 161/161  branches 12/12
+== src/verifier.rs  lines 138/150  regions 220/241  branches 4/6
+   region 120:37-120:58
+   region 120:59-120:75
+   region 120:76-120:81
+   region 120:82-120:88
+   region 139:41-139:53
+   region 139:54-139:59
+   region 139:60-139:66
+   region 139:70-139:75
+   region 139:76-139:83
+   region 144:5-144:61
+   region 145:9-145:10
+   region 145:9-145:35
+   region 145:9-146:47
+   region 146:14-146:19
+   region 146:20-146:27
+   region 147:14-147:35
+   region 148:5-148:6

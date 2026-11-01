@@ -497,8 +497,9 @@ answers `INTERNAL_ERROR`.
 
 **The tests need the shared fixtures.** They look for `fixtures/` with
 `cases.json` above the crate directory, or read `APRV_FIXTURES_DIR`
-when it is set (`tests/conformance.rs` has its own lookup, above the crate
-directory only). A few tests read the build itself: the dependency-set
+when it is set (`tests/conformance.rs` keeps its own copy of that lookup,
+and the adapter's `openssl/tests/isolation.rs` reads the same variable).
+A few tests read the build itself: the dependency-set
 test reads `Cargo.toml`, the `certs/` drift test reads the repository's
 `certs/` next to `fixtures/`, and the date tests read
 `tests/data/pacific-transitions.txt`.

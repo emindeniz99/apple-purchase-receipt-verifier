@@ -43,10 +43,17 @@ const OPENSSL_INIT_LOAD_CONFIG: u64 = 0x0000_0040;
 /// 2024-08-06, inside every fixture certificate's validity.
 const AT: i64 = 1_722_945_600;
 
+/// A file of the shared generated fixtures, under `APRV_FIXTURES_DIR` when
+/// it is set, as the core's tests read it, else under the repository's
+/// `fixtures/`.
 fn fixture(name: &str) -> Vec<u8> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/generated")
-        .join(name);
+    let fixtures = std::env::var_os("APRV_FIXTURES_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(
+            || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures"),
+            PathBuf::from,
+        );
+    let path = fixtures.join("generated").join(name);
     std::fs::read(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()))
 }
 
