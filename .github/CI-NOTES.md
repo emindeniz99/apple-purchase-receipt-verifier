@@ -150,15 +150,22 @@ run.
   `sums` and builds `aprv-<target>[.exe]` around them with
   `build-static.sh --ccwasm` (stage 2 only; musl legs install
   `musl-tools`), which refuses a `.ccwasm` precompiled from any component
-  but build-wasm's (`COMPONENT_SHA256`). It reproduces the Linux builds in
-  a fresh clone (`tools/reproduce-server.sh`), which builds its own
-  precompiler and must write the same `.ccwasm` as precompile-server
-  (`APRV_EXPECTED_CCWASM_SHA256`) and the same binary. On x86_64 the
-  clone rebuilds the component too; on aarch64 the script is handed
-  build-wasm's component (`APRV_COMPONENT`), because
-  `tools/wasm-toolchain.sh` pins x86_64 archives only, and reproduces the
-  server stages. 0.8.0's first run (2026-10-04) failed on the arm leg for
-  want of that, and `fail-fast` cancelled the other five builds.
+  but build-wasm's (`COMPONENT_SHA256`). The macOS legs check the minimum
+  macOS each binary declares (`otool -l`: `LC_BUILD_VERSION` minos, or
+  `LC_VERSION_MIN_MACOSX` below 10.14) against the matrix's `minos`,
+  rustc's default deployment target, which `SUPPORT-MATRIX.md` states.
+- `reproduce-server` rebuilds the two Linux builds in a fresh clone
+  (`tools/reproduce-server.sh` with `-` for the expected hash) beside
+  build-server: it needs build-wasm only, so the x86_64 leg no longer
+  runs a build and a rebuild in a row. The clone builds its own
+  precompiler. On x86_64 it rebuilds the component too; on aarch64 the
+  script is handed build-wasm's component (`APRV_COMPONENT`), because
+  `tools/wasm-toolchain.sh` pins x86_64 archives only. 0.8.0's first run
+  (2026-10-04) failed on the arm leg for want of that.
+  `server-reproduced` then requires each rebuilt `.ccwasm` to equal
+  precompile-server's and each rebuilt binary to equal build-server's;
+  `sbom` and `publish-maven`, and through them every job that ships a
+  server binary, wait for it.
 - The publish jobs never cache. `publish-pypi` builds with
   `tools/build_dist.py`. `publish-npm` requires the transpiled module and
   every licence file in the tarball (`node/scripts/check-pack.mjs` over

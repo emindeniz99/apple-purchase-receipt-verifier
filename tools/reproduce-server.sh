@@ -3,6 +3,12 @@
 # compares its SHA-256 with the one given (the one a release published).
 #
 #   tools/reproduce-server.sh <tag-or-ref> <target-triple> <expected-sha256>
+#   tools/reproduce-server.sh <tag-or-ref> <target-triple> -
+#
+# With `-` for the expected hash the script rebuilds and prints the hashes
+# without comparing the binary, leaving it and its .ccwasm in <out-dir>:
+# release.yml's reproduce-server job runs it that way beside build-server,
+# and server-reproduced compares the two.
 #
 # <target-triple> is x86_64-unknown-linux-musl or aarch64-unknown-linux-musl,
 # built on a host of the same architecture. The macOS and Windows builds are
@@ -51,8 +57,8 @@ case "$TARGET" in
   x86_64-unknown-linux-musl | aarch64-unknown-linux-musl) ;;
   *) echo "reproduce-server: only the static Linux builds reproduce; not $TARGET" >&2; exit 2 ;;
 esac
-if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "reproduce-server: '$EXPECTED' is not a lowercase hex SHA-256" >&2
+if [[ "$EXPECTED" != "-" && ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "reproduce-server: '$EXPECTED' is not a lowercase hex SHA-256 or -" >&2
   exit 2
 fi
 EXPECTED_CCWASM="${APRV_EXPECTED_CCWASM_SHA256:-}"
@@ -122,6 +128,11 @@ if [[ -n "$EXPECTED_CCWASM" ]]; then
 fi
 actual="$(sha256sum "$out/aprv-$TARGET" | cut -c1-64)"
 echo "reproduce-server: aprv ($TARGET) $actual (rebuilt from $commit)"
+if [[ "$EXPECTED" == "-" ]]; then
+  echo "reproduce-server: .ccwasm     $(sha256sum "$out/aprv.$TARGET.ccwasm" | cut -c1-64) (precompiled here)"
+  echo "reproduce-server: rebuilt in $out; not compared (expected hash -)"
+  exit 0
+fi
 echo "reproduce-server: expected      $EXPECTED"
 if [[ "$actual" != "$EXPECTED" ]]; then
   echo "reproduce-server: MISMATCH: the rebuild does not reproduce the expected hash" >&2
