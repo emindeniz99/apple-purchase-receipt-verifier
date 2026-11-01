@@ -64,7 +64,7 @@ pub(crate) fn verify(
         ));
     }
     let der = decode_receipt_data(base64)?;
-    let attributes = verify_signature(&der, anchors, clock)?;
+    let attributes = verify_envelope(&der, anchors, clock)?;
     verifier::enter(Stage::PayloadParse);
     // A trusted signer signed these bytes, so a payload this crate cannot
     // read is the library's failure or a format Apple added, not the
@@ -109,14 +109,18 @@ fn envelope_failure(err: CmsError) -> Failure {
     }
 }
 
-/// Every check up to and including a signature; returns the signed
-/// payload's top-level attribute SET as parsed before the signature, its
-/// values not yet interpreted.
-fn verify_signature(
+/// What a passing signature hands on: the signed payload's top-level
+/// attribute SET as parsed before the signature, its values not yet
+/// interpreted, or why that SET did not parse.
+type SignedAttributes = Result<Vec<Attribute>, PayloadError>;
+
+/// Every check up to and including a signature: the envelope, the bag, the
+/// chain and each `SignerInfo` in turn until one passes.
+fn verify_envelope(
     der: &[u8],
     anchors: &[TrustAnchor],
     clock: &Clock<'_>,
-) -> Result<Result<Vec<Attribute>, PayloadError>, Failure> {
+) -> Result<SignedAttributes, Failure> {
     // The adapter bounds the envelope before its full decode, which builds
     // each embedded certificate's public key: first a header walk under the
     // depth and node bounds, which allocates nothing, then a shallow decode
@@ -128,8 +132,7 @@ fn verify_signature(
     // before a single one is judged or tried as an issuer, and an envelope
     // the walk or the shallow decode refuses never reaches the full decode.
     let mut cms = SignedData::parse(der, &ENVELOPE_LIMITS).map_err(envelope_failure)?;
-    let signer_count = cms.signer_count();
-    let certificates = cms.certificates();
+    let embedded = Embedded::partition(cms.certificates());
 
     // Only the creation date is interpreted before trust is established,
     // because chain validity is anchored at signing time: the attribute SET
@@ -139,50 +142,61 @@ fn verify_signature(
     // a chain needs the date. A SET that does not parse, or a date that is
     // missing or unreadable, cannot blame anyone yet, so it only moves the
     // chain instant to the clock and never rejects by itself.
-    let mut payload: Option<Result<Vec<Attribute>, PayloadError>> = None;
-
-    let embedded = Embedded::sort(certificates);
+    let mut parsed: Option<SignedAttributes> = None;
     // Signer-independent, so walked once for all SignerInfos, and only once
     // one of them has named an embedded certificate that decodes.
     let mut authenticated: Option<Vec<Certificate>> = None;
+    // Every SignerInfo signs the same content, so another one passing
+    // proves the same bytes; only when none does is the first one's failure
+    // the verdict.
     let mut first_failure: Option<Failure> = None;
-    for index in 0..signer_count {
-        let verdict = signer_certificates(&cms, index, &embedded).and_then(|matches| {
-            let attributes = payload.get_or_insert_with(|| parse_payload_attributes(cms.content()));
-            let at_millis = match attributes.as_deref().ok().and_then(creation_date) {
-                Some(millis) => millis,
-                None => clock.now()?,
-            };
+    for index in 0..cms.signer_count() {
+        let (first, others) = match signer_certificates(&cms, index, &embedded) {
+            Ok(matches) => matches,
+            Err(failure) => {
+                first_failure.get_or_insert(failure);
+                continue;
+            }
+        };
+        let attributes = parsed.get_or_insert_with(|| parse_payload_attributes(cms.content()));
+        let verdict = chain_instant(attributes, clock).and_then(|at_millis| {
             let authenticated = authenticated
                 .get_or_insert_with(|| authenticated_top_down(&embedded.readable, anchors));
             // The bag is unsigned, so a certificate carrying the signer's
             // identity on another key can sit ahead of the genuine one. Each
             // match is tried as the SignerInfos are: one passing is enough,
-            // and only when none does is the first one's failure the verdict.
-            // No match's key is used before its chain has passed.
-            let mut first_match_failure: Option<Failure> = None;
-            for signer in matches {
-                match verify_signer(&mut cms, index, &signer, authenticated, anchors, at_millis) {
-                    Ok(()) => return Ok(()),
-                    Err(failure) => {
-                        first_match_failure.get_or_insert(failure);
-                    }
-                }
+            // and only when none does is the first one's failure the
+            // verdict. No match's key is used before its chain has passed.
+            let first_verdict =
+                verify_signer(&mut cms, index, &first, authenticated, anchors, at_millis);
+            if first_verdict.is_err()
+                && others.iter().any(|signer| {
+                    verify_signer(&mut cms, index, signer, authenticated, anchors, at_millis)
+                        .is_ok()
+                })
+            {
+                return Ok(());
             }
-            Err(first_match_failure.unwrap_or_else(|| malformed("signer certificate not embedded")))
+            first_verdict
         });
         match verdict {
-            // A passing signer was matched, so the payload is parsed already.
-            Ok(()) => return Ok(payload.unwrap_or_else(|| parse_payload_attributes(cms.content()))),
-            // Every SignerInfo signs the same content, so another one
-            // passing proves the same bytes; only when none does is the
-            // first one's failure the verdict.
+            // Moved out, not copied: nothing reads `parsed` after this.
+            Ok(()) => return Ok(core::mem::replace(attributes, Ok(Vec::new()))),
             Err(failure) => {
                 first_failure.get_or_insert(failure);
             }
         }
     }
     Err(first_failure.unwrap_or_else(|| malformed("no signer info")))
+}
+
+/// The instant the chain is judged at: the receipt's first attribute 12
+/// when it is there and parses, otherwise the clock.
+fn chain_instant(attributes: &SignedAttributes, clock: &Clock<'_>) -> Result<i64, Failure> {
+    match attributes.as_deref().ok().and_then(creation_date) {
+        Some(millis) => Ok(millis),
+        None => clock.now(),
+    }
 }
 
 /// The embedded certificates, judged once for every `SignerInfo`: the ones
@@ -194,7 +208,7 @@ struct Embedded {
 }
 
 impl Embedded {
-    fn sort(certificates: Vec<Certificate>) -> Embedded {
+    fn partition(certificates: Vec<Certificate>) -> Embedded {
         let (readable, unreadable) = certificates.into_iter().partition(Certificate::is_readable);
         Embedded {
             readable,
@@ -260,8 +274,9 @@ fn verify_signer(
 }
 
 /// The certificates `SignerInfo` `index` names as its signer, each once and
-/// never empty, or the verdict for the bag. The signer's own entry not decoding is
-/// `INVALID_CERTIFICATE`, as an unreadable `x5c` entry is on the JWS path;
+/// the first apart from the rest, or the verdict for the bag. The signer's
+/// own entry not decoding is `INVALID_CERTIFICATE`, as an unreadable `x5c`
+/// entry is on the JWS path;
 /// any other entry not decoding is `MALFORMED`, because the bag is unsigned
 /// and bytes that cannot be read there are a defect of the receipt, not of a
 /// certificate. A broken signer outranks a broken stranger.
@@ -269,7 +284,7 @@ fn signer_certificates(
     cms: &SignedData,
     index: usize,
     embedded: &Embedded,
-) -> Result<Vec<Certificate>, Failure> {
+) -> Result<(Certificate, Vec<Certificate>), Failure> {
     if embedded
         .unreadable
         .iter()
@@ -287,20 +302,27 @@ fn signer_certificates(
     }
     // Byte-identical copies are one certificate, tried once: each try
     // digests the whole content, and the bag is the sender's to repeat.
-    let mut matches: Vec<Certificate> = Vec::new();
+    let mut first: Option<Certificate> = None;
+    let mut others: Vec<Certificate> = Vec::new();
     for certificate in &embedded.readable {
-        if cms.names_signer(index, certificate)
-            && !matches
-                .iter()
-                .any(|kept: &Certificate| kept.same_as(certificate))
-        {
-            matches.push(certificate.clone());
+        if !cms.names_signer(index, certificate) {
+            continue;
+        }
+        match &first {
+            None => first = Some(certificate.clone()),
+            Some(kept) => {
+                if !core::iter::once(kept)
+                    .chain(&others)
+                    .any(|kept| kept.same_as(certificate))
+                {
+                    others.push(certificate.clone());
+                }
+            }
         }
     }
-    if matches.is_empty() {
-        return Err(malformed("signer certificate not embedded"));
-    }
-    Ok(matches)
+    first
+        .map(|first| (first, others))
+        .ok_or_else(|| malformed("signer certificate not embedded"))
 }
 
 fn invalid_signature(detail: &'static str) -> Failure {
