@@ -455,6 +455,64 @@ fn the_clock_is_read_only_when_a_verdict_needs_it() {
 }
 
 #[test]
+fn a_broken_clock_is_not_hidden_behind_an_earlier_signer_infos_failure() {
+    // INTERNAL_ERROR is the operator's alarm, and an input verdict must not
+    // outrank it. The first SignerInfo names a certificate the receipt does
+    // not embed (MALFORMED, before any clock); the second is genuine and,
+    // with no attribute 12, needs the clock. Review finding Fable F1.
+    use common::pki::{receipt_payload_full, signed_data, signer_info, Hash, Pki};
+    let (stranger, pinned) = (Pki::receipt(), Pki::receipt());
+    let payload = receipt_payload_full(
+        Some("ProductionSandbox"),
+        "com.example.app",
+        "1",
+        &[1; 8],
+        &[2; 20],
+        "2026-10-01T00:00:00Z",
+        &[],
+        false,
+    );
+    let signed_by = |pki: &Pki| {
+        let label = pki.leaf_key.label(Hash::Sha256);
+        signer_info(
+            &pki.leaf,
+            Hash::Sha256,
+            &label,
+            &payload,
+            None,
+            &[],
+            &|data| pki.leaf_key.sign(Hash::Sha256, data),
+        )
+    };
+    let receipt = base64_encode(&signed_data(
+        &payload,
+        true,
+        &[Hash::Sha256],
+        &pinned.chain,
+        &[signed_by(&stranger), signed_by(&pinned)],
+    ));
+    let verifier = |clock: fn() -> i64| {
+        Verifier::new(
+            Config::builder()
+                .roots([pinned.anchor()])
+                .clock(clock)
+                .build()
+                .unwrap(),
+        )
+    };
+
+    // With a working clock the second SignerInfo passes.
+    assert!(verifier(common::pki::now_ms)
+        .verify_receipt(&receipt)
+        .is_ok());
+    let failure = verifier(|| panic!("the caller's clock broke"))
+        .verify_receipt(&receipt)
+        .unwrap_err();
+    assert_eq!(failure.reason(), Reason::InternalError);
+    assert_eq!(failure.message(), "the configured clock panicked");
+}
+
+#[test]
 fn the_device_hash_is_computable_from_the_returned_fields() {
     // 0.7 checks no device binding. The caller does, from these three
     // fields and the device identifier, with the formula the README shows.

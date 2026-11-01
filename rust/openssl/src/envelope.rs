@@ -59,8 +59,13 @@ impl Envelope {
             return Err(ShallowError::NotSignedData);
         }
         // `content` is the template's last field and not OPTIONAL, so a
-        // decoded value always has one (tasn_dec.c:440-441, 480-492).
-        debug_assert!(!content.is_null());
+        // decoded value always has one (tasn_dec.c:440-441, 480-492). The
+        // check stays in release builds: `typed` dereferences it, and a
+        // future OpenSSL or template change must give an error, not
+        // undefined behaviour.
+        if content.is_null() {
+            return Err(ShallowError::Malformed);
+        }
         // A SEQUENCE inside ANY is kept as its whole encoding.
         let (kind, encoding) = typed(content);
         if kind != ffi::V_ASN1_SEQUENCE {

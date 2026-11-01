@@ -655,6 +655,17 @@ Not defended against here, by decision rather than omission.
 - **SHA-1 is accepted for legacy receipts**, and the device-hash binding is
   SHA-1, because Apple signs them that way. Neither can be chosen differently
   and still verify genuine receipts.
+- **MD5 is accepted too: there is no digest floor.** Both implementations
+  take any certificate or CMS signature their crypto library verifies
+  (docs/rust-core/DECISIONS.md R20, "Algorithm policy"), so an MD5 or
+  SHA-1 signature in the chain or on the `SignerInfo` verifies like a
+  SHA-2 one. No genuine Apple chain or receipt uses MD5. The risk is low because a collision forgery needs
+  a pinned Apple CA, or a marker-carrying signer below one, to have
+  signed content the attacker chose with that hash; the forged certificate
+  or payload then reuses that signature. Refusing MD5, or SHA-1 where
+  Apple does not use it, would be a behaviour change across the Rust
+  core, Java and `fixtures/cases.json` together (AGENTS.md, "Behavior
+  changes").
 
 ## 6. Where the core runs: isolation
 
@@ -798,6 +809,16 @@ the core's bounds are what keep every call short (§3.7). Only
   `--token-file` that holds no token (empty or only whitespace) stops the
   server at start rather than turning the token off. The health, readiness
   and OpenAPI routes need no token.
+- **No token beyond loopback is a warning, not a refusal.** The server is
+  stateless and holds no secret: its roots are public certificates, and
+  no route hands back anything from another caller's request. A client
+  that reaches an open server can spend its CPU, bounded by the workers,
+  the guest time limit and the bodies in flight (§8), and can get verdicts
+  for inputs of its own. `X-Aprv-Now-Ms` is that call's clock (the
+  validity instant when the input states no usable date, and
+  `request_date` at the endpoint), so it changes only that caller's own
+  verdict. A deployment that exposes the server should set `APRV_TOKEN`
+  or `--token-file`.
 - **Plain HTTP.** The server speaks HTTP without TLS. It is meant for
   loopback, a sidecar or a private network; TLS termination belongs to the
   deployment.

@@ -43,8 +43,9 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   beside this crate), `base64` for `receipt-data` and `x5c` entries,
   `jiff` for the calendar and the US Pacific time of the `_pst` dates
   (one zone, `America/Los_Angeles`, compiled in; no time-zone file is
-  read at run time), and `serde_json`, which only writes `to_json()` and
-  the endpoint response and never reads input. Every byte of
+  read at run time), and `serde_json`, which reads the JWS header and
+  payload and the endpoint request body and writes `to_json()` and the
+  endpoint response. Every byte of
   attacker-supplied ASN.1 (certificates, CMS, receipt payloads, keys,
   signatures) is parsed by OpenSSL 4 through
   that adapter, which also does the path building and the signature
@@ -177,7 +178,7 @@ parse `failure.message()`.
 | `InvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic after the signature), or the configured clock panicked; no input makes a correct library answer it | 21009 |
+| `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic, wherever it happened), or the configured clock panicked; no input makes a correct library answer it | 21009 |
 
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure with `VERSION`, and reconcile the purchase through the App
@@ -217,8 +218,11 @@ Both payloads state the environment Apple's value names:
 `ReceiptPayload::environment()` reads `receipt_type`, and
 `JsonPayload::environment()` the first of the top-level `environment`, a
 notification's `data.environment` and a summary notification's
-`summary.environment` that is present. Whether to accept Sandbox is
-yours to decide.
+`summary.environment` that is present. An `AppTransaction` names its
+environment in `receiptType`, which is not one of those three, so
+`JsonPayload::environment()` is `None` for every app transaction; read
+`receiptType` from the JSON yourself. The Java implementation reads the
+same three places. Whether to accept Sandbox is yours to decide.
 
 For a JWS, read the other claims with your own JSON parser:
 `bundleId`, `appAppleId` for a Production `AppTransaction`,
@@ -397,13 +401,13 @@ are standard base64, JWS segments unpadded canonical base64url, so one
 signed payload has one accepted spelling.
 
 The library target additionally denies `unwrap`, `expect`, slice indexing
-and `panic!` at compile time, and every public method contains a panic by
-where it happened, with a fixed message that never carries the panic's text:
-before a signature has verified it is `MALFORMED` (21002), as input nobody
-vouched for must not be able to raise the internal-error alarm at will;
-while the signed receipt payload is decoded it is `UNREADABLE_PAYLOAD`;
-after that it is `INTERNAL_ERROR` (21009). Containment needs unwinding: a
-binary built with `panic = "abort"` ends the process on a panic instead.
+and `panic!` at compile time, and every public method contains a panic as
+`INTERNAL_ERROR` (21009), wherever it happened, with a fixed message that
+never carries the panic's text. A panic is a bug in this library, not a
+verdict on the input, so it raises the alarm rather than read as a client
+"deny"; `aprv.wasm`, which traps on a panic, answers the same through every
+host. Containment needs unwinding: a binary built with `panic = "abort"`
+ends the process on a panic instead.
 
 ## Measured worst-case CPU
 
@@ -493,7 +497,7 @@ caller checks those on the returned payload.
 | `WrongBundleId`, `WrongEnvironment`, `WrongAppAppleId`, `DeviceHashMismatch` | gone: the caller's checks |
 
 The `endpoint` feature is gone: the endpoint is always there, and
-`serde_json` is an unconditional dependency that only writes JSON.
+`serde_json` is an unconditional dependency.
 
 ## Vendoring
 
