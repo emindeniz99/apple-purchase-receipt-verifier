@@ -182,6 +182,9 @@ fn verify_envelope(
         match verdict {
             // Moved out, not copied: nothing reads `parsed` after this.
             Ok(()) => return Ok(core::mem::replace(attributes, Ok(Vec::new()))),
+            // A broken clock is the host's fault, not the input's: an
+            // earlier SignerInfo's input verdict must not hide it.
+            Err(failure) if failure.reason() == Reason::InternalError => return Err(failure),
             Err(failure) => {
                 first_failure.get_or_insert(failure);
             }
