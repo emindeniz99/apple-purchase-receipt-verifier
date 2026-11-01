@@ -809,6 +809,16 @@ the core's bounds are what keep every call short (§3.7). Only
   `--token-file` that holds no token (empty or only whitespace) stops the
   server at start rather than turning the token off. The health, readiness
   and OpenAPI routes need no token.
+- **No token beyond loopback is a warning, not a refusal.** The server is
+  stateless and holds no secret: its roots are public certificates, and
+  no route hands back anything from another caller's request. A client
+  that reaches an open server can spend its CPU, bounded by the workers,
+  the guest time limit and the bodies in flight (§8), and can get verdicts
+  for inputs of its own. `X-Aprv-Now-Ms` is that call's clock (the
+  validity instant when the input states no usable date, and
+  `request_date` at the endpoint), so it changes only that caller's own
+  verdict. A deployment that exposes the server should set `APRV_TOKEN`
+  or `--token-file`.
 - **Plain HTTP.** The server speaks HTTP without TLS. It is meant for
   loopback, a sidecar or a private network; TLS termination belongs to the
   deployment.
