@@ -20,7 +20,6 @@ use common::pki::{
     SHA256_WITH_RSA, SIGNING_LEAF_OID, TRUE, WWDR_OID,
 };
 use common::{der, der_int, der_oid, der_seq, tag};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -1128,10 +1127,9 @@ fn deep_random_fuzz_never_verifies_never_panics() {
         } else {
             b64(&bytes)
         };
-        let outcome = catch_unwind(AssertUnwindSafe(|| {
-            timed(|| verifier.verify_receipt(&receipt))
-        }));
-        let (result, cost) = outcome.unwrap_or_else(|_| panic!("random input {i} panicked"));
+        let ((result, cost), panics) =
+            common::panics::panics_during(|| timed(|| verifier.verify_receipt(&receipt)));
+        assert_eq!(panics, 0, "random input {i} panicked");
         worst = worst.max(cost);
         let failure = result
             .err()

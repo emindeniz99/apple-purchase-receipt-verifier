@@ -9,6 +9,27 @@
 //! from this certificate to these anchors have at this second") and never
 //! decides a verdict. It knows nothing about JSON, the C ABI or Wasm.
 //!
+//! **Not a general-purpose OpenSSL binding.** It is published only because
+//! the core depends on it, moves in lockstep with the core's version, and
+//! its API serves the core alone. Use the core.
+//!
+//! **Part of the security review boundary.** The path validation
+//! (`src/path.rs`) holds trust policy of its own, not only FFI: it trusts
+//! an anchor by fiat (waiving its validity window, CA flag and path length
+//! constraint), offers OpenSSL only the certificates that sign the path,
+//! runs once per candidate anchor and chooses which run's problems are
+//! reported, and groups OpenSSL's `X509_V_ERR_*` codes into the problem
+//! kinds the core turns into reasons. Review it with the core.
+//!
+//! **The path validation is internal.** `__internal::verify_path` uses
+//! the keys of the certificates it is handed as untrusted to check the
+//! path's signatures. It is safe only when the caller passes certificates
+//! a pinned anchor already vouched for, top-down (the core's
+//! `authenticated_top_down` and `validate_pair`); handed a raw certificate
+//! bag or `x5c` list, it would use an attacker's key. So it is
+//! `#[doc(hidden)]`, sits under `__internal` with its outcome types, and is
+//! not covered by semver.
+//!
 //! Rules this crate keeps:
 //!
 //! - **No ambient OpenSSL state.** [`init`] runs
@@ -61,9 +82,17 @@ pub use cms::full_decodes_during;
 pub use cms::{CmsError, EnvelopeLimits, SignedData};
 #[cfg(feature = "test-seams")]
 pub use keys::keys_used_during;
-pub use path::{verify_path, PathOutcome, PathProblem, PathProblemKind};
 pub use signature::{sha256, verify_es256};
 pub use walk::Budget;
+
+/// Not part of the public API, and not covered by semver: the path
+/// validation the core calls with certificates a pinned anchor already
+/// vouched for. See the crate documentation for why it must not be called
+/// with anything else.
+#[doc(hidden)]
+pub mod __internal {
+    pub use crate::path::{verify_path, PathOutcome, PathProblem, PathProblemKind};
+}
 
 use std::sync::Once;
 

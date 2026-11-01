@@ -118,10 +118,10 @@ pub struct Failure {
 }
 
 impl Failure {
-    /// A failure with no source. Public so callers can build one in their
-    /// own tests.
+    /// A failure with no source. Crate-private: outside this crate a
+    /// failure comes only from a verification.
     #[must_use]
-    pub fn new(reason: Reason, message: impl Into<String>) -> Self {
+    pub(crate) fn new(reason: Reason, message: impl Into<String>) -> Self {
         Failure {
             reason,
             message: message.into(),

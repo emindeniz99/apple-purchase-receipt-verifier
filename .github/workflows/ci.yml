@@ -1411,6 +1411,21 @@ jobs:
         env:
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: cargo "+$TOOLCHAIN" test --locked --workspace --all-features
+      # The wall-clock bounds: maxMillis in fixtures/cases.json and the
+      # cost bounds of hostile.rs, envelope_bounds.rs and
+      # unauthenticated_key_cost.rs. The steps above check those tests'
+      # verdicts but not their clocks, which flaked on loaded runners
+      # (rust/tests/common/timing.rs). Here they run one test at a time,
+      # on one leg, with nothing else competing for the runner.
+      - name: wall-clock bounds on stable
+        if: matrix.toolchain == 'stable'
+        working-directory: rust
+        env:
+          APRV_TIMING_ASSERTS: "1"
+        run: >-
+          cargo +stable test --locked --workspace --all-features
+          --test conformance --test hostile --test envelope_bounds
+          --test unauthenticated_key_cost -- --test-threads=1
       # The prebuilt-OpenSSL leg: the same tests linked against an OpenSSL
       # 4.0.3 built outside cargo from the one pinned tarball, as a
       # distribution or a source build with OPENSSL_DIR links it.

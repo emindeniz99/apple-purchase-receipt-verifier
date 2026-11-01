@@ -141,9 +141,9 @@ status codes as constants.
 
 ### `ReceiptPayload`
 
-Every field is an `Option` (or a `Vec`) with public fields, so a test can
-build one by hand. Dates are epoch milliseconds (`*_ms`, `i64`), ids are
-`i64`, bytes are `Vec<u8>`:
+Every field is a public `Option` or `Vec`, except `unknown_attributes`, a
+`BTreeMap` from attribute type to raw values. Dates are epoch
+milliseconds (`*_ms`, `i64`), ids are `i64`, bytes are `Vec<u8>`:
 
 ```rust
 receipt.receipt_type;                 // Some("Production"), Some("ProductionSandbox"), ...
@@ -183,6 +183,22 @@ parse `failure.message()`.
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure with `VERSION`, and reconcile the purchase through the App
 Store Server API rather than deny the user.
+
+### Only a `Verifier` builds a verdict
+
+A `ReceiptPayload`, `InAppPurchase`, `JsonPayload` or `Failure` exists
+outside this crate only because a `Verifier` returned it. None has a
+public constructor: `ReceiptPayload` and `InAppPurchase` are
+`#[non_exhaustive]` and do not implement `Default`, and `JsonPayload` and
+`Failure` keep their fields private. A function that takes a
+`ReceiptPayload` therefore receives a value a `Verifier` returned. Its
+fields are public, so code that owns the value can still change them, and
+the edited value then carries claims no receipt made. To test code that consumes these types, mock the call that
+returns them (a trait over `Verifier` in your code), or feed it a receipt
+your test signs under a root of its own (`Config::builder().roots(...)`).
+The constructors the library's own tests use sit behind the internal,
+unstable `test-seams` feature; a build that turns it on can forge a
+verdict value.
 
 ## What to check after verification
 
@@ -338,7 +354,12 @@ costs its decoding and a name comparison, however large or broken its key. The s
 denial-of-service cases pin this with a time budget, and the tests assert it
 directly through a seam that records every key used. The seam compiles only
 under the `test-seams` feature, which the crate's own tests turn on through
-a dev-dependency on the crate itself, so a plain `cargo test` runs them.
+a dev-dependency on the crate itself, so a plain `cargo test` runs them. The
+same feature gates the rest of `__internal` that only tests use (the date
+reader, the path policy, the `x5c` decoder, hand-built payloads and
+failures); without it, `__internal` holds only the input length, the
+`receipt-data` decoder and a base64 encoder that the workspace's other
+crates and the fuzz targets use.
 
 ## Defensive parsing
 

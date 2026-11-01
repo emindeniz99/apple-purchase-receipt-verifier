@@ -40,11 +40,12 @@ pub struct JsonPayload {
 }
 
 impl JsonPayload {
-    /// A payload. Public so callers can build one in their own tests; its
-    /// [`environment`](JsonPayload::environment) is read from `json` as a
-    /// verified payload's is.
+    /// A payload whose [`environment`](JsonPayload::environment) is read
+    /// from `json` as a verified payload's is. For tests only: outside this
+    /// crate a payload comes only from a verification.
+    #[cfg(any(test, feature = "test-seams"))]
     #[must_use]
-    pub fn new(json: impl Into<String>) -> Self {
+    pub(crate) fn new(json: impl Into<String>) -> Self {
         let json = json.into();
         let environment = whole_object_members(&json)
             .ok()

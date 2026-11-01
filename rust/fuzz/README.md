@@ -20,9 +20,9 @@ APRV_WASM=<out>/aprv.wasm ./run.sh abi-call 600   # the module, built by
 
 | target | what it reaches | invariant beyond "no panic" |
 |---|---|---|
-| `verify-receipt` | `Verifier::verify_receipt` on the base64 of arbitrary DER: CMS, chain, signature, payload | never `INTERNAL_ERROR`; an accepted receipt fails against an unrelated anchor set |
+| `verify-receipt` | `Verifier::verify_receipt` on the base64 of arbitrary DER: CMS, chain, signature, payload | never `INTERNAL_ERROR`; an accepted receipt carries the payload of a seed that verifies, and fails against an unrelated anchor set |
 | `verify-receipt-base64` | `Verifier::verify_receipt`, the string a client sends | none |
-| `verify-transaction` | `Verifier::verify_signed_data` | a JWS accepted under the fixture root fails under Apple's roots |
+| `verify-transaction` | `Verifier::verify_signed_data` | a JWS accepted under the fixture root carries the signing input (`header.payload`) of a seed that verifies, and fails under Apple's roots; the clock is fixed |
 | `endpoint-json` | `Verifier::verify_receipt_endpoint` on a request body | the answer is always a body that starts with `status` |
 | `ffi` | the C ABI's exports (`../ffi`), called as Rust functions: the length-taking calls, the C-string calls, the endpoint | each `_bytes` call answers `aprv-wire`'s document over `aprv-surface`, byte for byte; a C-string call answers what the `_bytes` call answers for the bytes before the first NUL |
 | `abi-call` | `aprv.wasm` in Wasmtime, called through a hand-rolled canonical-ABI host (`cabi_realloc`, the return area, `cabi_post_`), one instance reused across inputs as a pool would | an endpoint call with `env` over 1 traps; every other call returns, and its answer has the wire shape (a verdict, or a body starting with `status`). An instance is replaced only after a trap |
@@ -39,9 +39,14 @@ so libFuzzer follows edges inside OpenSSL's CMS, X.509 and ASN.1 code, and
 ASan sees its memory errors. Without it the targets link the system or
 vendored OpenSSL, uninstrumented: coverage stops at the adapter's calls.
 
-The anchor-set invariant is the one that lets a fuzzer find "accepts what
-it should not" rather than only crashes: without it an input that verifies
-tells you nothing about *why*.
+The two acceptance invariants are what let a fuzzer find "accepts what it
+should not" rather than only crashes. The anchor-set one shows the anchors
+decided; the seed one shows the signature covers what is returned, since a
+fuzzer cannot forge a signature and so can only get accepted what a seed's
+signer signed. Without the seed check, a broken content signature under a
+genuine chain would pass the anchor check. The targets read the seeds from
+the directories `run.sh` passes them (`SEED_DIRS` in each target), so a run
+seeded from other directories must add them there.
 
 CI (`rust-fuzz` in `.github/workflows/ci.yml`) runs each target for a fixed
 budget on every push; `CI-NOTES.md` says what the nightly job adds. A crasher lands under `artifacts/<target>/`, which is

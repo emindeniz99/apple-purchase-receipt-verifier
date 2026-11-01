@@ -29,8 +29,9 @@ default = ["vendored"]
 # at build time without changing features.
 vendored = ["openssl/vendored"]
 # The tests' seams, `keys_used_during` and `full_decodes_during`, and the
-# recording behind them. No shipped build turns it on; the core's own tests
-# do (../Cargo.toml).
+# recording behind them; and `Certificate::may_issue_certificates` with its
+# `X509_check_ca` call, which only tests ask. No shipped build turns it on;
+# the core's own tests do (../Cargo.toml).
 test-seams = []
 
 [dependencies]

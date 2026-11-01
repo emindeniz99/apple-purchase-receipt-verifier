@@ -2,15 +2,19 @@
 //!
 //! A security library's surface is part of its security: a caller must be
 //! able to tell a misconfiguration from a verdict, to match on a reason
-//! without parsing text, to share one verifier across threads, and to build
-//! payloads and failures by hand in its own tests.
+//! without parsing text, and to share one verifier across threads. Only the
+//! library builds a payload or a failure; these tests build theirs through
+//! the `test-seams` hooks.
 
 mod common;
 
-use apple_purchase_receipt_verifier::__internal::{base64_encode, decode_receipt_data};
+use apple_purchase_receipt_verifier::__internal::{
+    base64_encode, decode_receipt_data, failure as built_failure, in_app_purchase, json_payload,
+    receipt_payload,
+};
 use apple_purchase_receipt_verifier::{
-    AppleStatus, Config, ConfigError, Environment, Failure, InAppPurchase, JsonPayload, Reason,
-    ReceiptPayload, TrustAnchor, Verifier, VERSION,
+    AppleStatus, Config, ConfigError, Environment, Failure, JsonPayload, Reason, ReceiptPayload,
+    TrustAnchor, Verifier, VERSION,
 };
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -66,10 +70,8 @@ fn a_payload_states_the_environment_apples_value_names() {
         (Some(""), None),
         (None, None),
     ] {
-        let receipt = ReceiptPayload {
-            receipt_type: receipt_type.map(str::to_owned),
-            ..ReceiptPayload::default()
-        };
+        let mut receipt = receipt_payload();
+        receipt.receipt_type = receipt_type.map(str::to_owned);
         assert_eq!(receipt.environment(), expected, "{receipt_type:?}");
     }
     for (json, expected) in [
@@ -91,7 +93,7 @@ fn a_payload_states_the_environment_apples_value_names() {
         ),
         ("{}", None),
     ] {
-        assert_eq!(JsonPayload::new(json).environment(), expected, "{json}");
+        assert_eq!(json_payload(json).environment(), expected, "{json}");
     }
 }
 
@@ -151,14 +153,13 @@ fn a_failure_displays_as_reason_colon_message_and_carries_its_source() {
     assert_eq!(unreadable.reason(), Reason::UnreadablePayload);
     assert!(unreadable.source().is_some(), "{unreadable:?}");
 
-    // Callers build their own, for their own tests. Equality is reason and
-    // message; the source is not compared.
-    let built = Failure::new(Reason::UntrustedChain, "x");
+    // Equality is reason and message; the source is not compared.
+    let built = built_failure(Reason::UntrustedChain, "x");
     assert_eq!(
         built,
-        Failure::new(Reason::UntrustedChain, "x").with_source(std::fmt::Error)
+        built_failure(Reason::UntrustedChain, "x").with_source(std::fmt::Error)
     );
-    assert_ne!(built, Failure::new(Reason::UntrustedChain, "y"));
+    assert_ne!(built, built_failure(Reason::UntrustedChain, "y"));
 }
 
 #[test]
@@ -577,27 +578,24 @@ fn a_verified_jws_is_returned_exactly_as_signed() {
 }
 
 #[test]
-fn payloads_can_be_built_by_hand_and_write_their_json_value() {
+fn payloads_write_their_json_value() {
     let mut unknown = BTreeMap::new();
     unknown.insert(13, vec![vec![1, 2, 3]]);
     unknown.insert(9, vec![b"a".to_vec(), b"b".to_vec()]);
-    let receipt = ReceiptPayload {
-        receipt_type: Some("ProductionSandbox".to_owned()),
-        app_item_id: Some(i64::MAX),
-        bundle_id: Some("com.example.app".to_owned()),
-        bundle_id_bytes: Some(vec![0x0c, 0x01, 0x61]),
-        receipt_creation_date_ms: Some(1_722_945_600_000),
-        download_id: Some(-1),
-        in_app: vec![InAppPurchase {
-            quantity: Some(1),
-            product_id: Some("line\nbreak \"quoted\" / \u{e9} \u{2028}".to_owned()),
-            web_order_line_item_id: Some(42),
-            is_trial_period: Some(false),
-            ..InAppPurchase::default()
-        }],
-        unknown_attributes: unknown,
-        ..ReceiptPayload::default()
-    };
+    let mut purchase = in_app_purchase();
+    purchase.quantity = Some(1);
+    purchase.product_id = Some("line\nbreak \"quoted\" / \u{e9} \u{2028}".to_owned());
+    purchase.web_order_line_item_id = Some(42);
+    purchase.is_trial_period = Some(false);
+    let mut receipt = receipt_payload();
+    receipt.receipt_type = Some("ProductionSandbox".to_owned());
+    receipt.app_item_id = Some(i64::MAX);
+    receipt.bundle_id = Some("com.example.app".to_owned());
+    receipt.bundle_id_bytes = Some(vec![0x0c, 0x01, 0x61]);
+    receipt.receipt_creation_date_ms = Some(1_722_945_600_000);
+    receipt.download_id = Some(-1);
+    receipt.in_app = vec![purchase];
+    receipt.unknown_attributes = unknown;
     // Compared as a value: ids as strings, missing fields null, bytes as
     // padded base64, unknown attribute values in receipt order under their
     // decimal type.
@@ -624,7 +622,7 @@ fn payloads_can_be_built_by_hand_and_write_their_json_value() {
             "unknown_attributes": {"9": ["YQ==", "Yg=="], "13": ["AQID"]}
         })
     );
-    assert_eq!(JsonPayload::new("{}").json(), "{}");
+    assert_eq!(json_payload("{}").json(), "{}");
 }
 
 #[test]
