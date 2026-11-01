@@ -89,6 +89,31 @@ pub use receipt_payload::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 pub use roots::TrustAnchor;
 pub use verifier::Verifier;
 
+/// Outside this crate a verdict value comes only from a [`Verifier`]. Each
+/// block below must fail to compile; one that compiles means a constructor
+/// became public.
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::Failure::new(
+///     apple_purchase_receipt_verifier::Reason::Malformed,
+///     "forged",
+/// );
+/// ```
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::JsonPayload::new("{}");
+/// ```
+///
+/// ```compile_fail
+/// let _: apple_purchase_receipt_verifier::ReceiptPayload = Default::default();
+/// ```
+///
+/// ```compile_fail
+/// let _: apple_purchase_receipt_verifier::InAppPurchase = Default::default();
+/// ```
+#[cfg(doctest)]
+struct VerdictsHaveNoPublicConstructor;
+
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

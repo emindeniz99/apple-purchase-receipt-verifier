@@ -140,7 +140,8 @@ status codes as constants.
 
 ### `ReceiptPayload`
 
-Every field is a public `Option` (or a `Vec`). Dates are epoch
+Every field is a public `Option` or `Vec`, except `unknown_attributes`, a
+`BTreeMap` from attribute type to raw values. Dates are epoch
 milliseconds (`*_ms`, `i64`), ids are `i64`, bytes are `Vec<u8>`:
 
 ```rust
