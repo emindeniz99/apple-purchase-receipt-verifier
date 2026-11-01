@@ -1202,11 +1202,13 @@ jobs:
         run: |
           set -euo pipefail
           # A dry run builds and tests, unsigned (gpg.skip; the environment
-          # hands it no key). skipPublishing is the central-publishing-maven-
-          # plugin's switch that stages nothing, so no bundle is written and
-          # nothing reaches the portal.
+          # hands it no key). skipUpload (central-publishing-maven-plugin
+          # 0.12.0) stages the artifacts and writes the bundle Central would
+          # receive, target/central-publishing/central-bundle.zip, and
+          # uploads nothing; it needs no credentials, so the empty ones the
+          # dry-run environment yields are fine.
           if [ "$DRY_RUN" = "true" ]; then
-            mvn -B -P central deploy -DskipPublishing=true -Dgpg.skip=true
+            mvn -B -P central deploy -DskipUpload=true -Dgpg.skip=true
           else
             mvn -B -P central deploy
           fi
@@ -1271,7 +1273,7 @@ jobs:
         run: |
           set -euo pipefail
           skip=()
-          if [ "$DRY_RUN" = "true" ]; then skip=(-DskipPublishing=true -Dgpg.skip=true); fi
+          if [ "$DRY_RUN" = "true" ]; then skip=(-DskipUpload=true -Dgpg.skip=true); fi
           mvn -B -P central deploy "${skip[@]}" \
             "-Daprv.wasm=$RUNNER_TEMP/aprv/aprv.wasm" \
             "-Daprv.server.linux-x86_64=$RUNNER_TEMP/dist/aprv-x86_64-unknown-linux-musl" \
@@ -1283,8 +1285,8 @@ jobs:
         with:
           subject-path: java-wasm/target/apple-purchase-receipt-verifier-wasm-*.jar
 
-      # The jars Central would have received (the -wasm ones only when its
-      # gate let them build), unsigned: skipPublishing writes no bundle.
+      # The jars and the bundles Central would have received (the -wasm ones
+      # only when its gate let them build), unsigned.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.dry_run && (steps.gate.outputs.publish == 'true' || steps.gate-wasm.outputs.publish == 'true') }}
         with:
@@ -1292,6 +1294,8 @@ jobs:
           path: |
             java/target/*.jar
             java-wasm/target/*.jar
+            java/target/central-publishing/central-bundle.zip
+            java-wasm/target/central-publishing/central-bundle.zip
           if-no-files-found: error
           retention-days: 30
 
