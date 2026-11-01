@@ -1,0 +1,5 @@
+== aprv-aarch64-unknown-linux-musl (11589696 bytes)
+   ELF 64-bit LSB executable
+== tests/server/aprv-f1114b3cfccac1a3 (287230912 bytes)
+   ELF 64-bit LSB executable
+   lines holding $SRC/rust/: 51

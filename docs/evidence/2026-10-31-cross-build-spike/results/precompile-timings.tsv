@@ -1,0 +1,7 @@
+precompiler-build	321.4
+precompile x86_64-unknown-linux-musl	3.9
+precompile aarch64-unknown-linux-musl	3.2
+precompile x86_64-apple-darwin	2.7
+precompile aarch64-apple-darwin	3.2
+precompile x86_64-pc-windows-msvc	3.6
+precompile aarch64-pc-windows-msvc	3.1

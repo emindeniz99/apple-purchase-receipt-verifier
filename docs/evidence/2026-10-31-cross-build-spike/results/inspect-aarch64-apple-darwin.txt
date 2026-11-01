@@ -1,0 +1,52 @@
+== aprv-aarch64-apple-darwin (11503280 bytes)
+   Mach-O 64-bit arm64 executable
+   LC_BUILD_VERSION
+     sdk 27.0
+     minos 11.0
+     version 0.0
+   code signature: yes
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+== ffi/libapple_purchase_receipt_verifier_ffi.dylib (8851056 bytes)
+   Mach-O 64-bit arm64 dynamically linked shared library
+   LC_BUILD_VERSION
+     sdk 27.0
+     minos 11.0
+     version 0.0
+   code signature: yes
+   links @rpath/libapple_purchase_receipt_verifier_ffi.dylib (compatibility version 1.0.0, current version 1.0.0)
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+== tests/ffi/apple_purchase_receipt_verifier_ffi-fed8fb6ccafda12d (8751592 bytes)
+   Mach-O 64-bit arm64 executable
+   LC_BUILD_VERSION
+     sdk 27.0
+     minos 11.0
+     version 0.0
+   code signature: yes
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+   lines holding $SRC/rust/: 3
+== tests/ffi/exported_symbols-0d2b60da6dc5c2ae (1293936 bytes)
+   Mach-O 64-bit arm64 executable
+   LC_BUILD_VERSION
+     sdk 27.0
+     minos 11.0
+     version 0.0
+   code signature: yes
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   lines holding $SRC/rust/: 1
+== tests/server/aprv-0fc5bfd767ba09e0 (51463192 bytes)
+   Mach-O 64-bit arm64 executable
+   LC_BUILD_VERSION
+     sdk 27.0
+     minos 11.0
+     version 0.0
+   code signature: yes
+   links /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
+   links /usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)
+   links /usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+   lines holding $SRC/rust/: 12

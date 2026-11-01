@@ -1,0 +1,516 @@
+# Spike, not production CI (docs/evidence/2026-10-31-cross-build-spike.md).
+# Three ways to build aprv-server (and, for C, the C ABI library) for the
+# six release targets, side by side on one commit:
+#
+#   A  today's release.yml build-server: on each target's own runner,
+#      rust/server/scripts/build-static.sh builds the Cranelift precompiler,
+#      precompiles the component and builds the runtime-only binary.
+#   B  the precompiler built ONCE on Linux (wasmtime/all-arch), one .ccwasm
+#      per target written there; each target's runner builds only the
+#      runtime-only binary around its .ccwasm, natively.
+#   C  B's .ccwasm files, and every final binary built on Linux too
+#      (cargo-zigbuild for darwin and aarch64 Linux, cargo-xwin for both
+#      Windows targets); each target's runner only downloads the files,
+#      checks their SHA-256 against the build job's, and tests them.
+#
+# Jobs, in the shape release.yml would take for C:
+#
+#   component   aprv.component.wasm from this commit (rust-wasm's steps)
+#   precompile  B and C: tools/cross/precompile.sh, one precompiler build
+#               and six .ccwasm files, each hash a job output
+#   a-native    A on the six runners, timing each stage
+#   b-native    B on the six runners: tools/cross/build.sh then verify.sh
+#   c-build     C on ubuntu: tools/cross/build.sh per target (the server,
+#               the C ABI library, both crates' test executables)
+#   c-verify    C on the six runners: the hash check, then verify.sh
+#   gate        what publishing would wait on: every c-verify leg green and
+#               every file still c-build's
+#   compare     the timings, .ccwasm hashes, sizes and check results as
+#               tables in the run summary
+#
+# verify.sh runs `aprv info` (the .ccwasm loads: the runtime-only binary
+# deserializes it at start), every shared case over HTTP and through the
+# CLI, the managed mode, the server crate's own tests, and for the C ABI its
+# Rust tests and the C++ and ctypes conformance over fixtures/cases.json.
+#
+# Nothing here publishes, attests or caches. It runs on a pull request that
+# touches this file or tools/cross/, and by hand.
+name: spike-cross-build
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-cross-build.yml
+      - "tools/cross/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-cross-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  component:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      component-sha256: ${{ steps.build.outputs.component-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install the pinned wasm toolchain
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/aprv-wasm-toolchain"
+          tools/wasm-toolchain.sh "$dir" > /dev/null
+          { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+      - name: install the pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-wasip1
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: build aprv.wasm and the component
+        id: build
+        run: |
+          set -euo pipefail
+          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+          echo "component-sha256=$(sha256sum "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-component
+          path: ${{ runner.temp }}/aprv/aprv.component.wasm
+          if-no-files-found: error
+          retention-days: 7
+
+  precompile:
+    needs: component
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      sums: ${{ steps.sums.outputs.sums }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-component
+          path: ${{ runner.temp }}/aprv
+      - name: the component is the component job's
+        env:
+          COMPONENT_SHA256: ${{ needs.component.outputs.component-sha256 }}
+        run: echo "$COMPONENT_SHA256  $RUNNER_TEMP/aprv/aprv.component.wasm" | sha256sum -c -
+      - name: the pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: one precompiler, one .ccwasm per target
+        run: |
+          tools/cross/precompile.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$RUNNER_TEMP/ccwasm" \
+            x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin \
+            aarch64-apple-darwin x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-pc-windows-gnu
+      - name: the hashes the target jobs check
+        id: sums
+        run: |
+          set -euo pipefail
+          echo "sums=$(jq -Rsc 'split("\n") | map(select(length > 0) | split("  ") | {(.[1]): .[0]}) | add' "$RUNNER_TEMP/ccwasm/SHA256SUMS")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-ccwasm
+          path: ${{ runner.temp }}/ccwasm/
+          if-no-files-found: error
+          retention-days: 7
+
+  # A: today's release build, timed. build-static.sh prints cargo's
+  # "Finished" line per stage; the step records the whole step too.
+  a-native:
+    needs: component
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-component
+          path: ${{ runner.temp }}/aprv
+      - name: the pinned Rust toolchain with the target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target "$TARGET"
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: musl-gcc
+        if: endsWith(matrix.target, '-linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build-static.sh, timed
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" "$TARGET" "$RUNNER_TEMP/a" 2>&1 | tee "$RUNNER_TEMP/a-build.log"
+          total=$(( $(date +%s) - start ))
+          {
+            grep -o 'Finished `release` profile.*' "$RUNNER_TEMP/a-build.log" | sed -n '1s/^/stage1\t/p;2s/^/stage2\t/p'
+            printf 'total\t%s s\n' "$total"
+            printf 'ccwasm-file\t%s\n' "$( (sha256sum 2>/dev/null || shasum -a 256) < "$RUNNER_TEMP/a/aprv.$TARGET.ccwasm" | cut -c1-64)"
+          } | sed "s/^/a\t$TARGET\t/" | tee "$RUNNER_TEMP/a/a-timings.tsv"
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-a-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/a/a-timings.tsv
+            ${{ runner.temp }}/a/aprv.${{ matrix.target }}.ccwasm.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  # B: the Linux .ccwasm, the runtime-only build on the target's runner.
+  b-native:
+    needs: [component, precompile]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-component
+          path: ${{ runner.temp }}/aprv
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-ccwasm
+          path: ${{ runner.temp }}/ccwasm
+      - name: the .ccwasm is the precompile job's
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SUMS: ${{ needs.precompile.outputs.sums }}
+        run: |
+          set -euo pipefail
+          py=python3; command -v python3 >/dev/null 2>&1 || py=python
+          want="$("$py" -c 'import json, os; print(json.loads(os.environ["SUMS"]).get("aprv." + os.environ["TARGET"] + ".ccwasm", ""))')"
+          # Read from stdin: GNU sha256sum on Windows prefixes a backslash to the
+          # hash when the file name holds one, and $RUNNER_TEMP does there.
+          got="$( (sha256sum 2>/dev/null || shasum -a 256) < "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" | cut -c1-64)"
+          echo "want $want, got $got"
+          [ -n "$want" ] && [ "$want" = "$got" ]
+      - name: the pinned Rust toolchain with the target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target "$TARGET"
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      - name: musl-gcc
+        if: endsWith(matrix.target, '-linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: the runtime-only build around the Linux .ccwasm
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: BUILD_LABEL=b tools/cross/build.sh "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" "$TARGET" "$RUNNER_TEMP/b"
+      - name: verify
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: tools/cross/verify.sh "$RUNNER_TEMP/b" "$TARGET" "$RUNNER_TEMP/aprv/aprv.component.wasm" b
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-b-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/b/results.tsv
+            ${{ runner.temp }}/b/sizes.tsv
+            ${{ runner.temp }}/b/timings.tsv
+          if-no-files-found: warn
+          retention-days: 7
+
+  c-build:
+    needs: [component, precompile]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      sums-x86_64-unknown-linux-musl: ${{ steps.sums.outputs.sums-x86_64-unknown-linux-musl }}
+      sums-aarch64-unknown-linux-musl: ${{ steps.sums.outputs.sums-aarch64-unknown-linux-musl }}
+      sums-x86_64-apple-darwin: ${{ steps.sums.outputs.sums-x86_64-apple-darwin }}
+      sums-aarch64-apple-darwin: ${{ steps.sums.outputs.sums-aarch64-apple-darwin }}
+      sums-x86_64-pc-windows-msvc: ${{ steps.sums.outputs.sums-x86_64-pc-windows-msvc }}
+      sums-aarch64-pc-windows-msvc: ${{ steps.sums.outputs.sums-aarch64-pc-windows-msvc }}
+      sums-x86_64-pc-windows-gnu: ${{ steps.sums.outputs.sums-x86_64-pc-windows-gnu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # x86_64-pc-windows-gnu is the GNU alternative for Windows (zig's
+        # MinGW): the C ABI builds this way, where cargo-xwin cannot build
+        # OpenSSL (the note's section 1).
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-apple-darwin,
+                 aarch64-apple-darwin, x86_64-pc-windows-msvc, aarch64-pc-windows-msvc,
+                 x86_64-pc-windows-gnu]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-ccwasm
+          path: ${{ runner.temp }}/ccwasm
+      - name: the .ccwasm is the precompile job's
+        env:
+          TARGET: ${{ matrix.target }}
+          SUMS: ${{ needs.precompile.outputs.sums }}
+        run: |
+          set -euo pipefail
+          want="$(jq -r --arg k "aprv.$TARGET.ccwasm" '.[$k] // ""' <<<"$SUMS")"
+          [ -n "$want" ]
+          echo "$want  $RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" | sha256sum -c -
+      - name: the pinned Rust toolchain with the target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target "$TARGET"
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+      # zig and cargo-zigbuild for darwin and aarch64 Linux; cargo-xwin with
+      # clang-cl, lld-link and llvm-lib for Windows; musl-gcc for the x86_64
+      # musl build, which needs no cross linker. Hash-pinned wheels in a
+      # throwaway venv.
+      - name: the cross linkers
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y clang lld llvm musl-tools
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --require-hashes -r tools/cross/requirements.txt
+          mkdir -p "$RUNNER_TEMP/bin"
+          ln -sf "$(command -v clang)" "$RUNNER_TEMP/bin/clang-cl"
+          { echo "$RUNNER_TEMP/venv/bin"; echo "$RUNNER_TEMP/bin"; } >> "$GITHUB_PATH"
+      # The server tests bake env!("CARGO_MANIFEST_DIR") in at compile time,
+      # so the build runs from /tmp/aprv-src, a path every verify runner can
+      # recreate.
+      - name: build
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          ln -sfn "$GITHUB_WORKSPACE" /tmp/aprv-src
+          cd /tmp/aprv-src
+          BUILD_LABEL=c tools/cross/build.sh "$RUNNER_TEMP/ccwasm/aprv.$TARGET.ccwasm" "$TARGET" "$RUNNER_TEMP/out"
+      - name: the hash a verify job checks
+        id: sums
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          cat "$RUNNER_TEMP/out/SHA256SUMS"
+          echo "sums-$TARGET=$(sha256sum "$RUNNER_TEMP/out/SHA256SUMS" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-cross-${{ matrix.target }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+          retention-days: 7
+
+  c-verify:
+    needs: [component, c-build]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
+          - { os: windows-latest, target: x86_64-pc-windows-gnu }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-component
+          path: ${{ runner.temp }}/aprv
+      - name: download the build job's files, timed
+        id: download
+        shell: bash
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: spike-cross-${{ matrix.target }}
+          path: ${{ runner.temp }}/cross
+      - name: the files are the build job's
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          START: ${{ steps.download.outputs.start }}
+          COMPONENT_SHA256: ${{ needs.component.outputs.component-sha256 }}
+          SUMS_SHA256: ${{ needs.c-build.outputs[format('sums-{0}', matrix.target)] }}
+        run: |
+          set -euo pipefail
+          printf 'c\t%s\tdownload\t%s s\n' "$TARGET" "$(( $(date +%s) - START ))" > "$RUNNER_TEMP/download.tsv"
+          sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+          if [ -z "$SUMS_SHA256" ] || [ -z "$COMPONENT_SHA256" ]; then
+            echo "::error::the build or component job published no hash for this target"
+            exit 1
+          fi
+          [ "$(sha < "$RUNNER_TEMP/aprv/aprv.component.wasm" | cut -c1-64)" = "$COMPONENT_SHA256" ]
+          [ "$(sha < "$RUNNER_TEMP/cross/SHA256SUMS" | cut -c1-64)" = "$SUMS_SHA256" ]
+          cd "$RUNNER_TEMP/cross" && sha -c SHA256SUMS
+      - name: recreate the build path (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: ln -sfn "$GITHUB_WORKSPACE" /tmp/aprv-src
+      # A Linux path with no drive letter resolves against the current
+      # drive: /tmp/aprv-src is <drive>:\tmp\aprv-src for a process whose
+      # working directory is on the workspace's drive.
+      - name: recreate the build path (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = (Get-Item $env:GITHUB_WORKSPACE).PSDrive.Root
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'tmp') | Out-Null
+          New-Item -ItemType Junction -Path (Join-Path $root 'tmp\aprv-src') -Target $env:GITHUB_WORKSPACE | Out-Null
+          Get-Item (Join-Path $root 'tmp\aprv-src') | Format-List FullName, LinkType, Target
+      - name: verify
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: tools/cross/verify.sh "$RUNNER_TEMP/cross" "$TARGET" "$RUNNER_TEMP/aprv/aprv.component.wasm" c
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-c-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/cross/results.tsv
+            ${{ runner.temp }}/cross/sizes.tsv
+            ${{ runner.temp }}/cross/timings.tsv
+            ${{ runner.temp }}/download.tsv
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Where release.yml's publish jobs would wait: every verify leg green, and
+  # the files about to ship still the ones c-build hashed.
+  gate:
+    needs: [c-build, c-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: spike-cross-*
+          path: ${{ runner.temp }}/cross
+      - name: every target's files are c-build's
+        env:
+          BUILD_OUTPUTS: ${{ toJSON(needs.c-build.outputs) }}
+        run: |
+          set -euo pipefail
+          for d in "$RUNNER_TEMP"/cross/spike-cross-*; do
+            t="${d##*/spike-cross-}"
+            want="$(jq -r --arg k "sums-$t" '.[$k] // ""' <<<"$BUILD_OUTPUTS")"
+            got="$(sha256sum < "$d/SHA256SUMS" | cut -c1-64)"
+            [ -n "$want" ] && [ "$want" = "$got" ]
+            (cd "$d" && sha256sum -c --quiet SHA256SUMS)
+            echo "$t: $got"
+          done
+
+  compare:
+    needs: [precompile, a-native, b-native, c-verify]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: spike-*
+          path: ${{ runner.temp }}/r
+      - name: A, B and C side by side
+        run: |
+          set -euo pipefail
+          r="$RUNNER_TEMP/r"
+          row() { awk -F'\t' '{ printf "|"; for (i = 1; i <= NF; i++) printf " %s |", $i; printf "\n" }'; }
+          {
+            echo "## the shared precompile (B, C)"
+            echo
+            echo "| step | seconds |"; echo "|---|---:|"
+            row < "$r/spike-ccwasm/timings.tsv"
+            echo
+            echo "## .ccwasm: Linux precompiler (B, C) against each native A leg"
+            echo
+            echo "| target | Linux | native (A) |"; echo "|---|---|---|"
+            while read -r sum file; do
+              t="${file#aprv.}"; t="${t%.ccwasm}"
+              a="$(awk -F'\t' '$3 == "ccwasm-file" { print $4 }' "$r/spike-a-$t/a-timings.tsv" 2>/dev/null || true)"
+              if [ -z "$a" ]; then
+                echo "| $t | \`$sum\` | not measured (no native A leg) |"
+              else
+                echo "| $t | \`$sum\` | \`$a\` $([ "$sum" = "$a" ] && echo identical || echo DIFFERENT) |"
+              fi
+            done < "$r/spike-ccwasm/SHA256SUMS"
+            echo
+            echo "## A's stages"
+            echo
+            echo "| build | target | stage | time |"; echo "|---|---|---|---|"
+            cat "$r"/spike-a-*/a-timings.tsv | grep -v ccwasm | row
+            echo
+            echo "## B and C build steps (seconds)"
+            echo
+            echo "| build | target | step | seconds |"; echo "|---|---|---|---:|"
+            { cat "$r"/spike-b-*/timings.tsv "$r"/spike-c-*/timings.tsv "$r"/spike-c-*/download.tsv 2>/dev/null || true; } | row
+            echo
+            echo "## checks"
+            echo
+            echo "| build | target | check | result | seconds |"; echo "|---|---|---|---|---:|"
+            { cat "$r"/spike-b-*/results.tsv "$r"/spike-c-*/results.tsv 2>/dev/null || true; } | sort -t$'\t' -k2,2 -k3,3 -k1,1 | row
+            echo
+            echo "## sizes (bytes)"
+            echo
+            echo "| | build | target | file | bytes |"; echo "|---|---|---|---|---:|"
+            { cat "$r"/spike-b-*/sizes.tsv "$r"/spike-c-*/sizes.tsv 2>/dev/null || true; } | sort -t$'\t' -k3,3 -k4,4 -k2,2 | row
+          } | tee -a "$GITHUB_STEP_SUMMARY"
