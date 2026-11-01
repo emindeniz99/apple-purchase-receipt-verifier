@@ -73,10 +73,10 @@ run built (`rust-wasm`), never one from an earlier run.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
-| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS), `smoke-nuget` |
-| 9.0 | STS | active | 2026-11-10 | `dotnet`, `dotnet-trim` |
+| 8.0 | LTS | active | 2026-11-10 | `dotnet` (ubuntu, windows, macOS), `dotnet-checks` (smoke-nuget) |
+| 9.0 | STS | active | 2026-11-10 | `dotnet`, `dotnet-checks` (dotnet-trim) |
 | 10.0 | LTS | active | 2028-11-14 | `dotnet`, `dotnet-fuzz` |
-| netstandard2.0 | floor | n/a | while the library ships it | `dotnet-mono` |
+| netstandard2.0 | floor | n/a | while the library ships it | `dotnet-checks` (dotnet-mono) |
 
 .NET 11 ships in November 2026, the same day 8 and 9 end.
 
@@ -102,21 +102,24 @@ run built (`rust-wasm`), never one from an earlier run.
 for (Linux x86_64 and arm64, macOS arm64 and x86_64, Windows x86_64 and
 arm64), and again with a warm compile cache; `python-musl` runs them in
 Alpine images on x86_64 and arm64. That grid is a push to main's, which
-every release is cut from; a pull request runs every line on Linux and
-3.11 and 3.14 on macOS arm64 (`macos-wrappers`) and Windows x86_64
+every release is cut from; a pull request runs every line on Linux x86_64,
+and 3.11 and 3.14 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
 (`windows-wrappers`). Python 3.15 ships in October 2026.
 
 ### Java
 
 Dates are Oracle's. Eclipse Temurin and other vendors keep 8, 11 and 17 in
-support for longer; the floor stays regardless.
+support for longer; the floor stays regardless. `java-vendors` runs the
+suite on 8, 21 and 25 of every other HotSpot vendor setup-java ships
+(`.github/workflows/java-vendors.yml` lists them) on every push to main
+and nightly; a pull request runs Corretto 8 and GraalVM 25 only.
 
 | Line | Type | Status | Ends | CI |
 |---|---|---|---|---|
 | 8 | floor | EOL at Oracle | kept | `java-runtime-8` (the main artifact on a JDK 8 JVM), `java-wasm-runtime-8` (the `-wasm` server engine on a JDK 8 JVM) |
 | 11 | LTS | EOL at Oracle 2023-09-30 | kept | `java`, `java-wasm-endive` (the Endive floor) |
 | 17 | LTS | EOL at Oracle 2026-09-30 | kept | `java`, `java-wasm-endive` |
-| 21 | LTS | active | 2028-09-30 | `java`, `java-wasm-endive`, `java-fuzz`, `jvm-interop`, `smoke-maven` |
+| 21 | LTS | active | 2028-09-30 | `java`, `java-wasm-endive`, `java-fuzz`, `java-checks` (jvm-interop, smoke-maven) |
 | 25 | LTS | active | 2030-09-30 | `java`, `java-wasm-endive` |
 | 27 | feature | active | 2027-03-31 | `java`, `java-wasm-endive` |
 
@@ -151,7 +154,7 @@ Go supports the two newest minors only.
 |---|---|---|---|
 | 1.25 | floor, EOL line | kept | `go`, `smoke-go` |
 | 1.26 | active | when 1.28 ships | `go` |
-| 1.27 | active | when 1.29 ships | `go`, `go-platforms` (macOS, Windows), `go-cross`, `go-scratch`, `go-race`, `go-lint`, `go-fuzz` |
+| 1.27 | active | when 1.29 ships | `go`, `go-platforms` (macOS, Windows), `go-cross`, `go-checks` (go-lint, go-scratch), `go-race`, `go-fuzz` |
 
 Go 1.28 ships in February 2027. The floor moved from 1.22 to 1.25 on
 2026-09-30 because wazero 1.12 requires it (rule 5); its dependency
@@ -174,7 +177,7 @@ Ruby 4.1 ships in December 2026. 0.7 raised the floor from 3.1 to 3.3 for
 |---|---|---|---|
 | 8.2 | floor, security | 2026-12-31 | `php`, `php-lowest` |
 | 8.3 | security | 2027-12-31 | `php` |
-| 8.4 | active | 2028-12-31 | `php` (also over HTTP), `php-symfony-process-8`, `php-static`, `php-fuzz` |
+| 8.4 | active | 2028-12-31 | `php` (also over HTTP), `php-symfony-process-8`, `php-checks` (php-static), `php-fuzz` |
 | 8.5 | active | 2029-12-31 | `php` |
 
 PHP 8.6 ships in November 2026. 0.7 raised the floor from 8.1 to 8.2 for
