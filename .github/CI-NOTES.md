@@ -138,14 +138,26 @@ run.
 
 - `build-wasm` builds the module with the pinned toolchain and checks
   every committed copy and every pin strictly.
-- `build-server` builds `aprv-<target>[.exe]` for the release targets
-  with `build-static.sh` (musl legs install `musl-tools`), refuses any
-  component but build-wasm's (`COMPONENT_SHA256`), and reproduces the
-  Linux builds in a fresh clone (`tools/reproduce-server.sh`). On x86_64
-  the clone rebuilds the component too; on aarch64 the script is handed
+- `precompile-server` builds the Cranelift precompiler once on
+  ubuntu-latest (`--features compile,wasmtime/all-arch`, LTO off and 16
+  codegen units through Cargo's environment), writes build-wasm's
+  component's `.ccwasm` and manifest for each of the six server targets,
+  and publishes their SHA-256 lines as its `sums` output. The spike
+  (`docs/evidence/2026-10-31-cross-build-spike.md`) measured these files
+  byte-identical to the ones each native leg used to precompile for
+  itself.
+- `build-server` checks its target's `.ccwasm` and manifest against
+  `sums` and builds `aprv-<target>[.exe]` around them with
+  `build-static.sh --ccwasm` (stage 2 only; musl legs install
+  `musl-tools`), which refuses a `.ccwasm` precompiled from any component
+  but build-wasm's (`COMPONENT_SHA256`). It reproduces the Linux builds in
+  a fresh clone (`tools/reproduce-server.sh`), which builds its own
+  precompiler and must write the same `.ccwasm` as precompile-server
+  (`APRV_EXPECTED_CCWASM_SHA256`) and the same binary. On x86_64 the
+  clone rebuilds the component too; on aarch64 the script is handed
   build-wasm's component (`APRV_COMPONENT`), because
   `tools/wasm-toolchain.sh` pins x86_64 archives only, and reproduces the
-  server stage. 0.8.0's first run (2026-10-04) failed on the arm leg for
+  server stages. 0.8.0's first run (2026-10-04) failed on the arm leg for
   want of that, and `fail-fast` cancelled the other five builds.
 - The publish jobs never cache. `publish-pypi` builds with
   `tools/build_dist.py`. `publish-npm` requires the transpiled module and

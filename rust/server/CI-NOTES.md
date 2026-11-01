@@ -115,7 +115,10 @@ attaches its SBOM (MIGRATION.md step 2.10, lane D).
 
 ## Release (`release.yml`, lane D)
 
-`build-server` runs `scripts/build-static.sh` per Linux target with no
-cache and with `COMPONENT_SHA256` set to the `build-wasm` output, and
-uploads `dist/aprv-<target>` (and its `.ccwasm.json` manifest for the
-record). The classifier jars (R26) take those binaries.
+`precompile-server` builds the full binary once on Linux x86_64 with
+`wasmtime/all-arch` and runs `aprv precompile` for every release target.
+`build-server` runs `scripts/build-static.sh --ccwasm` per target with no
+cache and with `COMPONENT_SHA256` set to the `build-wasm` output, so it
+builds stage 2 around that target's `.ccwasm`, and uploads
+`aprv-<target>` (and its `.ccwasm.json` manifest for the record). The
+classifier jars (R26) take those binaries.
