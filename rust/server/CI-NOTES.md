@@ -43,6 +43,13 @@ COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh $COMPONENT       
 COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh $COMPONENT aarch64-unknown-linux-musl  # arm leg
 BIN=dist/aprv-<target>
 
+# the release's mode (x86_64 leg): stage 2 alone around the .ccwasm stage 1
+# wrote, copied elsewhere first, must build the same binary, and with
+# COMPONENT_SHA256 set to another hash it must refuse
+cp dist/aprv.<target>.ccwasm dist/aprv.<target>.ccwasm.json /tmp/in/
+COMPONENT_SHA256=<rust-wasm output> sh scripts/build-static.sh --ccwasm /tmp/in/aprv.<target>.ccwasm <target> /tmp/out
+cmp $BIN /tmp/out/aprv-<target>
+
 # a static binary runs with nothing around it
 mkdir -p /tmp/empty && cp $BIN /tmp/empty/aprv && sudo chroot /tmp/empty /aprv info
 

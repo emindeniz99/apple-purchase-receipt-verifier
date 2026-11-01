@@ -2380,6 +2380,36 @@ jobs:
         env:
           COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
         run: rust/server/scripts/build-static.sh "$RUNNER_TEMP/aprv/aprv.component.wasm" x86_64-unknown-linux-musl "$RUNNER_TEMP/server"
+      # release.yml builds every server binary with --ccwasm, around the
+      # .ccwasm its precompile-server job wrote; nothing else runs that mode.
+      # Rebuilding stage 2 here around the .ccwasm stage 1 just wrote must
+      # give the same binary, and a manifest naming another component must
+      # be refused, so a pull request that breaks the mode fails here
+      # rather than on release day.
+      - name: the release's --ccwasm build gives the same binary
+        env:
+          COMPONENT_SHA256: ${{ needs.rust-wasm.outputs.component-sha256 }}
+        run: |
+          set -euo pipefail
+          t=x86_64-unknown-linux-musl
+          given="$RUNNER_TEMP/ccwasm-in"
+          mkdir -p "$given"
+          cp "$RUNNER_TEMP/server/aprv.$t.ccwasm" "$RUNNER_TEMP/server/aprv.$t.ccwasm.json" "$given/"
+          if COMPONENT_SHA256="$(printf '0%.0s' $(seq 64))" \
+             rust/server/scripts/build-static.sh --ccwasm "$given/aprv.$t.ccwasm" "$t" "$RUNNER_TEMP/ccwasm-refused"; then
+            echo "::error::build-static.sh --ccwasm accepted a .ccwasm whose manifest names another component"
+            exit 1
+          fi
+          rust/server/scripts/build-static.sh --ccwasm "$given/aprv.$t.ccwasm" "$t" "$RUNNER_TEMP/ccwasm-out"
+          a="$(sha256sum < "$RUNNER_TEMP/server/aprv-$t" | cut -c1-64)"
+          b="$(sha256sum < "$RUNNER_TEMP/ccwasm-out/aprv-$t" | cut -c1-64)"
+          echo "component mode $a"
+          echo "--ccwasm mode  $b"
+          if [ "$a" != "$b" ]; then
+            echo "::error::build-static.sh --ccwasm built a different binary from the same .ccwasm"
+            exit 1
+          fi
+          cmp "$RUNNER_TEMP/server/aprv.$t.ccwasm.json" "$RUNNER_TEMP/ccwasm-out/aprv.$t.ccwasm.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aprv-server-x86_64-unknown-linux-musl
