@@ -402,6 +402,50 @@ What `release.yml` would change (not changed here):
    run on the target's own OS, as today. The verify-job shape in the spike
    workflow (`c-verify`, `gate`) is what C would add.
 
+## 8. The spike workflow's run (MEASURED, run 41257197635, `results/ci-run-41257197635.md`)
+
+One run on head a88c74f, GitHub-hosted runners, 2026-11-01. One run, so
+the times are single samples, not medians.
+
+**The `.ccwasm` (the condition in section 7): met.** The precompiler built
+once on ubuntu-latest wrote a `.ccwasm` byte-identical to the one each
+native A leg wrote for itself, on all six release targets
+(x86_64 and aarch64 musl, both darwin, both Windows MSVC). MinGW has no
+native A leg, so it has nothing to compare.
+
+**Time.** The shared step: precompiler build 259 s, then 3.3 to 3.5 s per
+target. A's stage 1, which B removes from every native leg: 2 m 31 s
+(Linux x86_64) to 9 m 56 s (macOS Intel). B's native final server build:
+68 s (Linux x86_64) to 214 s (macOS Intel). On the slowest leg, macOS
+Intel, A spent 756 s and B's server build 214 s after the shared 259 s +
+3.5 s, so B's critical path is about 8 minutes where A's is about 12.6
+(INFERRED from these single samples; queueing and transfer excluded,
+transfer measured at 2 to 6 s per artifact download).
+
+**Checks, B.** On all six native legs B's binary loaded its embedded
+`.ccwasm` (`aprv info`), passed every shared case over HTTP and the CLI,
+and passed the server tests (`--include-ignored`). Both darwin legs also
+built the C ABI and passed its Rust tests and the C++ and ctypes
+conformance runs. Both Windows legs failed to build the C ABI inside this
+harness: OpenSSL's `nmake build_libs` stops (x64: `'-x' is not
+recognized`, `C1083`; arm64: `nmake` exit 2), under the harness's Git
+Bash environment. That is a limit of `tools/cross/build.sh` on Windows,
+not of B: B does not touch the C ABI, ci.yml's `rust-ffi` job builds it
+on `windows-latest` (green on #482 the same day), and no job has ever
+built it for Windows arm64, which no release ships.
+
+**Checks, C.** Every cross-built server passed the same server checks as
+B. The C ABI did not hold up: the zig-built darwin `.dylib` loads
+(ctypes passes) but Apple's linker refuses to link the C++ conformance
+program against it on both architectures (`fixup error … target
+'___dso_handle' does not have address`), and cargo-xwin built no C ABI
+for either MSVC target, as section 1 found locally. MinGW (zig) passed
+everything.
+
+**What this changes.** Nothing in section 7: B stands, and its condition
+holds. C is now also ruled out by a consumer-visible defect, not only by
+cost: a C++ program cannot link the zig-built darwin library.
+
 ## Where this stops holding
 
 - The local numbers are one 4-vCPU container, one run each; GitHub's
