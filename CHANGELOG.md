@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.13.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.12.0...v0.13.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **rust:** aprv_openssl::verify_path, PathOutcome, PathProblem and PathProblemKind are now under aprv_openssl::__internal, which is doc-hidden and not covered by semver, and Certificate::may_issue_certificates needs the test-seams feature. The adapter serves the core only and has never been published to crates.io; nothing outside this repository should call it.
+* **rust:** Failure::new, JsonPayload::new and Default for ReceiptPayload and InAppPurchase are gone, and the two structs can no longer be built with a struct literal outside the crate. Code that built them for its own tests should mock the call that returns them, or verify a receipt it signs under a root passed to Config::builder().roots(...). __internal (doc-hidden, never covered by semver) loses openssl_version, and datetime, path and decode_x5c_entry need the test-seams feature. Neither crate is on crates.io yet; this affects git and path users.
+* **python:** the Python package now requires Python 3.11 or later. pip on Python 3.10 keeps resolving the last release that supported it.
+
+### Bug Fixes
+
+* **ci:** fail the spike's verify when a non-musl target has no c abi ([a88c74f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a88c74f86752ce390de06fec7d37d9cfae9a6fc2))
+* **ci:** harden the spike's verify, compare and reproduce steps ([2a5d98c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2a5d98c18e984cfbaefd22b7fcfadc3a3356bd06))
+* **ci:** hash the ccwasm from stdin in the spike's windows legs ([31c7e16](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/31c7e168f3ea8b9f7b11229a44f87a922ad3559b))
+* **ci:** keep the spike's verify to checks that fit a copied binary ([3db15ba](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3db15baf35d99bafa738a014b60bc27fc89941be))
+* **ci:** skip the posix-only managed smoke on windows in the spike ([6ff45e2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6ff45e2e6e522c5a1ecff53404c6915156b722bc))
+* **ci:** strip carriage returns from the spike's test executable paths ([74c5266](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/74c5266f32e3e6ecfc57ea40894ff8ca6998c574))
+* **ci:** use strawberry perl for the c abi suite on windows ([d228f6f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/d228f6f6a9e8ad09a5c8ad3dcff1526c61765b03))
+* **release:** fail closed in the static-binary checks ([9061fa1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/9061fa1eb9c47043be405bdabbe15ebfc340465e))
+* **rust:** answer a contained panic as an internal error at every stage ([6d4c373](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/6d4c3736f4e3f6cf7eb9a66c9e30b4857ed3568f))
+* **rust:** bound aprv-server's bodies and refuse an empty token file ([1cdcaba](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1cdcabaa19a3e59a315d06252256353c488a0bda))
+* **rust:** check the envelope content for null in release builds ([0891e59](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0891e599a950091f8171afcc53d3b8d45ca54970))
+* **rust:** hold the server's worker permit until the guest call ends ([2da6de0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2da6de0abf3cfb78165a29499906a6a759dca0b9))
+* **rust:** let a broken clock outrank an earlier signerinfo failure ([098c75b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/098c75badb287d63ea29a02c9a056a849fba54a2))
+* **rust:** try each embedded copy of the signer certificate once ([5af2541](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5af2541c71040be7bf0b631dae999863a9ff80cc))
+
+
+### Code Refactoring
+
+* **rust:** check for an empty root set in one place ([a5fd305](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a5fd3050ebbe2ea03b35e721915975b8aa278c40))
+* **rust:** hand out the core's receipt model from aprv-surface ([bfac1e0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/bfac1e0cef2acf60bee82e7f253299db1deaaf4d))
+* **rust:** hide the adapter's path validation behind __internal ([de22a5b](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/de22a5bccebbbb96505eb02eb4dc7f24797041a1))
+* **rust:** let only the verifier build payloads and failures ([f748dd5](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f748dd5e16b7ce91eafe22b7a99611988e6f600f))
+* **rust:** let the match arms be the one list of known attributes ([505b620](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/505b6206033c6ca78e951df99d2b65a6ba4bbabd))
+* **rust:** make the receipt signer loop readable ([2cb3d83](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/2cb3d83976dce957843258970676bf61d3be49d7))
+
+
+### Build & Dependencies
+
+* **dotnet:** bump system.text.json, xunit.v3 and testing platform ([59693b2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/59693b27dd4516e3aff7de0c5c11cf11ec55a0fc))
+* **dotnet:** regenerate lock files for the late-October SDK patches ([489232f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/489232f8444647e53185f99a29ab39b237e5b004))
+* **dotnet:** regenerate lock files for the late-October SDK patches ([f006781](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f00678166418f32fd155cd58b790b5994bc55910))
+* **php:** bump phpunit to 11.5.57 and symfony/process to 7.4.21 ([60ac45e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/60ac45e056fb5e81b22e7236e92e307db1e4a067))
+* **python:** bump setuptools to 84.2.1 ([98f1544](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/98f15441116e643ab28c015d02ab8f4d3d72f32e))
+* **python:** raise the wasmtime floor to 50.0.1 ([92295ed](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/92295ed89c1318b3a10c5a835632720c5f8ae0db))
+* **python:** require python 3.11 ([86c482c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/86c482c34bbf8bbd2429ab94245fa06149b6beac))
+* **release:** bump rustup to 1.29.2 in the reproduce image ([df9f509](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/df9f5090480e5fd14139c6a137690a528c815bbf))
+* **ruby:** bump rubocop and the tool gemfiles' wasmtime floor ([82ad830](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/82ad8300c51d3d2460343a808298aaf4ff093270))
+* **ruby:** raise the wasmtime gem floor to 50.0.0 ([933a170](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/933a170ab833a60ee5ed4dd38a8ea1af1a0d4c27))
+* **rust:** bump cc, jsonschema and tokio past the cooldown ([b636905](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b6369054c4bf0f3e5e8e0c1e575266ed033549ab))
+* **rust:** move aprv-server's Wasmtime to 50.0.1 ([24e96e3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/24e96e3101ed252a436236d9e7794e90a197db16))
+* **rust:** move wasm-tools to 1.262.0 and wit-bindgen to 0.63.0 ([30545f2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/30545f20b8ddf0fff1d56f47aa66446afb5247f2)), closes [#439](https://github.com/emindeniz99/apple-purchase-receipt-verifier/issues/439)
+
 ## [0.12.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.11.1...v0.12.0) (2026-10-14)
 
 
