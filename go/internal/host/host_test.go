@@ -203,8 +203,8 @@ func TestLoweringRefusesWrongArguments(t *testing.T) {
 	fx := loadFixtures(t)
 	g := freshGuest(t, nil)
 	for name, call := range map[string]func() (string, error){
-		"u32 where the WIT says u64":  func() (string, error) { return g.Call("verify-receipt", uint32(5), fx.g5) },
-		"u64 where the WIT says u32":  func() (string, error) { return g.Call("verify-receipt-endpoint", uint64(1), now, "{}") },
+		"uint32 where now-ms goes":    func() (string, error) { return g.Call("verify-receipt", uint32(5), fx.g5) },
+		"uint64 where env goes":       func() (string, error) { return g.Call("verify-receipt-endpoint", uint64(1), now, "{}") },
 		"int where the WIT says list": func() (string, error) { return g.Call("verify-receipt", now, 42) },
 		"a wrong argument count":      func() (string, error) { return g.Call("verify-receipt", now) },
 		"an unknown export":           func() (string, error) { return g.Call("verify-everything", now, "") },
@@ -219,6 +219,9 @@ func TestLoweringRefusesWrongArguments(t *testing.T) {
 	}
 }
 
+// wit-bindgen's enum lift traps on these only because rust/Cargo.toml
+// turns debug assertions on for aprv-abi ([profile.wasm.package.aprv-abi]);
+// without it 2 answers as production and 255 as sandbox (DECISIONS.md R46).
 func TestEnvOtherThanZeroOrOneTraps(t *testing.T) {
 	fx := loadFixtures(t)
 	req := `{"receipt-data":"` + fx.g5 + `"}`
@@ -480,7 +483,7 @@ func TestABIMismatchIsRefusedAtCreate(t *testing.T) {
 	if !errors.As(err, &abi) {
 		t.Fatalf("a module of another ABI version: %v, want *ABIError", err)
 	}
-	for _, want := range []string{"aprv:verifier@0.1.0", "aprv:verifier/verify@0.9.0#init", "cabi_realloc"} {
+	for _, want := range []string{"aprv:verifier@0.2.0", "aprv:verifier/verify@0.9.0#init", "cabi_realloc"} {
 		if !strings.Contains(abi.Detail, want) {
 			t.Errorf("the refusal does not name %q: %s", want, abi.Detail)
 		}

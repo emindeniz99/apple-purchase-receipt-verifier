@@ -109,8 +109,10 @@ func (g *Guest) cut(n int) int {
 	return n
 }
 
-// lower turns WIT values into core arguments for fn: a u32 (uint32) and a
-// u64 (uint64) pass as scalars; a list<u8> (string or []byte) is cut to
+// lower turns WIT values into core arguments for fn: the environment
+// enum's discriminant (uint32) and the s64 now-ms (uint64, which the
+// facade fills with 0 to 2^63-1 only) pass as scalars; a list<u8> (string
+// or []byte) is cut to
 // the instance's max_input_bytes, copied into a guest buffer from
 // cabi_realloc, which the guest then owns, and passed as (ptr, len). A
 // wrong count or Go type is refused before anything is allocated.
