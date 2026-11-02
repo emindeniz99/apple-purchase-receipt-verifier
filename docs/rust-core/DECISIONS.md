@@ -2592,11 +2592,11 @@ the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
   cost another ABI version later.
 - **Rollout (D7):** one pull request moves every binding, merged just
   before the 0.13.0 release pull request, whose branch refreshes the Go
-  and Swift copies, every pin and the parity corpus (R14, R35). Until
-  that release merges, `go test` and `swift test` in a plain checkout of
-  `main` meet the committed 0.1.0 module and fail with an ABI error, and
-  so does the nightly corpus; CI on a pull request tests the module it
-  builds.
+  and Swift copies and every pin (R14). Until that release merges,
+  `go test` and `swift test` in a plain checkout of `main` meet the
+  committed 0.1.0 module and fail with an ABI error; CI on a pull request
+  tests the module it builds, and so, since R35's amendment of the same
+  day, does the nightly corpus.
 - **Who it breaks:** a host bound to the `aprv.component.wasm` or
   `aprv.wit` release assets of 0.1.0, `aprv --component` with a 0.1.0
   component, and a PHP package of this release against a separately
