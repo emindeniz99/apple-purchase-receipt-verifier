@@ -63,7 +63,7 @@ where they overlap, they agree.
   carry DER to the module). Do not grow the allowlist to make a wrapper
   "help" the core.
 - **`aprv.wasm` imports exactly `random-get`, and its WIT is the
-  contract.** `rust/bindings/abi/wit/aprv.wit` (`aprv:verifier@0.1.0`) is
+  contract.** `rust/bindings/abi/wit/aprv.wit` (`aprv:verifier@0.2.0`) is
   what every host binds. `rust/bindings/abi/build.sh` and
   `tools/check-wasm.sh` fail on any other import or export, and CI diffs
   the interface read back from the component against the committed file.
