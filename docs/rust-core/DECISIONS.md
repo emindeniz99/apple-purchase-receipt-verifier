@@ -2576,6 +2576,15 @@ the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
   `aprv.wit` release assets of 0.1.0, `aprv --component` with a 0.1.0
   component, and a PHP package of this release against a separately
   deployed `aprv` of an earlier one (the `abi` strings differ).
+- **Decision, doc-only WIT edits** (owner, 2026-11-02, D6 of the plan):
+  a name or a type in the WIT is the ABI and moves the package version; a
+  doc-comment-only edit does not. 0.1.0's comments went stale (R39, R42)
+  and waited for the next bump because the old wording ("changing the WIT is changing the ABI
+  version") made fixing them cost a full bump. The rule is checked, not
+  trusted: on a pull request `rust-wasm-checks` runs
+  `tools/check-wit-version.sh` against the base, which, when the
+  `package` line is unchanged, requires `wasm-tools component wit` of
+  both files to match once their `///` lines are dropped.
 
 ---
 
