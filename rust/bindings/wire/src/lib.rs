@@ -333,8 +333,8 @@ mod tests {
 
     /// The whole verified `verify-receipt` answer for [`full_receipt`], byte
     /// for byte: C0 controls and U+007F, raw non-ASCII (U+2028, U+FEFF,
-    /// private use, outside the BMP), negative and repeated attribute keys,
-    /// `i64` extremes and empty byte strings. The expected text was produced
+    /// private use, outside the BMP), attribute keys in numeric order
+    /// (`9` before `13`, `u32::MAX`), `i64` extremes and empty byte strings. The expected text was produced
     /// by the hand-written writer that the `serde_json` one replaced, run on
     /// this same receipt, when the receipt type was the surface's own copy;
     /// the core's type holds no negative or repeated attribute type, so
