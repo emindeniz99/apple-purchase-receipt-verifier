@@ -1,0 +1,89 @@
+# R35 (2026-11-02): the nightly derives the corpus rows from main, so the
+# archive fixtures/corpus.json pins only has to carry the calls. This
+# repacks the calls of the archive the pin names today (the old full
+# archive, or an earlier calls-only one) into a calls-only archive, the
+# same bytes for the same calls (tools/corpus.sh pack), publishes it as a
+# prerelease named corpus-calls-<first 8 hex digits of its SHA-256>, and
+# prints the new pin for a reviewed PR that changes fixtures/corpus.json.
+# Run it by hand; nothing else depends on it.
+name: publish the corpus calls
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: corpus-calls
+  cancel-in-progress: false
+
+jobs:
+  # Runs only from main: the workflow file of the dispatched ref is the code
+  # that packs and publishes, so a branch copy must not run it. On any other
+  # ref both jobs are skipped. Read-only, no cache.
+  pack:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tools/corpus.sh calls checks the archive against the pin's SHA-256
+      # before it unpacks anything.
+      - name: the pinned calls, repacked
+        run: |
+          set -euo pipefail
+          tools/corpus.sh calls "$RUNNER_TEMP/corpus"
+          tools/corpus.sh pack "$RUNNER_TEMP/corpus/calls" "$RUNNER_TEMP/corpus-calls"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: corpus-calls
+          path: ${{ runner.temp }}/corpus-calls/
+          if-no-files-found: error
+          retention-days: 7
+
+  # No checkout and no execution of repository code with a write token.
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: corpus-calls
+          path: ${{ runner.temp }}/corpus-calls/
+      - name: publish the prerelease and print the pin
+        working-directory: ${{ runner.temp }}/corpus-calls
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          archive="$(basename "$(jq -er .url corpus.json)")"
+          name="${archive%.tar.gz}"
+          [[ "$name" =~ ^corpus-calls-[0-9a-f]{8}$ ]]
+          sha256sum -c "$archive.sha256"
+          [ "$(jq -er .sha256 corpus.json)" = "$(cut -c1-64 "$archive.sha256")" ]
+          if gh release view "$name" > /dev/null 2>&1; then
+            # The name comes from the archive's own hash, so a release of
+            # this name holds these bytes; check rather than assume, and
+            # never overwrite.
+            gh release download "$name" --pattern "$archive" --dir "$RUNNER_TEMP/existing"
+            (cd "$RUNNER_TEMP/existing" && sha256sum -c "$RUNNER_TEMP/corpus-calls/$archive.sha256")
+            echo "::notice::release $name already holds this archive"
+          else
+            # The tag sits on the dispatched head of main: GITHUB_TOKEN has
+            # no workflows permission, so it may not create a ref at a
+            # commit whose .github/workflows differ from the default
+            # branch's head (403, measured 2026-10-12).
+            gh release create "$name" "$archive" "$archive.sha256" \
+              --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "parity corpus $name" --notes-file README.md
+          fi
+          { echo "Replace fixtures/corpus.json with:"; echo; echo '```json'; cat corpus.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat corpus.json
