@@ -1,0 +1,63 @@
+name: build-module
+description: >-
+  Builds aprv.wasm, its component, aprv.wit and SHA256SUMS from the
+  checkout into out-dir: the pinned wasm toolchain into
+  $HOME/.cache/aprv-wasm-toolchain (tools/wasm-toolchain.sh), the Rust
+  channel rust/rust-toolchain.toml names with the wasm32-wasip1 target,
+  then rust/bindings/abi/build.sh. ci.yml's rust-wasm and nightly.yml's
+  corpus-reference use it; the build reproduces, so both get the same
+  bytes from the same tree. A caller that caches the toolchain directory
+  restores it before this step (a test job may; a publish job never does,
+  which is why release.yml and release-please.yml do not use this). Jobs
+  call it as `uses: ./.github/actions/build-module`, after their checkout
+  (see place-module for why not the `$/` form). It caches nothing itself.
+
+inputs:
+  out-dir:
+    description: The directory build.sh writes the four files to.
+    required: true
+
+outputs:
+  wasm-sha256:
+    description: SHA-256 of aprv.wasm.
+    value: ${{ steps.build.outputs.wasm-sha256 }}
+  component-sha256:
+    description: SHA-256 of aprv.component.wasm.
+    value: ${{ steps.build.outputs.component-sha256 }}
+
+# zizmor cannot see a composite action's trigger, so it flags every write
+# to GITHUB_ENV or GITHUB_PATH here. What is written comes from this
+# checkout (a fixed directory and rust/rust-toolchain.toml's channel),
+# never from an event's payload; ci.yml's rust-wasm wrote the same lines
+# inline, where zizmor stays quiet.
+runs:
+  using: composite
+  steps:
+    - name: install the pinned wasm toolchain
+      shell: bash
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        dir="$HOME/.cache/aprv-wasm-toolchain"
+        tools/wasm-toolchain.sh "$dir" > /dev/null
+        { echo "WASI_SDK_DIR=$dir/wasi-sdk"; echo "OPENSSL_WASM_DIR=$dir/openssl-wasm"; } >> "$GITHUB_ENV"
+        echo "$dir/bin" >> "$GITHUB_PATH"
+    # The rustc rust/rust-toolchain.toml names, with the wasm32-wasip1
+    # target, made the one every later step uses: build.sh runs from the
+    # repository root, where rustup does not read that file.
+    - name: install the pinned Rust toolchain
+      shell: bash
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
+        rustup toolchain install "$channel" --profile minimal --target wasm32-wasip1
+        echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+    - name: build aprv.wasm and the component
+      id: build
+      shell: bash
+      env:
+        OUT: ${{ inputs.out-dir }}
+      run: |
+        set -euo pipefail
+        rust/bindings/abi/build.sh "$OUT"
+        echo "wasm-sha256=$(sha256sum "$OUT/aprv.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+        echo "component-sha256=$(sha256sum "$OUT/aprv.component.wasm" | cut -c1-64)" >> "$GITHUB_OUTPUT"
