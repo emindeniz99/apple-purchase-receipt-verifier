@@ -11,10 +11,17 @@
 //! with no panic path and no message formatting:
 //!
 //! - a verify before a successful `init`, and an `init` after one;
-//! - an `env` other than 0 (production) or 1 (sandbox);
 //! - a `random-get` answer that is not exactly the length asked for;
 //! - a `list<u8>` argument, or a `random-get` answer, whose range runs past
 //!   the end of linear memory.
+//!
+//! One more trap is wit-bindgen's, not this file's: an `environment`
+//! discriminant other than 0 (`production`) or 1 (`sandbox`). The generated
+//! lift checks it only with debug assertions on, which `rust/Cargo.toml`
+//! turns on for this package in `[profile.wasm]`; the check panics, and the
+//! panic ends in `unreachable` (below). Without that setting the lift would
+//! `transmute` the value and answer for the wrong environment
+//! (DECISIONS.md R46).
 //!
 //! The module is built with `panic = "abort"`, so a panic anywhere below
 //! (none is expected: the core denies `unwrap`, `expect`, indexing and
@@ -52,7 +59,7 @@ mod bindings {
 }
 
 use aprv_surface::{Environment, Verifier};
-use bindings::exports::aprv::verifier::verify::Guest;
+use bindings::exports::aprv::verifier::verify::{Environment as WitEnvironment, Guest};
 use std::cell::RefCell;
 
 /// Stops the call: a guest trap, which every host reports as one and
@@ -128,12 +135,14 @@ mod wasi_none {
     }
 }
 
-/// The instant `clock_time_get` answers until the next call.
-fn set_c_clock(now_ms: u64) {
+/// The instant `clock_time_get` answers until the next call. Only
+/// OpenSSL's random generator reads that clock, never the core; an instant
+/// before 1970 reads as the epoch there rather than wrapping.
+fn set_c_clock(now_ms: i64) {
     #[cfg(target_arch = "wasm32")]
     // SAFETY: a plain store into a C static; one call runs at a time.
     unsafe {
-        wasi_none::aprv_wasi_set_now_ms(now_ms);
+        wasi_none::aprv_wasi_set_now_ms(u64::try_from(now_ms).unwrap_or(0));
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = now_ms;
@@ -154,7 +163,7 @@ fn set_c_random_source() {
 /// Runs `call` with the verifier `init` made, and with `now_ms` as the
 /// instant the C side's clock answers meanwhile. Before a successful `init`
 /// it traps.
-fn with_verifier(now_ms: u64, call: impl FnOnce(&Verifier) -> String) -> String {
+fn with_verifier(now_ms: i64, call: impl FnOnce(&Verifier) -> String) -> String {
     VERIFIER.with(|slot| {
         let slot = slot.borrow();
         let Some(verifier) = slot.as_ref() else {
@@ -188,38 +197,28 @@ impl Guest for Aprv {
         })
     }
 
-    fn verify_receipt(now_ms: u64, receipt_base64: Vec<u8>) -> String {
+    fn verify_receipt(now_ms: i64, receipt_base64: Vec<u8>) -> String {
         in_memory(&receipt_base64);
         with_verifier(now_ms, |verifier| {
-            let result = aprv_surface::now_ms_from_u64(now_ms)
-                .and_then(|now| verifier.verify_receipt(&receipt_base64, now));
-            aprv_wire::verify_receipt_result(&result)
+            aprv_wire::verify_receipt_result(&verifier.verify_receipt(&receipt_base64, now_ms))
         })
     }
 
-    fn verify_signed_data(now_ms: u64, jws: Vec<u8>) -> String {
+    fn verify_signed_data(now_ms: i64, jws: Vec<u8>) -> String {
         in_memory(&jws);
         with_verifier(now_ms, |verifier| {
-            let result = aprv_surface::now_ms_from_u64(now_ms)
-                .and_then(|now| verifier.verify_signed_data(&jws, now));
-            aprv_wire::verify_signed_data_result(&result)
+            aprv_wire::verify_signed_data_result(&verifier.verify_signed_data(&jws, now_ms))
         })
     }
 
-    fn verify_receipt_endpoint(env: u32, now_ms: u64, request_json: Vec<u8>) -> String {
+    fn verify_receipt_endpoint(env: WitEnvironment, now_ms: i64, request_json: Vec<u8>) -> String {
         in_memory(&request_json);
-        // Matched before anything else: jco and wasmtime-py do not range-check
-        // a u32, and a value that names no environment is a caller's bug.
         let environment = match env {
-            0 => Environment::Production,
-            1 => Environment::Sandbox,
-            _ => trap(),
+            WitEnvironment::Production => Environment::Production,
+            WitEnvironment::Sandbox => Environment::Sandbox,
         };
         with_verifier(now_ms, |verifier| {
-            match aprv_surface::now_ms_from_u64(now_ms) {
-                Ok(now) => verifier.verify_receipt_endpoint(environment, &request_json, now),
-                Err(_) => aprv_surface::endpoint_internal_error(),
-            }
+            verifier.verify_receipt_endpoint(environment, &request_json, now_ms)
         })
     }
 }

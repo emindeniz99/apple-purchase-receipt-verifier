@@ -94,9 +94,10 @@ struct ComponentArg {
 
 #[derive(Args)]
 struct OneShotArgs {
-    /// The verification clock, ms since the Unix epoch [default: the system clock]
-    #[arg(long, value_name = "N")]
-    now_ms: Option<u64>,
+    /// The verification clock, ms since the Unix epoch, 0 to 9223372036854775807 [default: the
+    /// system clock]
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(i64).range(0..))]
+    now_ms: Option<i64>,
     /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
     /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
     #[arg(long, value_name = "FILE")]
@@ -151,8 +152,8 @@ fn main() {
         Cmd::VerifySignedData(a) => one_shot(Command::SignedData, a),
         Cmd::VerifyReceiptEndpoint { environment, args } => one_shot(
             Command::Endpoint(match environment {
-                Environment::Production => 0,
-                Environment::Sandbox => 1,
+                Environment::Production => runtime::Environment::Production,
+                Environment::Sandbox => runtime::Environment::Sandbox,
             }),
             args,
         ),
@@ -173,10 +174,10 @@ fn usage(msg: &str) -> i32 {
 
 /// The system clock in milliseconds since the Unix epoch (0 before it):
 /// the call's clock when the caller gives none.
-fn clock_ms() -> u64 {
+fn clock_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
+        .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
 
@@ -216,7 +217,7 @@ fn roots_from(paths: &[String]) -> Result<Roots, String> {
 enum Command {
     Receipt,
     SignedData,
-    Endpoint(u32),
+    Endpoint(runtime::Environment),
 }
 
 /// Runs one operation in one fresh instance on stdin and writes the
@@ -324,7 +325,7 @@ fn answer(
 /// length the module's `init` answer stated.
 fn build_info(runtime: &Runtime, max_input_bytes: usize) -> serde_json::Value {
     serde_json::json!({
-        "abi": "aprv:verifier@0.1.0",
+        "abi": "aprv:verifier@0.2.0",
         "component_sha256": runtime.source.component_sha256,
         "component_source": runtime.source.description,
         "wasmtime": runtime::WASMTIME_VERSION,
@@ -685,7 +686,7 @@ mod cli_tests {
             &[
                 "verify-receipt",
                 "--now-ms",
-                "18446744073709551615",
+                "9223372036854775807",
                 "--roots",
                 "r",
                 "--time-limit-ms",
@@ -721,6 +722,9 @@ mod cli_tests {
             &["serve", "--time-limit-ms", "0"],
             &["serve", "--now-ms", "1"],
             &["verify-receipt", "--now-ms", "-1"],
+            // WIT `now-ms` is an `s64` (ABI 0.2.0): above i64::MAX is refused.
+            &["verify-receipt", "--now-ms", "9223372036854775808"],
+            &["verify-receipt", "--now-ms", "18446744073709551615"],
             &["verify-receipt", "--now-ms", "18446744073709551616"],
             &["verify-receipt", "--listen", "127.0.0.1:1"],
             &["verify-receipt", "--roots"],

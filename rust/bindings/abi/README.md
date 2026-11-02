@@ -31,8 +31,8 @@ it. A compiler wrapper (`RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER` or their
 runs with none. `tools/test/build-sh.test.mjs` holds the pin and the
 cleanup without building anything. It fails when:
 
-- the module imports anything but `aprv:verifier/host@0.1.0` `random-get`;
-- it exports anything but the four `@0.1.0` operations, their
+- the module imports anything but `aprv:verifier/host@0.2.0` `random-get`;
+- it exports anything but the four `@0.2.0` operations, their
   `cabi_post_` functions, `cabi_realloc` (and wit-bindgen's versioned
   alias of it), `memory` and `_initialize`;
 - the interface read back from the component with `wasm-tools component
@@ -54,7 +54,7 @@ of 990 KB gzipped); the stripped module passed `tools/check-wasm.sh`, all
 answered 811 hostile-corpus calls byte for byte as the named one. What the
 section bought was trap stack frames with Rust names: without it a frame
 reads `wasm-function[33]:0xa956` instead of
-`aprv_abi.wasm.aprv:verifier/verify@0.1.0#verify-receipt`, and the Java
+`aprv_abi.wasm.aprv:verifier/verify@0.2.0#verify-receipt`, and the Java
 engine's stack traces and JFR recordings carry the index too (Endive can
 name its compiled methods only from this section). Stripping moves no
 code, so the index and offset are the same in the named module cargo
@@ -75,16 +75,24 @@ component).
 | `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes or `{}` mean the three Apple roots, and an empty list is refused (`roots must not be empty`). Answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after an `ok` answer it traps. `N` is the most bytes of one input a host needs to hand the module, one over its largest cap (3,145,729): a longer input may be cut to `N`, and the module answers `TOO_LARGE` for it (DECISIONS.md R42) |
 | `verify-receipt(now-ms, receipt-base64)` | `aprv-wire`'s answer (`../wire/schema/verify-receipt-result.schema.json`) |
 | `verify-signed-data(now-ms, jws)` | `aprv-wire`'s answer (`../wire/schema/verify-signed-data-result.schema.json`) |
-| `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` 0 is production, 1 sandbox, anything else traps |
+| `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` is the WIT `environment` enum, which a hand-rolled host passes as 0 (`production`) or 1 (`sandbox`); any other discriminant traps |
 | `random-get(len)`, the one import | OpenSSL's randomness (EC blinding, its DRBG); an answer that is not exactly `len` bytes traps |
 
-A verify call before a successful `init` traps. A `now-ms` above `i64::MAX`
-is `INTERNAL_ERROR` (`{"status":21009}` at the endpoint), as a clock that
-throws is in 0.7. Traps are `unreachable`, reached directly. The module is
-built with `panic = "abort"`: std's panic handler is still linked on stable
-Rust (bounds and borrow checks in std and the dependencies can reach it),
-and every such path ends in a trap: the hook's write to stderr traps in
-`wasi-none.c`, and the abort is `unreachable`.
+A verify call before a successful `init` traps. `now-ms` is an `s64`, the
+core's own instant, so every value the type holds reaches the core; the
+wrappers refuse a clock before 1970 themselves (STATUS.md). Traps are
+`unreachable`, reached directly, but for one: an `environment`
+discriminant other than 0 or 1 is caught by wit-bindgen's generated lift,
+which checks it only with debug assertions on. `rust/Cargo.toml` turns
+them on for this package alone in `[profile.wasm.package.aprv-abi]`;
+without that setting the lift `transmute`s the value and the endpoint
+answers for the wrong environment (2 as production, 255 as sandbox; see
+docs/evidence/2026-11-02-abi-0.2-enum-lift.md). The check panics, and
+the module is built with `panic = "abort"`: std's panic handler is still
+linked on stable Rust (bounds and borrow checks in std and the
+dependencies can reach it), and every such path ends in a trap: the
+hook's calls into WASI (its environment read, its write to stderr) trap
+in `wasi-none.c`, and the abort is `unreachable`.
 
 A `list<u8>` argument is the host's to place: the canonical ABI requires
 the range to come from `cabi_realloc`. Every cap is decided on the input's

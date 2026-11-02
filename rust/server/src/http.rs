@@ -8,7 +8,7 @@
 //! same JSON. Everything else is an RFC 9457 problem
 //! (`application/problem+json`) with a `code` member.
 
-use crate::runtime::{InvokeError, Op, Verifier};
+use crate::runtime::{Environment, InvokeError, Op, Verifier};
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -162,20 +162,22 @@ async fn require_token(
     next.run(req).await
 }
 
-/// `X-Aprv-Now-Ms` (a u64 in decimal) or the server's clock.
-fn now_ms(headers: &HeaderMap) -> Result<u64, Box<Response>> {
+/// `X-Aprv-Now-Ms` (0 to `i64::MAX` in decimal: WIT `now-ms` is an `s64`
+/// since ABI 0.2.0, and a clock before 1970 is the caller's to refuse) or
+/// the server's clock.
+fn now_ms(headers: &HeaderMap) -> Result<i64, Box<Response>> {
     let Some(v) = headers.get(NOW_HEADER) else {
         return Ok(crate::clock_ms());
     };
     let s = v.to_str().unwrap_or("");
     let ok = !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit());
-    match s.parse::<u64>() {
+    match s.parse::<i64>() {
         Ok(n) if ok => Ok(n),
         _ => Err(Box::new(problem(
             StatusCode::BAD_REQUEST,
             "BAD_REQUEST",
             "Bad Request",
-            "X-Aprv-Now-Ms must be an unsigned 64-bit integer in decimal (milliseconds since the Unix epoch)",
+            "X-Aprv-Now-Ms must be an integer from 0 to 9223372036854775807 in decimal (milliseconds since the Unix epoch)",
         ))),
     }
 }
@@ -187,10 +189,18 @@ async fn verify_signed_data(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Respon
     run(s, &h, b, |now_ms| Op::VerifySignedData { now_ms }).await
 }
 async fn endpoint_production(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
-    run(s, &h, b, |now_ms| Op::Endpoint { env: 0, now_ms }).await
+    run(s, &h, b, |now_ms| Op::Endpoint {
+        env: Environment::Production,
+        now_ms,
+    })
+    .await
 }
 async fn endpoint_sandbox(s: State<Arc<App>>, h: HeaderMap, b: Body) -> Response {
-    run(s, &h, b, |now_ms| Op::Endpoint { env: 1, now_ms }).await
+    run(s, &h, b, |now_ms| Op::Endpoint {
+        env: Environment::Sandbox,
+        now_ms,
+    })
+    .await
 }
 
 /// Past the cap the server keeps reading, and discards, up to this many
@@ -271,7 +281,7 @@ async fn run(
     State(app): State<Arc<App>>,
     headers: &HeaderMap,
     body: Body,
-    op: impl FnOnce(u64) -> Op,
+    op: impl FnOnce(i64) -> Op,
 ) -> Response {
     // The clock header is checked first, so a bad one costs no body read.
     let op = match now_ms(headers) {
