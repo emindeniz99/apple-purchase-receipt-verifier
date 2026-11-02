@@ -135,6 +135,9 @@ class MisuseTest(unittest.TestCase):
         self.assertIsNotNone(caught.exception.__cause__, "the trap is the cause")
 
     def test_an_environment_other_than_0_or_1_traps(self) -> None:
+        # wit-bindgen's enum lift traps on these only because rust/Cargo.toml
+        # turns debug assertions on for aprv-abi ([profile.wasm.package.aprv-abi]);
+        # without it 2 answers as production and 255 as sandbox (DECISIONS.md R46).
         for env in (2, 255, 2**32 - 1):
             with self.subTest(env=env):
                 instance = fresh()
