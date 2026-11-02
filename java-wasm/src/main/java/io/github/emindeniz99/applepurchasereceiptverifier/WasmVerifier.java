@@ -61,6 +61,9 @@ final class WasmVerifier implements Verifier {
     public VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64) {
         try {
             long now = clock.millis();
+            if (now < 0) {
+                return VerificationResult.failed(negativeClock());
+            }
             return pool.call((guest, max) -> Wire.receiptAnswer(guest.verifyReceipt(now, bytes(base64, max))));
         } catch (GuestFailure e) {
             return VerificationResult.failed(moduleFailure(e));
@@ -73,6 +76,9 @@ final class WasmVerifier implements Verifier {
     public VerificationResult<JsonPayload> verifySignedData(@Nullable String jws) {
         try {
             long now = clock.millis();
+            if (now < 0) {
+                return VerificationResult.failed(negativeClock());
+            }
             return pool.call((guest, max) -> Wire.signedDataAnswer(guest.verifySignedData(now, bytes(jws, max))));
         } catch (GuestFailure e) {
             return VerificationResult.failed(moduleFailure(e));
@@ -84,11 +90,15 @@ final class WasmVerifier implements Verifier {
     @Override
     public String verifyReceiptEndpoint(Environment environment, @Nullable String requestJson) {
         Objects.requireNonNull(environment, "environment");
-        // The WIT's env is a u32 the module matches: 0 production, 1 sandbox,
-        // and a trap for anything else. Environment keeps it on 0 or 1.
+        // The WIT's env is the enum `environment`, lowered as its discriminant:
+        // 0 production, 1 sandbox, and a trap for anything else.
+        // Environment keeps it on 0 or 1.
         int env = environment == Environment.PRODUCTION ? 0 : 1;
         try {
             long now = clock.millis();
+            if (now < 0) {
+                return "{\"status\":" + AppleStatus.INTERNAL_DATA_ACCESS_ERROR + "}";
+            }
             // Apple's response JSON, byte for byte as the module wrote it.
             return pool.call((guest, max) ->
                     Wire.endpointAnswer(guest.verifyReceiptEndpoint(env, now, bytes(requestJson, max))));
@@ -130,6 +140,17 @@ final class WasmVerifier implements Verifier {
 
     private static Failure moduleFailure(GuestFailure e) {
         return new Failure(Reason.INTERNAL_ERROR, e.getMessage(), e);
+    }
+
+    /**
+     * A clock before 1970, refused before the module is called, as every other
+     * package refuses it. The WIT's {@code now-ms} has been an {@code s64}
+     * since ABI 0.2.0 and would carry the instant to the core; under 0.1.0 a
+     * {@code u64} could not, and the module answered INTERNAL_ERROR. Both
+     * engines keep that answer (DECISIONS.md R46).
+     */
+    static Failure negativeClock() {
+        return new Failure(Reason.INTERNAL_ERROR, "the configured clock answered a negative time", null);
     }
 
     /** As the main artifact words it: a clock that threw, or a defect here. */

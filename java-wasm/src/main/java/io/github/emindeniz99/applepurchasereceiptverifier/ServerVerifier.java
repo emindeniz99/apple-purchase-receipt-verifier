@@ -81,6 +81,9 @@ final class ServerVerifier implements Verifier, Closeable {
                 environment == Environment.PRODUCTION ? "/v1/verify-receipt/production" : "/v1/verify-receipt/sandbox";
         try {
             long now = clock.millis();
+            if (now < 0) {
+                return "{\"status\":" + AppleStatus.INTERNAL_DATA_ACCESS_ERROR + "}";
+            }
             ServerConnection connection = holder.get();
             HttpConn.Response response = connection.send("POST", path, bytes(requestJson, connection), now);
             if (moduleAnswered(response)) {
@@ -96,6 +99,10 @@ final class ServerVerifier implements Verifier, Closeable {
             String path, @Nullable String input, Function<String, VerificationResult<T>> decode) {
         try {
             long now = clock.millis();
+            if (now < 0) {
+                // The server would answer 400 for it; refused here, as Endive does.
+                return VerificationResult.failed(WasmVerifier.negativeClock());
+            }
             ServerConnection connection = holder.get();
             HttpConn.Response response = connection.send("POST", path, bytes(input, connection), now);
             if (moduleAnswered(response)) {

@@ -222,6 +222,25 @@ class ServerProblemTest {
         assertTrue(nowHeaders.isEmpty(), "nothing was sent: " + nowHeaders);
     }
 
+    /**
+     * A clock before 1970 is INTERNAL_ERROR, and 21009 at the endpoint, and no
+     * request: the server would answer 400 for it (X-Aprv-Now-Ms is 0 to
+     * i64::MAX), and the Endive engine refuses it the same way.
+     */
+    @Test
+    void aClockBefore1970IsAnInternalErrorAndNoRequest() {
+        Clock before = Clock.fixed(Instant.ofEpochMilli(-1L), ZoneOffset.UTC);
+        Verifier verifier = verifier(Config.builder().clock(before).build());
+        Failure failure = verifier.verifyReceipt("AAAA").failure();
+        assertEquals(Reason.INTERNAL_ERROR, failure.reason());
+        assertEquals("the configured clock answered a negative time", failure.message());
+        assertEquals(
+                Reason.INTERNAL_ERROR,
+                verifier.verifySignedData("a.b.c").failure().reason());
+        assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
+        assertTrue(nowHeaders.isEmpty(), "nothing was sent: " + nowHeaders);
+    }
+
     @Test
     void aServerWithOtherRootsIsRefused() {
         infoRoots = new ArrayList<>(infoRoots.subList(0, 2));

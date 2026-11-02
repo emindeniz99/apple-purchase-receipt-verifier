@@ -299,6 +299,30 @@ class WasmVerifierTest {
         assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
     }
 
+    /**
+     * A clock before 1970 is INTERNAL_ERROR, and 21009 at the endpoint, before
+     * the module is called, as in every package. The WIT's {@code now-ms} is an
+     * {@code s64} since ABI 0.2.0, so without the refusal the core would judge
+     * at that instant (DECISIONS.md R46).
+     */
+    @Test
+    void aClockBefore1970IsInternalError() throws Exception {
+        for (long millis : new long[] {-1L, Long.MIN_VALUE}) {
+            Verifier verifier = Verifier.create(
+                    Config.builder()
+                            .clock(Clock.fixed(Instant.ofEpochMilli(millis), ZoneOffset.UTC))
+                            .build(),
+                    Engine.endive());
+            Failure receipt = verifier.verifyReceipt(g5()).failure();
+            assertEquals(Reason.INTERNAL_ERROR, receipt.reason(), "at " + millis);
+            assertEquals("the configured clock answered a negative time", receipt.message());
+            assertEquals(
+                    Reason.INTERNAL_ERROR,
+                    verifier.verifySignedData("x").failure().reason());
+            assertEquals("{\"status\":21009}", verifier.verifyReceiptEndpoint(Environment.SANDBOX, "{}"));
+        }
+    }
+
     @Test
     void theCallerMistakesOf07() {
         assertThrows(NullPointerException.class, () -> Verifier.create(null, Engine.endive()));
@@ -362,8 +386,8 @@ class WasmVerifierTest {
         GuestFactory mismatched = new GuestFactory() {
             @Override
             public Guest newGuest() {
-                throw new GuestFailure("ABI mismatch: this library binds aprv:verifier/verify@0.1.0 and the module"
-                        + " lacks [aprv:verifier/verify@0.1.0#init]; it exports [memory]");
+                throw new GuestFailure("ABI mismatch: this library binds aprv:verifier/verify@0.2.0 and the module"
+                        + " lacks [aprv:verifier/verify@0.2.0#init]; it exports [memory]");
             }
 
             @Override
@@ -373,7 +397,7 @@ class WasmVerifierTest {
         };
         IllegalStateException e =
                 assertThrows(IllegalStateException.class, () -> new WasmVerifier(DEFAULTS, mismatched));
-        assertTrue(e.getMessage().contains("aprv:verifier/verify@0.1.0"), e.getMessage());
+        assertTrue(e.getMessage().contains("aprv:verifier/verify@0.2.0"), e.getMessage());
     }
 
     /** The committed module exports exactly what the guest binds. */
