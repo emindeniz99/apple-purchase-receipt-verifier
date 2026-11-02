@@ -435,9 +435,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # g1.sh refuses a module other than the committed pin, which lags
+      # main between releases; as for dotnet, the pin is rewritten for
+      # this run's checkout only.
       - name: java-wasm
         if: matrix.host == 'java-wasm'
-        run: sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
+        run: |
+          set -euo pipefail
+          printf '%s  aprv.wasm\n' "$(sha256sum < "$G1/aprv.wasm" | cut -c1-64)" > java-wasm/src/main/wasm/aprv.wasm.sha256
+          sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
 
       # swift:6.3, digest-pinned as in ci.yml; python3 is for same.py.
       - name: swift
