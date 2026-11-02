@@ -9,8 +9,9 @@
 # its SHA256SUMS first. <host> is one of go, swift, python, ruby, dotnet,
 # java, node (node takes the component, every other host the core module).
 #
-# No host commits the module (only Go and Swift will, once, at integration:
-# DECISIONS.md R14), so a CI checkout has none until this runs. The pins
+# Only Go and Swift commit the module (DECISIONS.md R14), and their copies
+# may lag this tree's build; every other host has none in a CI checkout
+# until this runs. The pins
 # (`aprv.wasm.sha256`, Node's `aprv.component.wasm.sha256`) are tracked and
 # lag the core between releases, the same way the committed copies do
 # (`wasm-copies`); a job tests the module this tree builds, so the pin is

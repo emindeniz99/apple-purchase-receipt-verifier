@@ -33,8 +33,8 @@ import { join, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-const IFACE = 'aprv:verifier/verify@0.1.0#';
-const HOST = 'aprv:verifier/host@0.1.0';
+const IFACE = 'aprv:verifier/verify@0.2.0#';
+const HOST = 'aprv:verifier/host@0.2.0';
 
 function usage(message) {
   console.error(`private-receipt-check: ${message}\nusage: node tools/private-receipt-check.mjs <dir> [--module <aprv.wasm>] [--root <der>]...`);

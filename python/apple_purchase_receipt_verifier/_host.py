@@ -30,12 +30,14 @@ from . import _cache
 
 #: The ABI version this host binds. Export names carry it, so a module built
 #: for another version has no export this host finds.
-ABI_VERSION = "0.1.0"
+ABI_VERSION = "0.2.0"
 _VERIFY = f"aprv:verifier/verify@{ABI_VERSION}#"
 _HOST_MODULE = f"aprv:verifier/host@{ABI_VERSION}"
 
 _I32, _I64 = "i32", "i64"
-#: Export name -> (WIT parameters lowered to core types, in order). Every
+#: Export name -> (WIT parameters lowered to core types, in order: the
+#: ``environment`` enum flattens to an ``i32``, the ``s64`` now-ms to an
+#: ``i64``). Every
 #: export answers one ``i32``, the address of its return area, and has a
 #: ``cabi_post_`` twin taking that address.
 _EXPORTS = {

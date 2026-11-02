@@ -7,7 +7,7 @@ one-shot CLI (`aprv verify-receipt` and friends).
 
 It adds no verification logic. It has no base64 rule, no CMS, JWS or
 certificate code and no trust decision: a route or a command picks one of
-the component's four operations (`aprv:verifier/verify@0.1.0`,
+the component's four operations (`aprv:verifier/verify@0.2.0`,
 [`wit/aprv.wit`](wit/aprv.wit)) and passes the bytes through. The server
 therefore cannot disagree with the other packages about a verdict. The
 design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
@@ -30,7 +30,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | Flag | Commands | Meaning |
 |---|---|---|
 | `--roots FILE` | serve, CLI | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes, which the module reads as is), or PEM `CERTIFICATE` blocks, which the `pem` crate unwraps to DER so `/v1/info` reports DER fingerprints; `#` comments and blank lines are skipped. An empty file is refused. Without the flag, the three Apple roots built into the module |
-| `--now-ms N` | CLI | The verification clock, ms since the Unix epoch (u64). Default: the system clock |
+| `--now-ms N` | CLI | The verification clock, ms since the Unix epoch, 0 to 9223372036854775807 (the WIT `now-ms` is an `s64`). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN`. A file that holds no token stops the server (exit 2) |
 | `--lifecycle pool\|fresh` | serve | `pool` (default): instances are kept, one request at a time each, at most one per worker, and one that trapped or broke the interface is destroyed, never reused. `fresh`: a new store, instance and `init` per request. The default follows DECISIONS.md R23: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4 times a pooled call (`docs/evidence/2026-09-29-init-cost.md`) |
@@ -70,8 +70,8 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
 |---|---|---|
 | `POST /v1/receipt/verify` | the `receipt-data` string | `verify-receipt(now-ms, body)` |
 | `POST /v1/signed-data/verify` | the compact JWS | `verify-signed-data(now-ms, body)` |
-| `POST /v1/verify-receipt/production` | a verifyReceipt request | `verify-receipt-endpoint(0, now-ms, body)` |
-| `POST /v1/verify-receipt/sandbox` | a verifyReceipt request | `verify-receipt-endpoint(1, now-ms, body)` |
+| `POST /v1/verify-receipt/production` | a verifyReceipt request | `verify-receipt-endpoint(production, now-ms, body)` |
+| `POST /v1/verify-receipt/sandbox` | a verifyReceipt request | `verify-receipt-endpoint(sandbox, now-ms, body)` |
 | `GET /v1/info` | | the component's SHA-256, the roots' SHA-256 fingerprints, the engine and limits |
 | `GET /healthz`, `GET /readyz` | | `ok`, `ready` (the server listens only after its first `init` succeeded) |
 | `GET /openapi.json` | | [`openapi.yaml`](openapi.yaml) as JSON, the wire schemas bundled |
@@ -93,7 +93,8 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
   JSON is the 413's body, byte for byte, with the 200's schema; a client
   reads it as it reads a 200. The cap, the length and the refusal's
   wording live in the module alone (DECISIONS.md R42).
-- **`X-Aprv-Now-Ms`** (u64, decimal) is the call's clock: the
+- **`X-Aprv-Now-Ms`** (decimal, 0 to 9223372036854775807, the range of the WIT
+  `now-ms: s64` that is not before 1970) is the call's clock: the
   certificate-validity instant when the input states no usable date, and
   `request_date` at the endpoint. Without it, the server's clock.
 - **`X-Aprv-Token`**: with a token configured, every `/v1/` route needs it
@@ -112,7 +113,8 @@ is an RFC 9457 problem,
 `title`, `status`, `detail` and `code`.
 
 #### bad-request
-400 `BAD_REQUEST`: `X-Aprv-Now-Ms` is not a u64 in decimal, or the body
+400 `BAD_REQUEST`: `X-Aprv-Now-Ms` is not a decimal integer from 0 to
+9223372036854775807, or the body
 could not be read.
 
 #### unauthorized

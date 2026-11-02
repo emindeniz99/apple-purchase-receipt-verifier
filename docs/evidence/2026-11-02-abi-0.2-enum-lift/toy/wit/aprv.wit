@@ -1,0 +1,14 @@
+package aprv:verifier@0.2.0;
+
+interface verify {
+  /// Which of Apple's two verifyReceipt URLs the endpoint answers as.
+  enum environment {
+    production,
+    sandbox,
+  }
+  verify-receipt-endpoint: func(env: environment, now-ms: s64, request-json: list<u8>) -> string;
+}
+
+world aprv {
+  export verify;
+}

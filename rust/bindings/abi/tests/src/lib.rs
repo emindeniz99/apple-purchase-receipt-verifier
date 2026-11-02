@@ -15,9 +15,9 @@ use wasmtime::component::{Component, HasSelf};
 use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Result, Store, Trap};
 
 /// The interface's export names carry the ABI version.
-pub const IFACE: &str = "aprv:verifier/verify@0.1.0";
+pub const IFACE: &str = "aprv:verifier/verify@0.2.0";
 /// The module's one import.
-pub const HOST: &str = "aprv:verifier/host@0.1.0";
+pub const HOST: &str = "aprv:verifier/host@0.2.0";
 
 fn path_of(var: &str) -> String {
     std::env::var(var).unwrap_or_else(|_| {
@@ -71,12 +71,14 @@ pub fn is_trap<T>(result: &Result<T>) -> bool {
     matches!(result, Err(error) if error.downcast_ref::<Trap>() == Some(&Trap::UnreachableCodeReached))
 }
 
-/// The calls both hosts offer, in WIT terms.
+/// The calls both hosts offer, in WIT terms. `env` is the `environment`
+/// enum's discriminant as a hand-rolled host lowers it (0 `production`,
+/// 1 `sandbox`), so a test can pass one the enum does not have.
 pub trait Guest {
     fn init(&mut self, config: &[u8]) -> Result<String>;
-    fn verify_receipt(&mut self, now_ms: u64, receipt: &[u8]) -> Result<String>;
-    fn verify_signed_data(&mut self, now_ms: u64, jws: &[u8]) -> Result<String>;
-    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: u64, body: &[u8]) -> Result<String>;
+    fn verify_receipt(&mut self, now_ms: i64, receipt: &[u8]) -> Result<String>;
+    fn verify_signed_data(&mut self, now_ms: i64, jws: &[u8]) -> Result<String>;
+    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: i64, body: &[u8]) -> Result<String>;
 }
 
 // ------------------------------------------------------------ hand-rolled
@@ -194,7 +196,7 @@ impl CoreGuest {
     pub fn call_with_range(
         &mut self,
         export: &str,
-        now_ms: u64,
+        now_ms: i64,
         ptr: u32,
         len: u32,
     ) -> Result<i32> {
@@ -204,17 +206,17 @@ impl CoreGuest {
         )?;
         f.call(
             &mut self.store,
-            (now_ms.cast_signed(), ptr.cast_signed(), len.cast_signed()),
+            (now_ms, ptr.cast_signed(), len.cast_signed()),
         )
     }
 
-    fn verify(&mut self, export: &str, now_ms: u64, input: &[u8]) -> Result<String> {
+    fn verify(&mut self, export: &str, now_ms: i64, input: &[u8]) -> Result<String> {
         let (ptr, len) = self.lower(input)?;
         let f = self.instance.get_typed_func::<(i64, i32, i32), i32>(
             &mut self.store,
             &format!("{IFACE}#{export}"),
         )?;
-        let retptr = f.call(&mut self.store, (now_ms.cast_signed(), ptr, len))?;
+        let retptr = f.call(&mut self.store, (now_ms, ptr, len))?;
         self.lift(export, retptr)
     }
 }
@@ -229,25 +231,22 @@ impl Guest for CoreGuest {
         self.lift("init", retptr)
     }
 
-    fn verify_receipt(&mut self, now_ms: u64, receipt: &[u8]) -> Result<String> {
+    fn verify_receipt(&mut self, now_ms: i64, receipt: &[u8]) -> Result<String> {
         self.verify("verify-receipt", now_ms, receipt)
     }
 
-    fn verify_signed_data(&mut self, now_ms: u64, jws: &[u8]) -> Result<String> {
+    fn verify_signed_data(&mut self, now_ms: i64, jws: &[u8]) -> Result<String> {
         self.verify("verify-signed-data", now_ms, jws)
     }
 
-    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: u64, body: &[u8]) -> Result<String> {
+    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: i64, body: &[u8]) -> Result<String> {
         let (ptr, len) = self.lower(body)?;
         let export = "verify-receipt-endpoint";
         let f = self.instance.get_typed_func::<(i32, i64, i32, i32), i32>(
             &mut self.store,
             &format!("{IFACE}#{export}"),
         )?;
-        let retptr = f.call(
-            &mut self.store,
-            (env.cast_signed(), now_ms.cast_signed(), ptr, len),
-        )?;
+        let retptr = f.call(&mut self.store, (env.cast_signed(), now_ms, ptr, len))?;
         self.lift(export, retptr)
     }
 }
@@ -257,6 +256,8 @@ impl Guest for CoreGuest {
 mod bindings {
     wasmtime::component::bindgen!({ path: "../wit", world: "aprv" });
 }
+
+use bindings::exports::aprv::verifier::verify::Environment;
 
 pub struct ComponentState {
     randomness: Randomness,
@@ -295,19 +296,26 @@ impl Guest for ComponentGuest {
             .call_init(&mut self.store, config)
     }
 
-    fn verify_receipt(&mut self, now_ms: u64, receipt: &[u8]) -> Result<String> {
+    fn verify_receipt(&mut self, now_ms: i64, receipt: &[u8]) -> Result<String> {
         self.aprv
             .aprv_verifier_verify()
             .call_verify_receipt(&mut self.store, now_ms, receipt)
     }
 
-    fn verify_signed_data(&mut self, now_ms: u64, jws: &[u8]) -> Result<String> {
+    fn verify_signed_data(&mut self, now_ms: i64, jws: &[u8]) -> Result<String> {
         self.aprv
             .aprv_verifier_verify()
             .call_verify_signed_data(&mut self.store, now_ms, jws)
     }
 
-    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: u64, body: &[u8]) -> Result<String> {
+    /// A discriminant the enum does not have cannot be lowered by a typed
+    /// host: it is refused here, before the guest is called.
+    fn verify_receipt_endpoint(&mut self, env: u32, now_ms: i64, body: &[u8]) -> Result<String> {
+        let env = match env {
+            0 => Environment::Production,
+            1 => Environment::Sandbox,
+            _ => wasmtime::bail!("environment {env} is not a case of the WIT enum"),
+        };
         self.aprv
             .aprv_verifier_verify()
             .call_verify_receipt_endpoint(&mut self.store, env, now_ms, body)

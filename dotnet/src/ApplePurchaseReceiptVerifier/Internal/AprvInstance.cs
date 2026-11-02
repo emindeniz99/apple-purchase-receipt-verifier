@@ -15,7 +15,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// <remarks>
     /// <para>A call is: <c>cabi_realloc</c> for the input and a copy in (the
     /// guest owns that buffer and frees it), the export by its
-    /// <c>@0.1.0</c> name with the scalars first and then <c>(ptr, len)</c>,
+    /// <c>@0.2.0</c> name with the scalars first and then <c>(ptr, len)</c>,
     /// the return area at the returned address read as <c>ptr</c> then
     /// <c>len</c> and bounds-checked against the memory, a copy out, and
     /// <c>cabi_post</c> to free the result. No guest pointer outlives a
@@ -34,7 +34,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         private static readonly UTF8Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
-        /// <summary>Each export's WIT parameters in order: <c>w</c> u32, <c>d</c> u64, <c>b</c> list&lt;u8&gt;.</summary>
+        /// <summary>Each export's WIT parameters in order: <c>w</c> the <c>environment</c> enum's discriminant (an i32), <c>d</c> the s64 <c>now-ms</c> (an i64), <c>b</c> list&lt;u8&gt;.</summary>
         internal static readonly Dictionary<string, string> Signatures = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["init"] = "b",
@@ -119,7 +119,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>
         /// An export whose result is a string: lower, call, lift, post-return.
-        /// An <see cref="uint"/> is a u32, a <see cref="long"/> a u64 and a
+        /// A <see cref="uint"/> is the enum's discriminant, a <see cref="long"/> an s64 and a
         /// <see cref="byte"/> array a list&lt;u8&gt;; a wrong count or type is an
         /// <see cref="ArgumentException"/> before anything reaches the module.
         /// </summary>

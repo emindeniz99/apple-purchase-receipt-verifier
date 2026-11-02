@@ -1,0 +1,15 @@
+# rustc 1.99.1 (58cf8f9c3 2026-10-13); wit-bindgen 0.63.0; v22.22.0
+== wasm (43089 bytes)
+imports: wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit
+env 0: value "production -5 2"
+env 1: value "sandbox -5 2"
+env 2: value "production -5 2"
+env 255: value "sandbox -5 2"
+env 4294967295: value "sandbox -5 2"
+== wasmchecked (44817 bytes)
+imports: wasi_snapshot_preview1.environ_get wasi_snapshot_preview1.environ_sizes_get wasi_snapshot_preview1.fd_write wasi_snapshot_preview1.proc_exit
+env 0: value "production -5 2"
+env 1: value "sandbox -5 2"
+env 2: Error: import wasi_snapshot_preview1.environ_sizes_get called
+env 255: Error: import wasi_snapshot_preview1.environ_sizes_get called
+env 4294967295: Error: import wasi_snapshot_preview1.environ_sizes_get called

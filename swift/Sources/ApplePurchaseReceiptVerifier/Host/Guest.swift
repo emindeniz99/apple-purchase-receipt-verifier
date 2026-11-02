@@ -12,7 +12,7 @@ enum HostError: Error, Sendable, CustomStringConvertible {
     case unusableAnswer(export: String, detail: String)
     /// init answered {"ok":false}: the module refused the configuration.
     case initRefused(message: String)
-    /// The module is not the aprv:verifier@0.1.0 module this package binds.
+    /// The module is not the aprv:verifier@0.2.0 module this package binds.
     case abiMismatch(String)
     /// The bundled module could not be read, did not match its hash, or did
     /// not parse.
@@ -33,10 +33,11 @@ enum HostError: Error, Sendable, CustomStringConvertible {
 /// version in the names is the ABI version: a module of another version has
 /// none of these exports and is refused when it loads.
 enum Abi {
-    static let verify = "aprv:verifier/verify@0.1.0#"
-    static let host = "aprv:verifier/host@0.1.0"
+    static let verify = "aprv:verifier/verify@0.2.0#"
+    static let host = "aprv:verifier/host@0.2.0"
     /// Each export's core parameters before the (ptr, len) of its list<u8>:
-    /// `env: u32` and `now-ms: u64` flatten to i32 and i64.
+    /// `env` (the `environment` enum) and `now-ms: s64` flatten to i32 and
+    /// i64.
     static let exports: [String: [ValueType]] = [
         "init": [], "verify-receipt": [.i64], "verify-signed-data": [.i64], "verify-receipt-endpoint": [.i32, .i64],
     ]
@@ -146,8 +147,9 @@ final class Guest: @unchecked Sendable {
         try call("verify-signed-data", [.i64(now)], capped(jws))
     }
 
-    /// `env` is 0 (production) or 1 (sandbox); the guest traps on anything
-    /// else, and ``Verifier`` only ever passes those two.
+    /// `env` is the `environment` enum's discriminant, 0 (production) or 1
+    /// (sandbox); the guest traps on anything else, and ``Verifier`` only
+    /// ever passes those two.
     func verifyReceiptEndpoint(env: UInt32, now: UInt64, _ requestJson: some Collection<UInt8>) throws(HostError) -> String {
         try call("verify-receipt-endpoint", [.i32(env), .i64(now)], capped(requestJson))
     }

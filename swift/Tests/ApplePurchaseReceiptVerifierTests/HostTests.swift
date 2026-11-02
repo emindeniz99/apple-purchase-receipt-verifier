@@ -137,6 +137,10 @@ final class AbiTests: XCTestCase {
         XCTAssertEqual(parsed?["verified"] as? Bool, false, answer)
     }
 
+    /// wit-bindgen's enum lift traps on these only because rust/Cargo.toml
+    /// turns debug assertions on for aprv-abi
+    /// ([profile.wasm.package.aprv-abi]); without it 2 answers as production
+    /// and 255 as sandbox (DECISIONS.md R46).
     func testAnEnvironmentOtherThanZeroOrOneTraps() throws {
         let request = Array(#"{"receipt-data":""#.utf8) + (try g5()) + Array(#""}"#.utf8)
         for env: UInt32 in [2, 255, 0xFFFF_FFFF] {
@@ -323,14 +327,14 @@ final class FacadeTests: XCTestCase {
         XCTAssertNoThrow(try Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.receiptRoot)])))
     }
 
-    /// A module without the @0.1.0 exports, or with an import beyond
+    /// A module without the @0.2.0 exports, or with an import beyond
     /// random-get, is refused when it loads, naming the version this package
     /// binds; a Verifier over it answers INTERNAL_ERROR, never a verdict.
     func testAnAbiMismatchIsRefusedAtLoad() throws {
         let other = TinyModules.otherVersion
         XCTAssertThrowsError(try AprvModule.load(other)) { error in
             guard case HostError.abiMismatch(let detail) = error else { return XCTFail("\(error)") }
-            XCTAssertTrue(detail.contains("aprv:verifier@0.1.0") && detail.contains("verify@2.0.0#init"), detail)
+            XCTAssertTrue(detail.contains("aprv:verifier@0.2.0") && detail.contains("verify@2.0.0#init"), detail)
         }
         let imports = TinyModules.wasiImport
         XCTAssertThrowsError(try AprvModule.load(imports)) { error in
@@ -435,8 +439,9 @@ final class FacadeTests: XCTestCase {
         XCTAssertEqual(clock.reads, 3)
     }
 
-    /// A time before 1970 cannot cross as `now-ms: u64`: INTERNAL_ERROR, and
-    /// 21009 at the endpoint, before the module is called.
+    /// A time before 1970 is refused here, as in every package, though the
+    /// `s64` now-ms could carry it: INTERNAL_ERROR, and 21009 at the
+    /// endpoint, before the module is called.
     func testAClockBefore1970IsAnInternalError() throws {
         let verifier = try verifier(clock: { -1 })
         XCTAssertEqual(verifier.verifyReceipt(base64: "!").failure?.reason, .internalError)

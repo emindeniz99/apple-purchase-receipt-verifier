@@ -171,7 +171,7 @@ On `main`:
   (SURFACE §8: the cause chain is Rust-only). An `Environment` value
   that is neither constant answers `{"status":21009}` rather than
   panicking (the 0.7 "never throws" contract). A clock before 1970 is
-  `INTERNAL_ERROR` (`now-ms` is a `u64`).
+  `INTERNAL_ERROR`.
 - Lane Python: `Config` roots are DER `bytes` (the cross-host decision;
   `cryptography` is gone). The release publishes platform-tagged wheels
   and no `py3-none-any` wheel, so a platform without a wasmtime-py wheel

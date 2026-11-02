@@ -45,8 +45,8 @@ fn jws_config() -> Vec<u8> {
     format!("{{\"roots\":[\"{root}\"]}}").into_bytes()
 }
 
-fn now() -> u64 {
-    u64::try_from(
+fn now() -> i64 {
+    i64::try_from(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -120,6 +120,31 @@ fn the_module_imports_random_get_and_exports_the_interface_only() {
     assert_eq!(exports, [IFACE]);
 }
 
+/// ABI 0.2.0 changed `env` from `u32` to an enum and `now-ms` from `u64` to
+/// `s64`; both flatten to the core types 0.1.0 had, so a hand-rolled host's
+/// signature table is the same (DECISIONS.md R46).
+#[test]
+fn the_core_export_signatures_are_those_of_0_1_0() {
+    let module = &artifacts().module;
+    let signature = |op: &str| -> String {
+        let name = format!("{IFACE}#{op}");
+        let ty = module
+            .get_export(&name)
+            .and_then(|e| e.func().cloned())
+            .unwrap_or_else(|| panic!("{name} is not a function export"));
+        let params: Vec<String> = ty.params().map(|t| t.to_string()).collect();
+        let results: Vec<String> = ty.results().map(|t| t.to_string()).collect();
+        format!("({}) -> ({})", params.join(", "), results.join(", "))
+    };
+    assert_eq!(signature("init"), "(i32, i32) -> (i32)");
+    assert_eq!(signature("verify-receipt"), "(i64, i32, i32) -> (i32)");
+    assert_eq!(signature("verify-signed-data"), "(i64, i32, i32) -> (i32)");
+    assert_eq!(
+        signature("verify-receipt-endpoint"),
+        "(i32, i64, i32, i32) -> (i32)"
+    );
+}
+
 #[test]
 fn no_start_function_is_needed_and_the_calls_answer_the_wire() {
     // Neither host calls _initialize: each export runs the constructors on
@@ -155,15 +180,44 @@ fn no_start_function_is_needed_and_the_calls_answer_the_wire() {
     }
 }
 
+/// Only a hand-rolled host can pass a discriminant the `environment` enum
+/// does not have. wit-bindgen's lift checks it only with debug assertions
+/// on, which `[profile.wasm.package.aprv-abi]` in rust/Cargo.toml turns on;
+/// without that setting 2 answers as production and 255 as sandbox, and
+/// this test fails (DECISIONS.md R46).
 #[test]
 fn an_environment_other_than_0_or_1_traps() {
-    for (host, make) in hosts() {
-        for env in [2, 255, u32::MAX] {
-            let mut guest = ready(make, DEFAULTS);
-            let result = guest.verify_receipt_endpoint(env, now(), &endpoint_body());
-            assert!(is_trap(&result), "{host} env {env}: {result:?}");
-        }
+    for env in [2, 255, u32::MAX] {
+        let mut guest = ready(|r| Box::new(CoreGuest::new(r).unwrap()), DEFAULTS);
+        let result = guest.verify_receipt_endpoint(env, now(), &endpoint_body());
+        assert!(is_trap(&result), "env {env}: {result:?}");
     }
+}
+
+/// Both cases reach the guest as themselves on both hosts: the sandbox
+/// receipt answers 21007 at production and 0 at sandbox. A typed host
+/// cannot express another case; ComponentGuest refuses it before the call.
+#[test]
+fn each_environment_case_answers_as_itself() {
+    for (host, make) in hosts() {
+        let mut guest = ready(make, DEFAULTS);
+        let production = json(
+            &guest
+                .verify_receipt_endpoint(0, now(), &endpoint_body())
+                .unwrap(),
+        );
+        assert_eq!(production["status"], 21007, "{host}");
+        let sandbox = json(
+            &guest
+                .verify_receipt_endpoint(1, now(), &endpoint_body())
+                .unwrap(),
+        );
+        assert_eq!(sandbox["status"], 0, "{host}");
+    }
+    let mut guest = ready(|r| Box::new(ComponentGuest::new(r).unwrap()), DEFAULTS);
+    let refused = guest.verify_receipt_endpoint(2, now(), &endpoint_body());
+    assert!(refused.is_err() && !is_trap(&refused), "{refused:?}");
+    assert!(verifies(guest.as_mut()));
 }
 
 #[test]
@@ -240,11 +294,8 @@ fn a_trap_in_one_instance_leaves_another_verifying() {
         let mut trapped = ready(make, DEFAULTS);
         let mut other = ready(make, DEFAULTS);
         assert!(verifies(other.as_mut()), "{host}");
-        assert!(is_trap(&trapped.verify_receipt_endpoint(
-            2,
-            now(),
-            &endpoint_body()
-        )));
+        // A second init: a trap both hosts can express.
+        assert!(is_trap(&trapped.init(DEFAULTS)), "{host}");
         assert!(
             verifies(other.as_mut()) && verifies(other.as_mut()),
             "{host}"
@@ -254,9 +305,7 @@ fn a_trap_in_one_instance_leaves_another_verifying() {
     // to discard it itself (ARCHITECTURE.md §4).
     let mut trapped = ComponentGuest::new(Randomness::default()).unwrap();
     trapped.init(DEFAULTS).unwrap();
-    assert!(trapped
-        .verify_receipt_endpoint(2, now(), &endpoint_body())
-        .is_err());
+    assert!(is_trap(&trapped.init(DEFAULTS)));
     let again = trapped.verify_receipt(now(), &g5());
     assert!(again.is_err() && !is_trap(&again), "{again:?}");
 }
@@ -296,20 +345,33 @@ fn input_that_is_not_utf8_is_a_value() {
     }
 }
 
+/// `now-ms` is an `s64` since ABI 0.2.0, the core's own instant: every
+/// value reaches the core and is answered, none traps. The two fixtures
+/// carry their own signing dates, so they verify at any clock; the
+/// endpoint's `request_date` is `now-ms`, and at `i64::MIN` it is no
+/// instant Apple's format can write, which the core answers as 21009, as
+/// it does natively. The wrappers refuse a clock before 1970 themselves.
 #[test]
-fn a_clock_beyond_i64_is_an_internal_error() {
+fn every_s64_clock_is_a_value() {
     for (host, make) in hosts() {
         let mut guest = ready(make, DEFAULTS);
-        for now_ms in [1_u64 << 63, u64::MAX] {
+        let mut signed = ready(make, &jws_config());
+        for now_ms in [-1, i64::MIN, i64::MAX] {
             let answer = json(&guest.verify_receipt(now_ms, &g5()).unwrap());
-            assert_eq!(answer["reason"], "INTERNAL_ERROR", "{host}");
-            let answer = json(&guest.verify_signed_data(now_ms, &transaction()).unwrap());
-            assert_eq!(answer["reason"], "INTERNAL_ERROR", "{host}");
-            let body = guest
-                .verify_receipt_endpoint(1, now_ms, &endpoint_body())
-                .unwrap();
-            assert_eq!(body, r#"{"status":21009}"#, "{host}");
+            assert_eq!(answer["verified"], true, "{host} {now_ms}: {answer}");
+            let answer = json(&signed.verify_signed_data(now_ms, &transaction()).unwrap());
+            assert_eq!(answer["verified"], true, "{host} {now_ms}: {answer}");
         }
+        let body = guest
+            .verify_receipt_endpoint(1, i64::MIN, &endpoint_body())
+            .unwrap();
+        assert_eq!(body, r#"{"status":21009}"#, "{host}");
+        let body = json(
+            &guest
+                .verify_receipt_endpoint(1, -1, &endpoint_body())
+                .unwrap(),
+        );
+        assert_eq!(body["status"], 0, "{host}");
         assert!(verifies(guest.as_mut()), "{host}");
     }
 }
@@ -384,7 +446,10 @@ fn a_list_range_past_the_end_of_linear_memory_traps() {
             assert_eq!(guest.init(DEFAULTS).unwrap(), INIT_OK);
             let end = u32::try_from(guest.memory_size()).unwrap();
             let result = guest.call_with_range(export, now(), end - at_end, len);
-            assert!(is_trap(&result), "{export} at end-{at_end}, {len}: {result:?}");
+            assert!(
+                is_trap(&result),
+                "{export} at end-{at_end}, {len}: {result:?}"
+            );
         }
         let mut guest = CoreGuest::new(Randomness::default()).unwrap();
         guest.init(DEFAULTS).unwrap();

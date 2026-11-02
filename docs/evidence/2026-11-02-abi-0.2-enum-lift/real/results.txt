@@ -1,0 +1,82 @@
+# rustc 1.99.1; wit-bindgen 0.63.0; wasm-tools 1.262.0; wasi-sdk 34.0; OpenSSL 4.0.3; node v22.22.0; built 2026-11-02 from main 04bc1f4 plus the ABI 0.2.0 change
+base  aprv.wasm 2841546 bytes  sha256 efaeb102e89c289d664b6e9546e330c7e43ed9add01d9b1ac91c913896fa2ba1
+u     aprv.wasm 2841206 bytes  sha256 d2a1ebb4edb0cdb4bdb7e935bf9755fa6b7ea977d6738c1ac29837b953033934
+a     aprv.wasm 2846071 bytes  sha256 66a2d6a6298db1982d52e919a177494be216212589481cd4bf88fc070c5e353f
+h     aprv.wasm 2846388 bytes  sha256 318869f39e9a61caa5f3b68052fa3dfdd4003d194a0776044c0b00136f3ee94b
+
+== V8 (node run-real.mjs), variant u
+module: 2841206 bytes
+endpoint env 0: value status 21007
+endpoint env 1: value status 0
+endpoint env 2: value status 21007
+endpoint env 255: value status 0
+endpoint env 4294967295: value status 0
+endpoint env 1, now-ms -1: value status 0
+verify-receipt, now-ms -1: value verified true
+endpoint env 1, now-ms -9223372036854775808: value status 21009
+verify-receipt, now-ms -9223372036854775808: value verified true
+endpoint env 1, now-ms 9223372036854775807: value status 21009
+verify-receipt, now-ms 9223372036854775807: value verified true
+
+== V8 (node run-real.mjs), variant a
+module: 2846071 bytes
+endpoint env 0: value status 21007
+endpoint env 1: value status 0
+endpoint env 2: RuntimeError: unreachable
+endpoint env 255: RuntimeError: unreachable
+endpoint env 4294967295: RuntimeError: unreachable
+endpoint env 1, now-ms -1: value status 0
+verify-receipt, now-ms -1: value verified true
+endpoint env 1, now-ms -9223372036854775808: value status 21009
+verify-receipt, now-ms -9223372036854775808: value verified true
+endpoint env 1, now-ms 9223372036854775807: value status 21009
+verify-receipt, now-ms 9223372036854775807: value verified true
+
+== V8 (node run-real.mjs), variant h
+module: 2846388 bytes
+endpoint env 0: value status 21007
+endpoint env 1: value status 0
+endpoint env 2: RuntimeError: unreachable
+endpoint env 255: RuntimeError: unreachable
+endpoint env 4294967295: RuntimeError: unreachable
+endpoint env 1, now-ms -1: value status 0
+verify-receipt, now-ms -1: value verified true
+endpoint env 1, now-ms -9223372036854775808: value status 21009
+verify-receipt, now-ms -9223372036854775808: value verified true
+endpoint env 1, now-ms 9223372036854775807: value status 21009
+verify-receipt, now-ms 9223372036854775807: value verified true
+
+== wazero v1.12.0 (go run .), variant u
+module: 2841206 bytes
+endpoint env 0: value status 21007
+endpoint env 1: value status 0
+endpoint env 2: value status 21007
+endpoint env 255: value status 0
+endpoint env 4294967295: value status 0
+
+== wazero v1.12.0 (go run .), variant a
+module: 2846071 bytes
+endpoint env 0: value status 21007
+endpoint env 1: value status 0
+endpoint env 2: trap: wasm error: unreachable
+endpoint env 255: trap: wasm error: unreachable
+endpoint env 4294967295: trap: wasm error: unreachable
+
+== Wasmtime 50.0.1 (rust/bindings/abi/tests, `cargo test`; is_trap = Trap::UnreachableCodeReached)
+variant a: test result: ok. 16 passed; 0 failed (an_environment_other_than_0_or_1_traps: env 2, 255, u32::MAX trap on CoreGuest)
+variant u: an_environment_other_than_0_or_1_traps ... FAILED (env 2 answered a value)
+
+== Endive (java-wasm, EndiveTrapProbe), variant a
+PROBE endpoint env 0: value {"status":21007}
+PROBE endpoint env 1: value {"status":0,"environ
+PROBE endpoint env 2: run.endive.runtime.TrapException: Trapped on unreachable instruction
+PROBE endpoint env 255: run.endive.runtime.TrapException: Trapped on unreachable instruction
+PROBE endpoint env 4294967295: run.endive.runtime.TrapException: Trapped on unreachable instruction
+
+== cargo's flags for aprv-abi, variant a (CARGO_TERM_VERBOSE=true build.sh)
+-C opt-level=3 -C panic=abort -C codegen-units=1 -C debug-assertions=on -C overflow-checks=off
+
+== tools/reproduce-wasm.sh <commit of variant a> 66a2d6a6...353f, APRV_EXPECTED_COMPONENT_SHA256=d9ff42bf...e3da
+reproduce-wasm: aprv.wasm   66a2d6a6298db1982d52e919a177494be216212589481cd4bf88fc070c5e353f
+reproduce-wasm: component   d9ff42bf6fd8e5e0f10cd0f9b5ddd60ad624dbda7a785e803ff723600d9ee3da
+reproduce-wasm: reproduced

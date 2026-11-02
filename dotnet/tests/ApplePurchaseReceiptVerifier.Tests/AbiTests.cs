@@ -185,7 +185,11 @@ public class AbiTests
         Assert.NotNull(instance.VerifyReceipt(Now, G5));
     }
 
-    /// <summary>Only 0 and 1 are environments: 2, 255 and 2^32-1 trap in the module, which the generated bindings of other hosts would not catch.</summary>
+    /// <summary>
+    /// Only 0 and 1 are environments: 2, 255 and 2^32-1 trap in the module. wit-bindgen's enum lift traps on
+    /// them only because rust/Cargo.toml turns debug assertions on for aprv-abi
+    /// ([profile.wasm.package.aprv-abi]); without it 2 answers as production and 255 as sandbox (DECISIONS.md R46).
+    /// </summary>
     [Theory]
     [InlineData(2)]
     [InlineData(255)]

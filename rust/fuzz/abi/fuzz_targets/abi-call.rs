@@ -13,6 +13,9 @@
 //!   its shape (`{"verified":...` or, at the endpoint, `{"status":...`);
 //! - `env` above 1 always traps, and the next call on a fresh instance
 //!   verifies again (a trapped instance is discarded, as every host does).
+//!   `env` is the WIT `environment` enum's discriminant; wit-bindgen's lift
+//!   traps on one above 1 only because `[profile.wasm.package.aprv-abi]`
+//!   in rust/Cargo.toml turns debug assertions on (DECISIONS.md R46).
 //!
 //! Coverage comes from the host side only: the guest runs as Cranelift's
 //! code, which libFuzzer does not instrument. The OpenSSL-instrumented
@@ -25,7 +28,7 @@ use libfuzzer_sys::fuzz_target;
 use std::sync::{Mutex, OnceLock};
 use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Store, Trap, TypedFunc};
 
-const IFACE: &str = "aprv:verifier/verify@0.1.0";
+const IFACE: &str = "aprv:verifier/verify@0.2.0";
 
 struct Compiled {
     engine: Engine,
@@ -56,7 +59,7 @@ impl Guest {
         let mut linker = Linker::new(&c.engine);
         linker
             .func_wrap(
-                "aprv:verifier/host@0.1.0",
+                "aprv:verifier/host@0.2.0",
                 "random-get",
                 |mut caller: Caller<'_, ()>, len: i32, retptr: i32| -> wasmtime::Result<()> {
                     // Deterministic bytes: the fuzzer must replay an input.
@@ -142,9 +145,8 @@ impl Guest {
         self.lift("init", retptr)
     }
 
-    fn call(&mut self, op: u8, env: u32, now_ms: u64, input: &[u8]) -> wasmtime::Result<String> {
+    fn call(&mut self, op: u8, env: u32, now: i64, input: &[u8]) -> wasmtime::Result<String> {
         let (ptr, len) = self.lower(input)?;
-        let now = now_ms.cast_signed();
         let (export, retptr) = match op {
             0 => {
                 let f = self.instance.get_typed_func::<(i64, i32, i32), i32>(
@@ -197,7 +199,7 @@ fuzz_target!(|data: &[u8]| {
     } else {
         raw_env
     };
-    let now_ms = u64::from_le_bytes(data[5..13].try_into().unwrap());
+    let now_ms = i64::from_le_bytes(data[5..13].try_into().unwrap());
     let wrapped;
     let input = if data[0] & 0x40 != 0 && op != 1 {
         let text = base64::engine::general_purpose::STANDARD.encode(&data[13..]);

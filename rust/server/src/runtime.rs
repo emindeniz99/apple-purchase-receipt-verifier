@@ -20,6 +20,10 @@ wasmtime::component::bindgen!({
     imports: { default: trappable },
 });
 
+/// The WIT `environment` enum (ABI 0.2.0): the two endpoint routes and
+/// commands name it, so no other value can reach the guest.
+pub use exports::aprv::verifier::verify::Environment;
+
 /// The precompiled component embedded at build time (`APRV_CCWASM`).
 pub struct Embedded {
     pub bytes: &'static [u8],
@@ -142,7 +146,7 @@ impl Runtime {
             .and_then(AprvPre::new)
             .map_err(|e| {
                 format!(
-                    "the component does not match the aprv:verifier@0.1.0 interface this server \
+                    "the component does not match the aprv:verifier@0.2.0 interface this server \
                      binds (wit/aprv.wit): {e:#}"
                 )
             })?;
@@ -366,18 +370,9 @@ pub fn precompile(component: &str, target: &str, out: &str) -> Result<String, St
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     Init,
-    VerifyReceipt {
-        now_ms: u64,
-    },
-    VerifySignedData {
-        now_ms: u64,
-    },
-    /// `env`: 0 production, 1 sandbox (the only two values a route or
-    /// command can produce).
-    Endpoint {
-        env: u32,
-        now_ms: u64,
-    },
+    VerifyReceipt { now_ms: i64 },
+    VerifySignedData { now_ms: i64 },
+    Endpoint { env: Environment, now_ms: i64 },
 }
 
 /// A failure that is not a verification result.

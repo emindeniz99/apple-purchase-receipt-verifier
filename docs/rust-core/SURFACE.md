@@ -210,11 +210,11 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 |---|---|---|
 | `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}`, or `{}` for the compiled-in roots (an empty list is refused); answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}` |
 | the input length a host hands over | `MAX_INPUT_BYTES`, the core's largest cap plus one | `"max_input_bytes"` in `init`'s answer |
-| `Config.clock()` | not modelled: the wrapper reads it | `now-ms: u64`, the first argument of each verify export |
+| `Config.clock()` | not modelled: the wrapper reads it | `now-ms: s64`, the first argument of each verify export (every wrapper refuses a clock before 1970 itself) |
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
-| `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: u32, now-ms, request-json: list<u8>)` |
-| `Environment` (2) | `Environment` (2) | `env`: 0 production, 1 sandbox; anything else traps |
+| `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: environment, now-ms, request-json: list<u8>)` |
+| `Environment` (2) | `Environment` (2) | `enum environment { production, sandbox }`, discriminants 0 and 1 to a hand-rolled host; any other discriminant traps (DECISIONS.md R46) |
 | `ReceiptPayload.environment()`, `JsonPayload.environment()` | the core's `ReceiptPayload::environment()`; `environment: Option<Environment>` on `JsonPayload` | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
 | `Reason` (8) | `Reason` (8), with `token()` | `"reason":"<TOKEN>"` |
 | `Failure` (reason, message, cause) | `Failure { reason, message }` | `{"verified":false,"reason":...,"message":...}` |

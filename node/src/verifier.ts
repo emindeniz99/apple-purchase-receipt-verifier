@@ -78,15 +78,18 @@ export function inputBytes(value: unknown, maxBytes: number): Uint8Array {
   return buffer.subarray(0, Math.min(written, maxBytes));
 }
 
-function environmentCode(environment: Environment): number {
+/** The WIT `environment` enum as jco binds it: a case name. */
+type WitEnvironment = Parameters<Bindings['verifyReceiptEndpoint']>[0];
+
+function environmentCode(environment: Environment): WitEnvironment {
   if (environment === null || environment === undefined) {
     throw new TypeError('environment must not be null');
   }
   if (environment === Environment.PRODUCTION) {
-    return 0;
+    return 'production';
   }
   if (environment === Environment.SANDBOX) {
-    return 1;
+    return 'sandbox';
   }
   throw new TypeError('environment must be Environment.PRODUCTION or Environment.SANDBOX');
 }

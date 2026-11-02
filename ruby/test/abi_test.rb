@@ -130,7 +130,7 @@ class AbiTest < Minitest::Test
     # (wasmtime-rb coerces a Float to an integer instead of refusing it, so
     # the Verifier's own check that the clock answered an Integer is what
     # keeps a Float from becoming an instant.)
-    [[["5"], "u64 as a String"], [[nil], "u64 as nil"], [[2**64], "u64 out of range"],
+    [[["5"], "now-ms as a String"], [[nil], "now-ms as nil"], [[2**64], "now-ms out of range"],
      [[], "a missing scalar"], [[NOW, NOW], "an extra scalar"]].each do |scalars, what|
       instance = guest
       error = assert_raises(APRV::TrapError, what) { instance.call("verify-receipt", scalars, receipt_base64) }
@@ -139,8 +139,11 @@ class AbiTest < Minitest::Test
     end
   end
 
-  # --- env is a u32 the guest matches ------------------------------------------------------
+  # --- env is the environment enum's discriminant -----------------------------------------
 
+  # wit-bindgen's enum lift traps on these only because rust/Cargo.toml turns debug
+  # assertions on for aprv-abi ([profile.wasm.package.aprv-abi]); without it 2 answers
+  # as production and 255 as sandbox (DECISIONS.md R46).
   def test_an_environment_other_than_zero_or_one_traps
     body = JSON.generate("receipt-data" => receipt_base64)
     [2, 255, (2**32) - 1, -1].each do |env|
@@ -160,7 +163,7 @@ class AbiTest < Minitest::Test
 
   def test_the_module_imports_only_random_get
     imports = runtime.wasm_module.imports.map { |i| [i["module"], i["name"]] }
-    assert_equal [["aprv:verifier/host@0.1.0", "random-get"]], imports
+    assert_equal [["aprv:verifier/host@0.2.0", "random-get"]], imports
   end
 
   def test_the_module_exports_the_interface_at_the_version_the_wrapper_binds

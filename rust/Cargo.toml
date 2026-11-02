@@ -128,6 +128,13 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
+# wit-bindgen lifts the WIT `environment` enum with `transmute` unless debug
+# assertions are on; with them an out-of-range discriminant panics, which
+# aprv.wasm ends in `unreachable`, a trap (ABI 0.2.0, DECISIONS.md R46).
+# Every hand-rolled host's "env 2, 255, 2^32-1 traps" test fails without it.
+[profile.wasm.package.aprv-abi]
+debug-assertions = true
+
 # openssl-sys 0.9.117 takes only openssl-src 300.x (OpenSSL 3.x). This copy
 # differs from the crates.io release in one manifest line, which lets its
 # `vendored` feature build OpenSSL 4.0.3 from openssl-src 400.0.2+4.0.3;

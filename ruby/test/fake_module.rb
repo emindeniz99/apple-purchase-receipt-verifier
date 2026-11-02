@@ -73,7 +73,7 @@ module FakeModule
     # @param abi [String] the version in the export names
     # @param init [String] what an accepting `init` answers
     # @return [String] WAT text; Wasmtime compiles it directly
-    def wat(import: nil, abi: "0.1.0", init: ANSWERS[:ok])
+    def wat(import: nil, abi: "0.2.0", init: ANSWERS[:ok])
       offsets = {}
       cursor = 64
       data = ANSWERS.merge(ok: init).map do |name, text|
@@ -86,7 +86,7 @@ module FakeModule
       iface = "aprv:verifier/verify@#{abi}"
       <<~WAT
         (module
-          (import "aprv:verifier/host@0.1.0" "random-get" (func $random_get (param i32 i32)))
+          (import "aprv:verifier/host@0.2.0" "random-get" (func $random_get (param i32 i32)))
           #{import}
           (memory (export "memory") 64)
           (global $bump (mut i32) (i32.const 8192))
