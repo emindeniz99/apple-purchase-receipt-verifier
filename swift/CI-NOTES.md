@@ -89,9 +89,10 @@ check (it catches `#if DEBUG`-only breakage), but not a debug test run: the
 ## The gate, in one command
 
 `swift/scripts/gate.sh DIR [--pin]` is the corpus parity run against one
-module build, where `DIR` has the corpus archive's layout (`aprv.wasm`,
-`aprv.component.wasm` and `aprv.wit` with their `SHA256SUMS`,
-`calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`, `same.py`):
+module build, where `DIR` has the G1 layout that `tools/corpus.sh g1`
+assembles (`aprv.wasm`, `aprv.component.wasm` and `aprv.wit` with their
+`SHA256SUMS`, `calls/<corpus>.pinned.jsonl`, `rows/module-<corpus>.jsonl`,
+`same.py`):
 it checks the module against the pin (`--pin` accepts another module),
 puts it in place with `.github/scripts/place-module.sh` for this run only,
 builds optimised, runs the five corpora through the package's host layer

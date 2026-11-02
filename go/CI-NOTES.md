@@ -49,7 +49,7 @@ secret.
 `go/internal/corpusrun` runs a calls file through the package's host layer
 (the same pool and canonical-ABI call `Verifier` uses) and prints rows in the
 Node runner's format. `g1.sh` runs it over the pinned call files and compares
-each corpus with the reference rows using the release evidence's `same.py`:
+each corpus with the reference rows using `same.py` (`tools/corpus-same.py`):
 
 ```sh
 go/internal/corpusrun/g1.sh "$G1_DIR" [work-dir]   # exit 0 only when all pass

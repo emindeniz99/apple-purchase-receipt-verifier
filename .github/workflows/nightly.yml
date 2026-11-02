@@ -16,13 +16,16 @@
 #                      pull request);
 #   corpus             every host's corpus parity run over the generated
 #                      corpora (6,179 calls), each row compared byte for
-#                      byte with the module's own, and nothing else: the
-#                      suites run in ci.yml. The corpora are 200 MB of
-#                      generated rows and stay out of the repository (OD-05
-#                      in docs/rust-core/STATUS.md): the job fetches the
-#                      release asset that fixtures/corpus.json pins by URL
-#                      and SHA-256, and fails if the hash differs or the
-#                      file is missing or malformed.
+#                      byte with the answers of the module this commit
+#                      builds, and nothing else: the suites run in ci.yml.
+#                      The calls are 250 MB and stay out of the repository
+#                      (OD-05 in docs/rust-core/STATUS.md): the
+#                      corpus-reference job fetches the release asset that
+#                      fixtures/corpus.json pins by URL and SHA-256, fails
+#                      if the hash differs or the file is missing or
+#                      malformed, and derives the rows from the module;
+#                      corpus-verdicts warns when a verdict differs from
+#                      the last release's module's.
 #
 # Scheduled runs happen on the default branch only.
 #
@@ -264,22 +267,89 @@ jobs:
           mvn -B -f java-wasm verify "-Dtest.jvm=$RUNNER_TEMP/java-s390x/bin/java" \
             -Dtest='ConformanceCasesTest,EndiveAbiTest' -Dsurefire.failIfNoSpecifiedTests=false
 
-  # OD-05. The archive is a .tar.gz with the G1 layout at its top level:
-  # aprv.wasm and aprv.component.wasm (the release's module), same.py,
-  # calls/<corpus>.pinned.jsonl (every clock pinned) and
-  # rows/module-<corpus>.jsonl (the module's own answers). Each leg runs its
-  # lane's corpus script over it, which puts that module in place, runs the
-  # five corpora through the host layer and compares every row with the
-  # module's own (DECISIONS.md R35: wrapper parity). It runs no suite: the
-  # suites run in ci.yml against the module built from the commit, while
-  # the archive's module is the last release's, so a suite here would fail
-  # whenever the core or a shared case changed since that release. The rows
-  # belong to the archive's module, so the release PR that changes the
-  # module also builds a new archive and changes fixtures/corpus.json
-  # (release-please.yml, release-branch-corpus); a pin of another module's
-  # archive fails the first step.
-  corpus:
+  # OD-05, DECISIONS.md R35 (2026-11-02). The nightly tests main: this job
+  # builds aprv.wasm, the component and aprv.wit from the checked-out
+  # commit with the steps ci.yml's rust-wasm uses (the build reproduces, so
+  # these are CI's bytes), takes the calls from the archive
+  # fixtures/corpus.json pins, and derives the module's own rows from them
+  # with tools/wasm-trap-host.mjs, twice, the two runs identical
+  # (tools/corpus.sh g1). The result is the G1 directory every host's
+  # corpus script reads: aprv.wasm, aprv.component.wasm, aprv.wit,
+  # SHA256SUMS, same.py, calls/<corpus>.pinned.jsonl and
+  # rows/module-<corpus>.jsonl. A module change between releases, the ABI
+  # version included, moves the rows with it, so it no longer turns the
+  # legs red. A test job: it restores ci.yml's toolchain cache.
+  corpus-reference:
     if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'emindeniz99'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/aprv-wasm-toolchain
+          key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
+      - name: build aprv.wasm and the component
+        uses: ./.github/actions/build-module
+        with:
+          out-dir: ${{ runner.temp }}/aprv
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: the pinned calls and this module's rows
+        run: tools/corpus.sh g1 "$RUNNER_TEMP/aprv" "$RUNNER_TEMP/g1"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: corpus-g1
+          path: ${{ runner.temp }}/g1/
+          if-no-files-found: error
+          retention-days: 3
+
+  # The verdict-change guard: the rows of the last release's aprv.wasm
+  # (fetched from that release and checked against its SHA256SUMS, run by
+  # that tag's trap host) against this commit's, by tools/corpus-compare.py.
+  # A row whose `verified` or `status` differs is a ::warning:: with the
+  # counts, never a failure: main may change a verdict on purpose, and the
+  # release branch is where a flip fails (release-please.yml,
+  # release-branch-corpus). A failure to fetch, check or run the release's
+  # module still fails the job.
+  corpus-verdicts:
+    needs: corpus-reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: corpus-g1
+          path: ${{ runner.temp }}/g1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: verdicts against the last release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          tools/corpus.sh release-rows "$tag" "$RUNNER_TEMP/g1/calls" "$RUNNER_TEMP/release-rows"
+          python3 -I tools/corpus-compare.py --warn "$RUNNER_TEMP/release-rows" "$RUNNER_TEMP/g1/rows" \
+            "$RUNNER_TEMP/compare.txt" cases hostile algorithms substrate fuzz
+          { echo "### corpus rows: this commit against $tag"; echo; sed 's/^/- /' "$RUNNER_TEMP/compare.txt"; } >> "$GITHUB_STEP_SUMMARY"
+
+  # Each leg runs its lane's corpus script over corpus-reference's G1
+  # directory, which puts that module in place, runs the five corpora
+  # through the host layer and compares every row with the module's own
+  # (DECISIONS.md R35: wrapper parity). It runs no suite: the suites run in
+  # ci.yml.
+  corpus:
+    needs: corpus-reference
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -290,34 +360,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: fetch the archive and check it
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: corpus-g1
+          path: ${{ runner.temp }}/g1
+      - name: the G1 directory
         run: |
           set -euo pipefail
-          # fixtures/corpus.json is the pin. A missing or malformed file,
-          # or a url or sha256 of the wrong shape, stops the job here; the
-          # archive is only used after its hash is checked.
-          bad() { echo "::error::fixtures/corpus.json $1"; exit 1; }
-          CORPUS_URL="$(jq -er '.url | select(type == "string" and startswith("https://"))' fixtures/corpus.json)" || bad "is missing, is not JSON, or has no https url"
-          CORPUS_SHA256="$(jq -er '.sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' fixtures/corpus.json)" || bad "has no sha256 of 64 lowercase hex digits"
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/corpus.tar.gz" "$CORPUS_URL"
-          echo "$CORPUS_SHA256  $RUNNER_TEMP/corpus.tar.gz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/g1" "$RUNNER_TEMP/out"
-          tar -xzf "$RUNNER_TEMP/corpus.tar.gz" -C "$RUNNER_TEMP/g1"
-          for f in aprv.wasm aprv.component.wasm aprv.wit SHA256SUMS same.py calls rows; do
-            if [ ! -e "$RUNNER_TEMP/g1/$f" ]; then echo "::error::the archive has no $f at its top level (the G1 layout)"; exit 1; fi
-          done
-          # The rows belong to the archive's module, and the hosts run the
-          # module this tree pins, so the two must be one. The release PR
-          # pins both together (release-please.yml, release-branch-corpus);
-          # a mismatch means that job failed, and comparing rows would only
-          # repeat it on every leg, as ABI mismatches when the WIT version
-          # moved and on java-wasm either way.
-          got="$(sha256sum < "$RUNNER_TEMP/g1/aprv.wasm" | cut -c1-64)"
-          pinned="$(cut -c1-64 go/internal/wasm/aprv.wasm.sha256)"
-          if [ "$got" != "$pinned" ]; then
-            echo "::error::the archive fixtures/corpus.json pins holds aprv.wasm $got, and this tree pins $pinned. Run refresh-corpus.yml from main with the release tag of $pinned and merge the pin it prints (docs/rust-core/DECISIONS.md R35)"
-            exit 1
-          fi
+          mkdir -p "$RUNNER_TEMP/out"
           echo "G1=$RUNNER_TEMP/g1" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -385,9 +435,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # g1.sh refuses a module other than the committed pin, which lags
+      # main between releases; as for dotnet, the pin is rewritten for
+      # this run's checkout only.
       - name: java-wasm
         if: matrix.host == 'java-wasm'
-        run: sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
+        run: |
+          set -euo pipefail
+          printf '%s  aprv.wasm\n' "$(sha256sum < "$G1/aprv.wasm" | cut -c1-64)" > java-wasm/src/main/wasm/aprv.wasm.sha256
+          sh java-wasm/scripts/g1.sh "$G1" "$RUNNER_TEMP/out"
 
       # swift:6.3, digest-pinned as in ci.yml; python3 is for same.py.
       - name: swift
@@ -399,7 +455,7 @@ jobs:
                      OUT=/tmp/gate sh swift/scripts/gate.sh /g1 --pin'
 
       # rust/server's check-component.sh builds the static binary around the
-      # archive's component and runs the server's corpus over HTTP (fresh
+      # G1 component and runs the server's corpus over HTTP (fresh
       # and pooled) and the CLI; PHP's façade then runs the corpus through
       # that binary. Neither runs its suite (ci.yml does).
       - name: the pinned Rust toolchain, the musl target and musl-gcc
@@ -442,7 +498,7 @@ jobs:
   # unseen). A manual run reports to whoever started it, so it is left
   # out. Closing the issue once nightly is green again is the owner's.
   report-failure:
-    needs: [rust-fuzz-openssl, java-differential, java-wasm-s390x, corpus, java-vendors]
+    needs: [rust-fuzz-openssl, java-differential, java-wasm-s390x, corpus-reference, corpus-verdicts, corpus, java-vendors]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5

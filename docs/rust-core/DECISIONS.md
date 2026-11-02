@@ -1845,6 +1845,31 @@ variables of OD-05 (STATUS.md).
   fails on its first step, and `refresh-corpus.yml`, run by hand with the
   release tag, is the fallback. Archives an earlier build of the same
   release branch published for another module are deleted.
+- **The nightly tests `main`** (owner, 2026-11-02). Superseding the
+  refresh above. Rows that belong to the last release's module made the
+  nightly test the release, not `main`, and failed it on its first step
+  whenever `main` moved the module between releases: the pending ABI
+  0.2.0 (#493) would have kept it red until the next release. Now the
+  archive is only the inputs: `fixtures/corpus.json` pins the calls
+  (URL and SHA-256; no `module` field), and their provenance is in
+  `fixtures/README.md`. The nightly builds `aprv.wasm`, the component and
+  `aprv.wit` from the commit with `ci.yml`'s steps
+  (`.github/actions/build-module`), derives the module's rows from the
+  calls with the trap host, twice and identical (`tools/corpus.sh`), and
+  runs the eight hosts over that G1 directory; `same.py` moved into the
+  repository as `tools/corpus-same.py`. A module or ABI change on `main`
+  therefore no longer turns the nightly red. Its `corpus-verdicts` job
+  compares the rows with those of the last release's module (from that
+  release's assets, checked against its `SHA256SUMS`, run by its tag's
+  trap host) and reports a flipped `verified` or `status` as a warning,
+  since `main` may change a verdict on purpose. Release parity stays on
+  the release branch: `release-branch-corpus` makes the same comparison
+  for the release branch's module and fails on a flip. It publishes
+  nothing and commits nothing, so no release moves the pin;
+  `refresh-corpus.yml` and `tools/build-corpus.sh` are gone. The pin
+  changes only when the calls do, through a reviewed PR with the pin
+  `corpus-calls.yml` prints after it repacks the pinned calls into a
+  calls-only prerelease.
 - **Later, perhaps:** a separate corpus repository. Nothing is decided.
 
 ---
@@ -2567,11 +2592,11 @@ the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
   cost another ABI version later.
 - **Rollout (D7):** one pull request moves every binding, merged just
   before the 0.13.0 release pull request, whose branch refreshes the Go
-  and Swift copies, every pin and the parity corpus (R14, R35). Until
-  that release merges, `go test` and `swift test` in a plain checkout of
-  `main` meet the committed 0.1.0 module and fail with an ABI error, and
-  so does the nightly corpus; CI on a pull request tests the module it
-  builds.
+  and Swift copies and every pin (R14). Until that release merges,
+  `go test` and `swift test` in a plain checkout of `main` meet the
+  committed 0.1.0 module and fail with an ABI error; CI on a pull request
+  tests the module it builds, and so, since R35's amendment of the same
+  day, does the nightly corpus.
 - **Who it breaks:** a host bound to the `aprv.component.wasm` or
   `aprv.wit` release assets of 0.1.0, `aprv --component` with a 0.1.0
   component, and a PHP package of this release against a separately
