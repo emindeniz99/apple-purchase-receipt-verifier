@@ -355,30 +355,29 @@ they do.
 ## The corpus archive
 
 The nightly `corpus` job runs every package's parity check over the
-generated corpora (1,179 receipts and 5,000 mutants, about 200 MB of rows).
-They stay out of the repository; `fixtures/corpus.json` pins the archive
-by URL and SHA-256, so nothing is set in the repository settings. The
-archive is a prerelease asset of this repository, generated from
+generated corpora (1,179 receipts and 5,000 mutants, about 250 MB of
+calls). They stay out of the repository; `fixtures/corpus.json` pins the
+archive by URL and SHA-256, so nothing is set in the repository settings.
+The archive is a prerelease asset of this repository, generated from
 `fixtures/` and the test keys only; it holds no production receipt
 (docs/rust-core/DECISIONS.md R35).
 
-Nothing here needs the owner. The rows belong to one module, so the
-release PR refreshes the archive itself: `release-please.yml` builds it
-for the module the release branch builds, publishes it as
-`corpus-<version>-<module sha256 prefix>`, and commits the new pin beside
-the module pins. Merging the release PR moves both together.
+Nothing here needs the owner for a release. The nightly builds the module
+from `main` and derives its rows from the calls, so neither a release nor
+an ABI change moves the pin. On the release branch,
+`release-branch-corpus` compares the new module's verdicts with the last
+release's and fails the release-please run on a flip; read the flipped
+rows in its log and decide whether the change is intended (a reviewed
+behavior change with its shared cases) or a bug.
 
-If that job fails (the release-please run is red, and the release PR's
-pin commit says "corpus: not refreshed"), usually because a row's
-`verified` or `status` changed, the nightly `corpus` job fails after the
-release. Then:
+The pin changes only when the calls do. The one planned change: the pin
+still names the old full archive (module, rows and calls), and the calls
+alone are enough. To move to a calls-only archive:
 
-1. Read the flipped rows in the failed job's log and decide whether the
-   change is intended (a reviewed behavior change with its shared cases)
-   or a bug.
-2. Once it is intended and released, run `refresh-corpus.yml` from
-   `main` with the release tag. It prints the new pin in its summary.
-3. Open a PR that replaces `fixtures/corpus.json` with that pin, then
+1. Run `corpus-calls.yml` from `main`. It checks the pinned archive,
+   repacks its calls, publishes `corpus-calls-<sha256 prefix>` as a
+   prerelease, and prints the new pin in its summary.
+2. Open a PR that replaces `fixtures/corpus.json` with that pin, then
    dispatch nightly on main once it is merged.
 
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions

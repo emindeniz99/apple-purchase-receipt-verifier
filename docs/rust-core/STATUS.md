@@ -92,7 +92,8 @@ On `main`:
     repository. CI's reference is the 311 cases plus the corpus of
     generated receipts A3 builds; the nightly corpus jobs fetch the
     release asset that `fixtures/corpus.json` pins by URL and SHA-256
-    (R35).
+    and, since 2026-11-02, derive the rows from the module built from
+    `main` (R35).
   - OD-06: PHP pins the two Linux musl binaries only, from a
     release-branch job that builds them (they are reproducible per
     `tools/reproduce-server.sh`) and writes `php/SHA256SUMS` with

@@ -28,8 +28,8 @@ open).
 Steps, working directory `rust/server`, `COMPONENT` = the component path.
 `scripts/check-component.sh` runs the static build, `aprv info` and the
 three corpus steps below in one command (APRV_COMPONENT, OUT, CALLS, ROWS;
-see its header); the nightly `corpus` job runs it against the archive's
-component. The tests, the cases, the smokes and the OpenAPI checks run in
+see its header); the nightly `corpus` job runs it against the component
+built from `main`. The tests, the cases, the smokes and the OpenAPI checks run in
 `ci.yml` against the component built from the commit.
 
 ```sh

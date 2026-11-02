@@ -44,8 +44,8 @@ run over the corpora of generated receipts: given a directory holding a
 module, its call files and its reference rows, it puts the module in place
 and compares every row with the module's own. It runs no suite; the suites
 run in `ci.yml` against the module built from the commit, and the nightly
-`corpus` job runs these scripts against the archive's module
-(DECISIONS.md R35). Each script's header names what it needs.
+`corpus` job runs these scripts against the module built from `main`,
+with rows derived from it (DECISIONS.md R35). Each script's header names what it needs.
 
 Notes:
 
