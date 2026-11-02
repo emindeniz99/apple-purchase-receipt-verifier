@@ -55,7 +55,6 @@ name = "aprv-wire"
 version = "0.0.0"
 dependencies = [
  "aprv-surface",
- "base64",
  "serde",
  "serde_json",
 ]

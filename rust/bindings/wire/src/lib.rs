@@ -22,17 +22,18 @@
 //!   `"Production"`, `"Sandbox"` or `null` as the core states it, a
 //!   failure exactly `{"verified":false,"reason":"<TOKEN>","message":"..."}`,
 //!   with no other member;
-//! - 64-bit ids are JSON strings holding a decimal `i64`; dates are
-//!   epoch-millisecond numbers; bytes are padded standard base64; a missing
-//!   field is `null`; booleans are JSON booleans;
-//! - `unknown_attributes` is an object keyed by the decimal attribute type,
-//!   in ascending order, each value a list of base64 strings in receipt
-//!   order;
+//! - a verified receipt's `payload` is the core's
+//!   [`ReceiptPayload::to_json`], byte for byte: the one writer of a
+//!   receipt's JSON, whose doc states its rules (64-bit ids as decimal
+//!   strings, dates as epoch-millisecond numbers, bytes as padded standard
+//!   base64, `null` for a missing field, `unknown_attributes` keyed by the
+//!   decimal attribute type in ascending order, keys in the order the 0.7
+//!   table lists them);
 //! - a verified JWS's `payload` is a JSON string holding the signed
 //!   payload's text, so no host re-serialises Apple's claims;
-//! - keys come in the order the 0.7 table lists them, strings escape only
-//!   `"`, `\` and the C0 controls, and non-ASCII is written raw. One fixed
-//!   byte form, although consumers compare by value.
+//! - everything is written by `serde_json`: strings escape only `"`, `\`
+//!   and the C0 controls, and non-ASCII is written raw. One fixed byte form,
+//!   although consumers compare by value.
 //!
 //! A failure's `message` is the core's, unchanged. Two of them are a stable
 //! hook the hosts' runners rely on (see [`aprv_surface::Failure`]): a
@@ -49,10 +50,7 @@
     clippy::panic
 )]
 
-use aprv_surface::{
-    Environment, Failure, InAppPurchase, JsonPayload, ReceiptPayload, UnknownAttributes,
-};
-use serde::ser::{SerializeStruct as _, Serializer};
+use aprv_surface::{Environment, Failure, JsonPayload, ReceiptPayload};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------- writer
@@ -61,141 +59,20 @@ use serde::{Deserialize, Serialize};
 /// and writes everything else raw, and a struct's members come in the
 /// order they are serialised.
 fn to_json(value: &impl Serialize) -> String {
-    // Nothing here can fail to serialise: every map key is an integer,
-    // which serde_json writes as a string, and no impl below returns an
-    // error. Were it to, the empty answer is unreadable JSON, which every
-    // host reports as INTERNAL_ERROR rather than as a verdict.
+    // Nothing here can fail to serialise: every value is a string, a
+    // number, a boolean or a struct of them. Were it to, the empty answer
+    // is unreadable JSON, which every host reports as INTERNAL_ERROR rather
+    // than as a verdict.
     serde_json::to_string(value).unwrap_or_default()
-}
-
-/// A 64-bit id: a string holding the decimal value, so no JavaScript
-/// reader rounds it.
-struct Id(i64);
-
-impl Serialize for Id {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self.0)
-    }
-}
-
-/// Bytes as padded standard base64.
-struct Base64<'a>(&'a [u8]);
-
-impl Serialize for Base64<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use base64::Engine as _;
-        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(self.0))
-    }
-}
-
-/// `unknown_attributes`: an object keyed by the decimal attribute type, in
-/// the core's (ascending) order, each value a list of base64 strings.
-struct Attributes<'a>(&'a UnknownAttributes);
-
-impl Serialize for Attributes<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_map(self.0.iter().map(|(attribute_type, values)| {
-            let values: Vec<Base64<'_>> = values.iter().map(|value| Base64(value)).collect();
-            (attribute_type, values)
-        }))
-    }
-}
-
-struct Purchase<'a>(&'a InAppPurchase);
-
-impl Serialize for Purchase<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let purchase = self.0;
-        let mut object = serializer.serialize_struct("InAppPurchase", 13)?;
-        object.serialize_field("quantity", &purchase.quantity)?;
-        object.serialize_field("product_id", &purchase.product_id)?;
-        object.serialize_field("transaction_id", &purchase.transaction_id)?;
-        object.serialize_field("purchase_date_ms", &purchase.purchase_date_ms)?;
-        object.serialize_field("original_transaction_id", &purchase.original_transaction_id)?;
-        object.serialize_field(
-            "original_purchase_date_ms",
-            &purchase.original_purchase_date_ms,
-        )?;
-        object.serialize_field("expires_date_ms", &purchase.expires_date_ms)?;
-        object.serialize_field(
-            "web_order_line_item_id",
-            &purchase.web_order_line_item_id.map(Id),
-        )?;
-        object.serialize_field("cancellation_date_ms", &purchase.cancellation_date_ms)?;
-        object.serialize_field("cancellation_reason", &purchase.cancellation_reason)?;
-        object.serialize_field("is_trial_period", &purchase.is_trial_period)?;
-        object.serialize_field(
-            "is_in_intro_offer_period",
-            &purchase.is_in_intro_offer_period,
-        )?;
-        object.serialize_field(
-            "unknown_attributes",
-            &Attributes(&purchase.unknown_attributes),
-        )?;
-        object.end()
-    }
-}
-
-struct Receipt<'a>(&'a ReceiptPayload);
-
-impl Serialize for Receipt<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let receipt = self.0;
-        let in_app: Vec<Purchase<'_>> = receipt.in_app.iter().map(Purchase).collect();
-        let mut object = serializer.serialize_struct("ReceiptPayload", 16)?;
-        object.serialize_field("receipt_type", &receipt.receipt_type)?;
-        object.serialize_field("app_item_id", &receipt.app_item_id.map(Id))?;
-        object.serialize_field("bundle_id", &receipt.bundle_id)?;
-        object.serialize_field(
-            "bundle_id_bytes",
-            &receipt.bundle_id_bytes.as_deref().map(Base64),
-        )?;
-        object.serialize_field("application_version", &receipt.application_version)?;
-        object.serialize_field("opaque_value", &receipt.opaque_value.as_deref().map(Base64))?;
-        object.serialize_field("sha1_hash", &receipt.sha1_hash.as_deref().map(Base64))?;
-        object.serialize_field(
-            "receipt_creation_date_ms",
-            &receipt.receipt_creation_date_ms,
-        )?;
-        object.serialize_field("download_id", &receipt.download_id.map(Id))?;
-        object.serialize_field(
-            "version_external_identifier",
-            &receipt.version_external_identifier.map(Id),
-        )?;
-        object.serialize_field("in_app", &in_app)?;
-        object.serialize_field(
-            "original_purchase_date_ms",
-            &receipt.original_purchase_date_ms,
-        )?;
-        object.serialize_field("preorder_date_ms", &receipt.preorder_date_ms)?;
-        object.serialize_field(
-            "original_application_version",
-            &receipt.original_application_version,
-        )?;
-        object.serialize_field("expiration_date_ms", &receipt.expiration_date_ms)?;
-        object.serialize_field(
-            "unknown_attributes",
-            &Attributes(&receipt.unknown_attributes),
-        )?;
-        object.end()
-    }
 }
 
 // --------------------------------------------------------------- results
 
-/// A verified answer: `{"verified":true,"payload":...,"environment":...}`.
-/// The field names are the wire's member names.
-#[derive(Serialize)]
-#[allow(clippy::struct_field_names)]
-struct Verified<P> {
-    verified: bool,
-    payload: P,
-    environment: Option<&'static str>,
-}
-
-/// Apple's spelling of an environment, `null` for none.
-fn spelling(environment: Option<Environment>) -> Option<&'static str> {
-    environment.map(Environment::as_str)
+/// A verified answer: `{"verified":true,"payload":<payload>,"environment":
+/// <"Production", "Sandbox" or null>}`, `payload` already JSON text.
+fn verified(payload: &str, environment: Option<Environment>) -> String {
+    let environment = to_json(&environment.map(Environment::as_str));
+    format!("{{\"verified\":true,\"payload\":{payload},\"environment\":{environment}}}")
 }
 
 /// A refusal: `{"verified":false,"reason":"<TOKEN>","message":"..."}`.
@@ -218,10 +95,11 @@ impl<'a> Refused<'a> {
 
 /// A receipt payload as 0.7's `ReceiptPayload.toJson()`: the value inside a
 /// verified `verify-receipt` answer, and what the C ABI hands out for a
-/// verified receipt.
+/// verified receipt. The bytes are the core's
+/// [`ReceiptPayload::to_json`], the one writer of a receipt's JSON.
 #[must_use]
 pub fn receipt_payload(receipt: &ReceiptPayload) -> String {
-    to_json(&Receipt(receipt))
+    receipt.to_json()
 }
 
 /// The answer of `verify-receipt`:
@@ -230,11 +108,7 @@ pub fn receipt_payload(receipt: &ReceiptPayload) -> String {
 #[must_use]
 pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String {
     match result {
-        Ok(receipt) => to_json(&Verified {
-            verified: true,
-            payload: Receipt(receipt),
-            environment: spelling(receipt.environment()),
-        }),
+        Ok(receipt) => verified(&receipt.to_json(), receipt.environment()),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
 }
@@ -246,11 +120,7 @@ pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String
 #[must_use]
 pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> String {
     match result {
-        Ok(payload) => to_json(&Verified {
-            verified: true,
-            payload: payload.json(),
-            environment: spelling(payload.environment()),
-        }),
+        Ok(payload) => verified(&to_json(&payload.json()), payload.environment()),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
 }
@@ -468,7 +338,9 @@ mod tests {
     /// by the hand-written writer that the `serde_json` one replaced, run on
     /// this same receipt, when the receipt type was the surface's own copy;
     /// the core's type holds no negative or repeated attribute type, so
-    /// those keys left the test with it. It includes the environment member
+    /// those keys left the test with it. The payload's bytes now come from
+    /// the core's `ReceiptPayload::to_json`, which took over this crate's
+    /// writer unchanged. It includes the environment member
     /// after the payload (DECISIONS.md R42), `null` here because the core
     /// reads no environment from this `receipt_type`, pre-order date and
     /// nullable cancellation reason; changes to its byte form must be

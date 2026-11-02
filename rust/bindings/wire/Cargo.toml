@@ -14,11 +14,8 @@ license = "MIT"
 
 [dependencies]
 aprv-surface = { path = "../surface", default-features = false }
-# Bytes are padded standard base64 on the wire; the core's own encoder
-# crate and version.
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
-# Already in the core's graph (the core reads JSON with it); writes every
-# answer and reads the configuration.
+# Already in the core's graph (the core reads JSON with it); writes the
+# answers around the core's receipt JSON and reads the configuration.
 serde_json = "1"
 # The derives: the answers' envelopes, and the configuration's refusal of a
 # repeated `roots`, which serde_json's own map would keep only the last of.
@@ -29,6 +26,9 @@ default = ["vendored"]
 vendored = ["aprv-surface/vendored"]
 
 [dev-dependencies]
+# The schema test reads base64 fixtures and encodes receipts and roots;
+# the core's own encoder crate and version.
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # The schema test validates what this crate writes, and every expected
 # result in fixtures/cases.json, against schema/ (JSON Schema 2020-12). No
 # network: `resolve-http` and `resolve-file` stay off, the schemas are

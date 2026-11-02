@@ -116,8 +116,10 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
 
 - `ReceiptPayload.toJson()` is **the same value, not the same bytes**:
   valid UTF-8 JSON whose parsed value equals the one the rules define.
-  aprv-wire writes one fixed byte form; a wrapper may hand it through or
-  re-encode it with its language's encoder.
+  The Rust core's `ReceiptPayload::to_json()` writes one fixed byte form,
+  the only writer of a receipt's JSON in Rust; aprv-wire puts those bytes
+  in the verified answer unchanged, and the C ABI returns them. A wrapper
+  may hand them through or re-encode them with its language's encoder.
 - 64-bit ids are JSON strings; dates are epoch-millisecond numbers; bytes
   are padded standard base64; a missing field is `null`; unknown
   attributes are an object keyed by the decimal type, values in receipt

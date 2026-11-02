@@ -92,7 +92,9 @@ Package.swift, swift/         the Swift wrapper over WasmKit
   depends on the core only, and never on a binding generator, a runtime
   or a wire format (SURFACE.md §4).
 - **aprv-wire** turns surface values into the 0.7 canonical JSON bytes
-  and reads `init`'s configuration JSON. The C ABI and `aprv.wasm` both
+  and reads `init`'s configuration JSON. A receipt's bytes are the core's
+  `ReceiptPayload::to_json()`, which aprv-wire places in the answer
+  unchanged, so a receipt has one JSON writer. The C ABI and `aprv.wasm` both
   use it, so the two boundaries cannot drift apart. Its three shapes are
   described by JSON Schema 2020-12 files that CI validates every corpus
   answer against (R34).
