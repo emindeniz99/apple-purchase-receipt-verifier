@@ -18,7 +18,7 @@
 //! One more trap is wit-bindgen's, not this file's: an `environment`
 //! discriminant other than 0 (`production`) or 1 (`sandbox`). The generated
 //! lift checks it only with debug assertions on, which `rust/Cargo.toml`
-//! turns on for this package in `[profile.wasm]`; the check panics, and the
+//! turns on in `[profile.wasm.package.aprv-abi]`; the check panics, and the
 //! panic ends in `unreachable` (below). Without that setting the lift would
 //! `transmute` the value and answer for the wrong environment
 //! (DECISIONS.md R46).
