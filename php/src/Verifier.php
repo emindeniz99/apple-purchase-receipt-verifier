@@ -166,7 +166,8 @@ final class Verifier
      * The `Config` clock in epoch milliseconds, read once per call before
      * the input is looked at.
      *
-     * @throws RangeException when the clock is before 1970: `now-ms` is unsigned
+     * @throws RangeException when the clock is before 1970, which every
+     *     package refuses itself
      */
     private function clockMillis(): int
     {

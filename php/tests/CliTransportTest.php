@@ -78,7 +78,7 @@ final class CliTransportTest extends TestCase
                 ['verify-receipt-endpoint', 'sandbox', '--now-ms', '0'],
             ],
             array_column($log, 'argv'),
-            'no --roots for the built-in roots, and the clock as a decimal u64',
+            'no --roots for the built-in roots, and the clock in decimal',
         );
         self::assertSame([strlen($bytes), strlen($bytes), strlen($bytes), 0], array_column($log, 'stdin_length'));
         self::assertSame(hash('sha256', $bytes), $log[0]['stdin_sha256'], 'stdin carries the bytes exactly');
@@ -106,7 +106,7 @@ final class CliTransportTest extends TestCase
 
     public function testTheCutIsTheLengthAprvInfoStatedNotAConstant(): void
     {
-        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":5}}']);
+        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":5}}']);
         $transport = $this->transport();
         $transport->open(null);
 
@@ -122,11 +122,11 @@ final class CliTransportTest extends TestCase
     public function testABinaryThatStatesNoInputLengthFailsCreate(): void
     {
         foreach ([
-            '{"abi":"aprv:verifier@0.1.0"}',
-            '{"abi":"aprv:verifier@0.1.0","limits":{"max_body_bytes":3145729}}',
-            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":0}}',
-            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":"3145729"}}',
-            '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":1.5}}',
+            '{"abi":"aprv:verifier@0.2.0"}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_body_bytes":3145729}}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":0}}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":"3145729"}}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":1.5}}',
         ] as $info) {
             $this->cli->behave(['info' => $info]);
             try {
@@ -322,7 +322,7 @@ final class CliTransportTest extends TestCase
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
-            self::assertStringContainsString('aprv:verifier@0.1.0', $e->getMessage());
+            self::assertStringContainsString('aprv:verifier@0.2.0', $e->getMessage());
         }
     }
 
