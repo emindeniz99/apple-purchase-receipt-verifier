@@ -153,7 +153,7 @@ receipt.receipt_creation_date_ms;
 receipt.in_app[0].product_id;
 receipt.in_app[0].expires_date_ms;
 receipt.unknown_attributes;           // type -> raw values, in receipt order
-receipt.to_json();                    // JSON with the same value in every port
+receipt.to_json();                    // the canonical JSON, the same value in every port
 ```
 
 Decoding follows the rules every port shares: the first occurrence of an
@@ -161,7 +161,10 @@ attribute wins; every attribute that does not end up in a typed field (a
 later copy, or a value that does not decode, whose field is then `None`) is
 kept raw in `unknown_attributes`, the in-app ones in that purchase's own; an
 empty date string means "not set" and is not kept. `to_json()` writes
-JSON whose parsed value is the same in every port; the bytes may differ.
+JSON whose parsed value is the same in every port, in one fixed byte form:
+the bytes `aprv.wasm` and the C ABI hand out, keys in 0.7's order and
+unknown attribute types ascending. Another port's bytes may differ. Through
+0.12.0 it wrote the same value with keys in alphabetical order.
 
 ### `Failure` and `Reason`
 

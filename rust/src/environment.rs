@@ -7,12 +7,14 @@
 use core::fmt;
 
 /// Which of Apple's two `verifyReceipt` URLs a call imitates, and which
-/// environment a verified receipt or JWS names.
+/// environment a verified receipt or JWS names. At the endpoint a sandbox
+/// receipt on `Production` answers 21007 and a production receipt on
+/// `Sandbox` 21008, as Apple's endpoints do; it filters nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Environment {
-    /// `Production`
+    /// `Production`: `https://buy.itunes.apple.com/verifyReceipt`.
     Production,
-    /// `Sandbox`
+    /// `Sandbox`: `https://sandbox.itunes.apple.com/verifyReceipt`.
     Sandbox,
 }
 

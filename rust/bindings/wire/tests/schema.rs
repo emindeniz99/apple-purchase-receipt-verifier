@@ -4,7 +4,8 @@
 //! A schema that accepts everything would pass the first two tests alone,
 //! so the third plants one wrong type per rule and requires a refusal.
 
-use aprv_surface::{Failure, Reason, Verifier};
+use apple_purchase_receipt_verifier::__internal as seams;
+use aprv_surface::{Reason, Verifier};
 use base64::Engine as _;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -262,12 +263,10 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
             );
         }
         for token in reasons {
-            let reason = Reason::from_token(token)
-                .unwrap_or_else(|| panic!("{id}: {token} is not one of the eight"));
-            let failure = Failure {
-                reason,
-                message: String::new(),
-            };
+            let reason: Reason = token
+                .parse()
+                .unwrap_or_else(|_| panic!("{id}: {token} is not one of the eight"));
+            let failure = seams::failure(reason, "");
             check(
                 &receipt_schema,
                 SCHEMAS[0],

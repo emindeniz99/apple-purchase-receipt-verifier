@@ -116,8 +116,10 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
 
 - `ReceiptPayload.toJson()` is **the same value, not the same bytes**:
   valid UTF-8 JSON whose parsed value equals the one the rules define.
-  aprv-wire writes one fixed byte form; a wrapper may hand it through or
-  re-encode it with its language's encoder.
+  The Rust core's `ReceiptPayload::to_json()` writes one fixed byte form,
+  the only writer of a receipt's JSON in Rust; aprv-wire puts those bytes
+  in the verified answer unchanged, and the C ABI returns them. A wrapper
+  may hand them through or re-encode them with its language's encoder.
 - 64-bit ids are JSON strings; dates are epoch-millisecond numbers; bytes
   are padded standard base64; a missing field is `null`; unknown
   attributes are an object keyed by the decimal type, values in receipt
@@ -136,10 +138,10 @@ the verified payload exactly as signed. What the Wasm hosts depend on:
   `JsonPayload::new` and `Failure::new` are crate-private, so a value of
   these types in a caller's code passed verification. The library's own
   tests build them through `__internal` under the `test-seams` feature.
-  `aprv-surface` hands out the core's `ReceiptPayload` and `InAppPurchase`
-  themselves, so the bindings hold no copy of the receipt model and the
-  same rule reaches them; `aprv-wire`'s tests build values through the
-  same seams.
+  `aprv-surface` hands out the core's `ReceiptPayload`, `InAppPurchase`,
+  `JsonPayload` and `Failure` themselves, so the bindings hold no copy of
+  any verdict type and the same rule reaches them; `aprv-wire`'s tests
+  build values through the same seams.
 
 ## 5. The bounds
 
@@ -214,12 +216,12 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
 | `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: environment, now-ms, request-json: list<u8>)` |
-| `Environment` (2) | `Environment` (2) | `enum environment { production, sandbox }`, discriminants 0 and 1 to a hand-rolled host; any other discriminant traps (DECISIONS.md R46) |
-| `ReceiptPayload.environment()`, `JsonPayload.environment()` | the core's `ReceiptPayload::environment()`; `environment: Option<Environment>` on `JsonPayload` | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
-| `Reason` (8) | `Reason` (8), with `token()` | `"reason":"<TOKEN>"` |
-| `Failure` (reason, message, cause) | `Failure { reason, message }` | `{"verified":false,"reason":...,"message":...}` |
+| `Environment` (2) | the core's `Environment` (2), re-exported | `enum environment { production, sandbox }`, discriminants 0 and 1 to a hand-rolled host; any other discriminant traps (DECISIONS.md R46) |
+| `ReceiptPayload.environment()`, `JsonPayload.environment()` | the core's `ReceiptPayload::environment()` and `JsonPayload::environment()` | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
+| `Reason` (8) | the core's `Reason` (8), re-exported, with `as_str()` | `"reason":"<TOKEN>"` |
+| `Failure` (reason, message, cause) | the core's `Failure`, re-exported: `reason()`, `message()`, and a `source()` no boundary carries | `{"verified":false,"reason":...,"message":...}` |
 | `ReceiptPayload`, `InAppPurchase` | the core's own types, re-exported: records of `Option<String>`, `Option<i64>`, `Option<bool>`, `Vec<u8>`, lists; unknown attributes as the core's `BTreeMap<u32, Vec<Vec<u8>>>`, ascending by type, values in receipt order | 0.7's "Our JSON" |
-| `JsonPayload.json()` | `String`, the signed bytes | a JSON string |
+| `JsonPayload.json()` | the core's `JsonPayload`, re-exported: `json()`, the signed text | a JSON string |
 | `VerificationResult<T>` | `Result<T, Failure>` | `{"verified":true,"payload":...,"environment":...}` or the failure |
 
 Conversion rules carried over from the 2026-09-25 surface audit:
@@ -232,7 +234,11 @@ Conversion rules carried over from the 2026-09-25 surface audit:
 - `TryFrom` wherever a value can fail to fit, `From` only when it is
   total; `clippy::cast_*` denied. A conversion failure becomes
   `INTERNAL_ERROR` and never a success.
-- The core's `cause` chain is Rust-only; the wire carries the message.
+- The core's `cause` chain (`Failure::source()`) is Rust-only; the wire
+  and the C ABI write the reason and the message and nothing else.
+- Every type in the table's middle column is the core's own, re-exported:
+  the surface adds the byte inputs, the `now_ms` argument and
+  `MAX_INPUT_BYTES`, and copies no type.
 
 ## 9. Layering, checked
 

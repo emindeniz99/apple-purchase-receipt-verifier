@@ -22,8 +22,9 @@
 //!   INTEGER in hostile input can be negative. The receipt types are the
 //!   core's own, so an unknown attribute's type is the core's `u32`, which
 //!   the core bounds to the `i32` range; on the wire it is a decimal key.
-//! - **A failure is a reason and a message.** The core's `source()` chain is
-//!   Rust-only and does not cross a boundary.
+//! - **A failure crosses as a reason and a message.** The verdict types
+//!   are the core's own, `Failure` included; its `source()` chain is
+//!   Rust-only, and no writer at a boundary carries it.
 //!
 //! These doc comments are the reference text every wrapper's API
 //! documentation is written from (ARCHITECTURE.md §8).
@@ -44,153 +45,21 @@ use std::cell::Cell;
 /// The library's version, for startup logs: the core's own.
 pub const VERSION: &str = core_api::VERSION;
 
-// ---------------------------------------------------------------- Reason
+// ----------------------------------------------------------- the verdicts
 
-/// Why a verification failed: the eight 0.7 reasons, the whole contract.
+/// The core's verdict and environment types, handed out as the core returns
+/// them, so each is defined once; their doc comments are in the core.
 ///
-/// Match on the reason, never on a message. Adding a value is a breaking
-/// change in every language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Reason {
-    /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
-    /// bound (the ASN.1 nesting or value budget, embedded certificates,
-    /// `SignerInfo`s) is exceeded.
-    Malformed,
-    /// The input is over one of the fixed size caps: 3,145,728 UTF-8 bytes
-    /// of receipt base64 or endpoint body, 262,144 of JWS.
-    TooLarge,
-    /// The signature does not match the content.
-    InvalidSignature,
-    /// The chain does not reach a pinned root.
-    UntrustedChain,
-    /// A certificate does not decode, or is outside its validity window at
-    /// the chain instant.
-    InvalidCertificate,
-    /// A valid Apple certificate of the wrong kind: an Apple marker OID is
-    /// missing on the leaf or the intermediate.
-    InvalidCertificatePurpose,
-    /// Apple signed it, but the content does not parse. Alert; do not retry.
-    UnreadablePayload,
-    /// The library failed before it could decide. Alert; do not retry.
-    InternalError,
-}
-
-impl Reason {
-    /// Every reason, in the order the contract lists them.
-    pub const ALL: [Reason; 8] = [
-        Reason::Malformed,
-        Reason::TooLarge,
-        Reason::InvalidSignature,
-        Reason::UntrustedChain,
-        Reason::InvalidCertificate,
-        Reason::InvalidCertificatePurpose,
-        Reason::UnreadablePayload,
-        Reason::InternalError,
-    ];
-
-    /// The `SCREAMING_SNAKE` token every port and the wire spell the reason
-    /// with, such as `UNTRUSTED_CHAIN`.
-    #[must_use]
-    pub const fn token(self) -> &'static str {
-        match self {
-            Reason::Malformed => "MALFORMED",
-            Reason::TooLarge => "TOO_LARGE",
-            Reason::InvalidSignature => "INVALID_SIGNATURE",
-            Reason::UntrustedChain => "UNTRUSTED_CHAIN",
-            Reason::InvalidCertificate => "INVALID_CERTIFICATE",
-            Reason::InvalidCertificatePurpose => "INVALID_CERTIFICATE_PURPOSE",
-            Reason::UnreadablePayload => "UNREADABLE_PAYLOAD",
-            Reason::InternalError => "INTERNAL_ERROR",
-        }
-    }
-
-    /// The reason a token spells, or `None` for anything outside the eight.
-    #[must_use]
-    pub fn from_token(token: &str) -> Option<Reason> {
-        Reason::ALL
-            .into_iter()
-            .find(|reason| reason.token() == token)
-    }
-}
-
-impl From<core_api::Reason> for Reason {
-    fn from(reason: core_api::Reason) -> Reason {
-        // Exhaustive on purpose: a ninth core reason fails to compile here
-        // instead of crossing a boundary under another name.
-        match reason {
-            core_api::Reason::Malformed => Reason::Malformed,
-            core_api::Reason::TooLarge => Reason::TooLarge,
-            core_api::Reason::InvalidSignature => Reason::InvalidSignature,
-            core_api::Reason::UntrustedChain => Reason::UntrustedChain,
-            core_api::Reason::InvalidCertificate => Reason::InvalidCertificate,
-            core_api::Reason::InvalidCertificatePurpose => Reason::InvalidCertificatePurpose,
-            core_api::Reason::UnreadablePayload => Reason::UnreadablePayload,
-            core_api::Reason::InternalError => Reason::InternalError,
-        }
-    }
-}
-
-// --------------------------------------------------------------- Failure
-
-/// A verification verdict of "no": a [`Reason`] and a message.
-///
-/// The message is safe to log (it never embeds raw input, claims or key
-/// material) and not meant to be parsed; it may change between releases.
-/// Two messages are a stable hook, because the shared `decodeBase64` cases
-/// tell the two base64 decoders apart by them: a refused `receipt-data`
-/// text is `MALFORMED` with a message containing `receipt is not valid
-/// base64`, a refused `x5c` entry `INVALID_CERTIFICATE` with one containing
-/// `x5c entry is not valid base64`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Failure {
-    /// Why verification failed. Match on this.
-    pub reason: Reason,
-    /// A short description, safe to log, not meant to be parsed.
-    pub message: String,
-}
-
-impl From<core_api::Failure> for Failure {
-    fn from(failure: core_api::Failure) -> Failure {
-        Failure {
-            reason: failure.reason().into(),
-            message: failure.message().to_owned(),
-        }
-    }
-}
-
-// ----------------------------------------------------------- Environment
-
-/// Apple's two environments: which of Apple's two `verifyReceipt` URLs
-/// [`Verifier::verify_receipt_endpoint`] imitates, and the environment a
-/// verified receipt or JWS names ([`ReceiptPayload::environment`], the
-/// core's, converted with `From`, and [`JsonPayload::environment`]). A sandbox receipt on `Production` answers
-/// 21007 and a production receipt on `Sandbox` 21008, as Apple's endpoints
-/// do; it filters nothing else.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Environment {
-    /// `https://buy.itunes.apple.com/verifyReceipt`
-    Production,
-    /// `https://sandbox.itunes.apple.com/verifyReceipt`
-    Sandbox,
-}
-
-impl From<Environment> for core_api::Environment {
-    fn from(environment: Environment) -> core_api::Environment {
-        match environment {
-            Environment::Production => core_api::Environment::Production,
-            Environment::Sandbox => core_api::Environment::Sandbox,
-        }
-    }
-}
-
-impl From<core_api::Environment> for Environment {
-    fn from(environment: core_api::Environment) -> Environment {
-        match environment {
-            core_api::Environment::Production => Environment::Production,
-            core_api::Environment::Sandbox => Environment::Sandbox,
-        }
-    }
-}
+/// - [`Reason`]: the eight 0.7 reasons, spelled on the wire by
+///   [`Reason::as_str`], read back with `str::parse`.
+/// - [`Failure`]: a [`Reason`] and a message. Its `source()` chain is
+///   Rust-only: `aprv-wire` and the C ABI write the reason and the message
+///   and nothing else, so the chain never crosses a boundary.
+/// - [`Environment`]: what [`Verifier::verify_receipt_endpoint`] imitates,
+///   and what [`ReceiptPayload::environment`] and
+///   [`JsonPayload::environment`] state.
+/// - [`JsonPayload`]: a verified JWS payload, exactly as signed.
+pub use core_api::{Environment, Failure, JsonPayload, Reason};
 
 /// The most bytes of one input a host needs to hand the module: one over
 /// the core's largest size cap. A longer input may be cut to this length,
@@ -208,21 +77,6 @@ pub const MAX_INPUT_BYTES: usize = core_api::__internal::MAX_INPUT_BYTES;
 /// [`ReceiptPayload::environment`], which a verified answer carries beside
 /// the payload.
 pub use core_api::{InAppPurchase, ReceiptPayload, UnknownAttributes};
-
-/// A verified JWS payload (0.7-api.md §2): the JSON Apple signed, exactly as
-/// signed. Callers parse it with their own JSON library; the library
-/// returns no header and no typed claims.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JsonPayload {
-    /// The signed payload's JSON text.
-    pub json: String,
-    /// The environment the payload names, by the core's rule: the first of
-    /// the top-level `environment`, `data.environment` and
-    /// `summary.environment` that is present decides, `Production` and
-    /// `Sandbox` map and anything else is `None`; `None` when none is
-    /// present.
-    pub environment: Option<Environment>,
-}
 
 // --------------------------------------------------------------- config
 
@@ -319,7 +173,6 @@ impl Verifier {
         self.at(now_ms, |verifier| {
             verifier.verify_receipt_bytes(receipt_base64)
         })
-        .map_err(Failure::from)
     }
 
     /// Verifies an Apple-signed compact JWS (a transaction, renewal info, app
@@ -337,14 +190,6 @@ impl Verifier {
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_signed_data(&self, jws: &[u8], now_ms: i64) -> Result<JsonPayload, Failure> {
         self.at(now_ms, |verifier| verifier.verify_signed_data_bytes(jws))
-            .map(|payload| {
-                let environment = payload.environment().map(Environment::from);
-                JsonPayload {
-                    json: payload.into_json(),
-                    environment,
-                }
-            })
-            .map_err(Failure::from)
     }
 
     /// The response body Apple's `verifyReceipt` at `environment` would
@@ -359,7 +204,7 @@ impl Verifier {
         now_ms: i64,
     ) -> String {
         self.at(now_ms, |verifier| {
-            verifier.verify_receipt_endpoint_bytes(environment.into(), request_json)
+            verifier.verify_receipt_endpoint_bytes(environment, request_json)
         })
     }
 }
@@ -380,21 +225,6 @@ mod tests {
     fn g5() -> Vec<u8> {
         let text = String::from_utf8(fixture("public-receipts/receipt-sandbox-g5.b64")).unwrap();
         text.split_whitespace().collect::<String>().into_bytes()
-    }
-
-    #[test]
-    fn the_eight_reasons_are_the_cores_eight_in_the_same_order() {
-        let core: Vec<&str> = core_api::Reason::all().iter().map(|r| r.as_str()).collect();
-        let ours: Vec<&str> = Reason::ALL.iter().map(|r| r.token()).collect();
-        assert_eq!(ours, core);
-        for reason in core_api::Reason::all() {
-            assert_eq!(Reason::from(*reason).token(), reason.as_str());
-        }
-        for reason in Reason::ALL {
-            assert_eq!(Reason::from_token(reason.token()), Some(reason));
-        }
-        assert_eq!(Reason::from_token("INVALID_CHAIN"), None);
-        assert_eq!(Reason::from_token("malformed"), None);
     }
 
     #[test]
@@ -457,10 +287,10 @@ mod tests {
         let failure = verifier
             .verify_receipt(&[0x4d, 0xff, 0xfe, 0x3d], 0)
             .unwrap_err();
-        assert_eq!(failure.reason, Reason::Malformed);
-        assert!(failure.message.contains("receipt is not valid base64"));
+        assert_eq!(failure.reason(), Reason::Malformed);
+        assert!(failure.message().contains("receipt is not valid base64"));
         let failure = verifier.verify_signed_data(b"e\xff.e.e", 0).unwrap_err();
-        assert_eq!(failure.reason, Reason::Malformed);
+        assert_eq!(failure.reason(), Reason::Malformed);
         let answer = verifier.verify_receipt_endpoint(Environment::Sandbox, b"{\xff}", 0);
         assert_eq!(answer, "{\"status\":21002}");
     }

@@ -41,7 +41,7 @@ use crate::datetime::parse_receipt_date;
 use crate::environment::Environment;
 use aprv_openssl::payload::{attribute_integer, attribute_string, receipt_attributes, StringKind};
 use aprv_openssl::Budget;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 // App-level attribute types.
@@ -459,32 +459,48 @@ fn date(der: &[u8]) -> Result<Option<i64>, Undecodable> {
 
 // ------------------------------------------------------------------ JSON
 
+/// A JSON value as `serde_json` writes it: a string escapes `"`, `\` and
+/// U+0000 to U+001F and writes everything else raw, an integer is its
+/// shortest decimal, `None` is `null`.
+fn json(value: impl Into<Value>) -> String {
+    value.into().to_string()
+}
+
 /// A 64-bit id as a JSON string, so JavaScript readers do not round it.
-fn id_json(value: Option<i64>) -> Value {
-    value.map_or(Value::Null, |value| Value::String(value.to_string()))
+fn id_json(value: Option<i64>) -> String {
+    json(value.map(|value| value.to_string()))
 }
 
 /// Bytes as padded standard base64.
-fn bytes_json(value: Option<&[u8]>) -> Value {
-    value.map_or(Value::Null, |value| {
-        Value::String(crate::base64::encode(value))
-    })
+fn bytes_json(value: Option<&[u8]>) -> String {
+    json(value.map(crate::base64::encode))
 }
 
-/// `{"13": ["<base64>", ...]}`, each type's values in receipt order.
-fn attributes_json(attributes: &UnknownAttributes) -> Value {
-    Value::Object(
-        attributes
+/// `items`, already JSON, as one array.
+fn array_json(items: impl Iterator<Item = String>) -> String {
+    format!("[{}]", items.collect::<Vec<_>>().join(","))
+}
+
+/// `members`, each value already JSON, as one object in the order given.
+/// Every key here is ASCII that needs no escaping: a fixed `snake_case`
+/// name or a decimal attribute type.
+fn object_json<K: AsRef<str>>(members: impl IntoIterator<Item = (K, String)>) -> String {
+    let members: Vec<String> = members
+        .into_iter()
+        .map(|(key, value)| format!("\"{}\":{value}", key.as_ref()))
+        .collect();
+    format!("{{{}}}", members.join(","))
+}
+
+/// `{"13": ["<base64>", ...]}`: keys ascending by attribute type (9 before
+/// 13), each type's values in receipt order.
+fn attributes_json(attributes: &UnknownAttributes) -> String {
+    object_json(attributes.iter().map(|(attribute_type, values)| {
+        let values = values
             .iter()
-            .map(|(attribute_type, values)| {
-                let values = values
-                    .iter()
-                    .map(|value| Value::String(crate::base64::encode(value)))
-                    .collect();
-                (attribute_type.to_string(), Value::Array(values))
-            })
-            .collect(),
-    )
+            .map(|value| json(crate::base64::encode(value)));
+        (attribute_type.to_string(), array_json(values))
+    }))
 }
 
 impl ReceiptPayload {
@@ -502,10 +518,17 @@ impl ReceiptPayload {
     }
 
     /// This payload as JSON (docs/design/0.7-api.md "Our JSON"). It holds the
-    /// full purchase data; the caller decides what to write where. Every port
-    /// writes the same value; the bytes may differ.
-    /// `null` for a missing field, 64-bit ids as strings, bytes as padded
-    /// standard base64, dates as epoch-millisecond numbers.
+    /// full purchase data; the caller decides what to write where. `null`
+    /// for a missing field, 64-bit ids as strings, bytes as padded standard
+    /// base64, dates as epoch-millisecond numbers.
+    ///
+    /// The bytes are the one canonical form every binding boundary hands
+    /// out: `aprv.wasm` and the C ABI return exactly this text for a
+    /// verified receipt. No whitespace; keys in the order below, and inside
+    /// each purchase in 0.7's order (`quantity` first, `unknown_attributes`
+    /// last); `unknown_attributes` keys ascending by attribute type, so `9`
+    /// comes before `13`; strings escape only `"`, `\` and the C0 controls,
+    /// and non-ASCII is written raw.
     ///
     /// `receipt_type`, `app_item_id`, `bundle_id`, `bundle_id_bytes`,
     /// `application_version`, `opaque_value`, `sha1_hash`,
@@ -513,47 +536,91 @@ impl ReceiptPayload {
     /// `version_external_identifier`, `in_app`, `original_purchase_date_ms`,
     /// `preorder_date_ms`, `original_application_version`,
     /// `expiration_date_ms`, `unknown_attributes`.
+    ///
+    /// Every port writes the same value; another port's bytes may differ,
+    /// and a reader compares values. Through 0.12.0 this method wrote the
+    /// same value with the keys in alphabetical order and attribute keys in
+    /// text order (`13` before `9`).
     #[must_use]
     pub fn to_json(&self) -> String {
-        json!({
-            "receipt_type": self.receipt_type,
-            "app_item_id": id_json(self.app_item_id),
-            "bundle_id": self.bundle_id,
-            "bundle_id_bytes": bytes_json(self.bundle_id_bytes.as_deref()),
-            "application_version": self.application_version,
-            "opaque_value": bytes_json(self.opaque_value.as_deref()),
-            "sha1_hash": bytes_json(self.sha1_hash.as_deref()),
-            "receipt_creation_date_ms": self.receipt_creation_date_ms,
-            "download_id": id_json(self.download_id),
-            "version_external_identifier": id_json(self.version_external_identifier),
-            "in_app": self.in_app.iter().map(InAppPurchase::json_value).collect::<Vec<_>>(),
-            "original_purchase_date_ms": self.original_purchase_date_ms,
-            "preorder_date_ms": self.preorder_date_ms,
-            "original_application_version": self.original_application_version,
-            "expiration_date_ms": self.expiration_date_ms,
-            "unknown_attributes": attributes_json(&self.unknown_attributes),
-        })
-        .to_string()
+        object_json([
+            ("receipt_type", json(self.receipt_type.as_deref())),
+            ("app_item_id", id_json(self.app_item_id)),
+            ("bundle_id", json(self.bundle_id.as_deref())),
+            (
+                "bundle_id_bytes",
+                bytes_json(self.bundle_id_bytes.as_deref()),
+            ),
+            (
+                "application_version",
+                json(self.application_version.as_deref()),
+            ),
+            ("opaque_value", bytes_json(self.opaque_value.as_deref())),
+            ("sha1_hash", bytes_json(self.sha1_hash.as_deref())),
+            (
+                "receipt_creation_date_ms",
+                json(self.receipt_creation_date_ms),
+            ),
+            ("download_id", id_json(self.download_id)),
+            (
+                "version_external_identifier",
+                id_json(self.version_external_identifier),
+            ),
+            (
+                "in_app",
+                array_json(self.in_app.iter().map(InAppPurchase::to_json)),
+            ),
+            (
+                "original_purchase_date_ms",
+                json(self.original_purchase_date_ms),
+            ),
+            ("preorder_date_ms", json(self.preorder_date_ms)),
+            (
+                "original_application_version",
+                json(self.original_application_version.as_deref()),
+            ),
+            ("expiration_date_ms", json(self.expiration_date_ms)),
+            (
+                "unknown_attributes",
+                attributes_json(&self.unknown_attributes),
+            ),
+        ])
     }
 }
 
 impl InAppPurchase {
-    fn json_value(&self) -> Value {
-        json!({
-            "quantity": self.quantity,
-            "product_id": self.product_id,
-            "transaction_id": self.transaction_id,
-            "purchase_date_ms": self.purchase_date_ms,
-            "original_transaction_id": self.original_transaction_id,
-            "original_purchase_date_ms": self.original_purchase_date_ms,
-            "expires_date_ms": self.expires_date_ms,
-            "web_order_line_item_id": id_json(self.web_order_line_item_id),
-            "cancellation_date_ms": self.cancellation_date_ms,
-            "cancellation_reason": self.cancellation_reason,
-            "is_trial_period": self.is_trial_period,
-            "is_in_intro_offer_period": self.is_in_intro_offer_period,
-            "unknown_attributes": attributes_json(&self.unknown_attributes),
-        })
+    /// One element of `in_app` in [`ReceiptPayload::to_json`].
+    fn to_json(&self) -> String {
+        object_json([
+            ("quantity", json(self.quantity)),
+            ("product_id", json(self.product_id.as_deref())),
+            ("transaction_id", json(self.transaction_id.as_deref())),
+            ("purchase_date_ms", json(self.purchase_date_ms)),
+            (
+                "original_transaction_id",
+                json(self.original_transaction_id.as_deref()),
+            ),
+            (
+                "original_purchase_date_ms",
+                json(self.original_purchase_date_ms),
+            ),
+            ("expires_date_ms", json(self.expires_date_ms)),
+            (
+                "web_order_line_item_id",
+                id_json(self.web_order_line_item_id),
+            ),
+            ("cancellation_date_ms", json(self.cancellation_date_ms)),
+            ("cancellation_reason", json(self.cancellation_reason)),
+            ("is_trial_period", json(self.is_trial_period)),
+            (
+                "is_in_intro_offer_period",
+                json(self.is_in_intro_offer_period),
+            ),
+            (
+                "unknown_attributes",
+                attributes_json(&self.unknown_attributes),
+            ),
+        ])
     }
 }
 
@@ -567,6 +634,7 @@ mod tests {
 
     use super::{
         creation_date, parse_payload_attributes, InAppPurchase, PayloadError, ReceiptPayload,
+        UnknownAttributes,
     };
 
     /// The verifier's two readings of one payload's single parse: all of
@@ -1160,19 +1228,56 @@ mod tests {
 
     #[test]
     fn an_empty_purchase_writes_missing_fields_as_null() {
-        // Missing attributes have the same nullable representation.
-        let json = InAppPurchase::default().json_value();
+        // Missing attributes have the same nullable representation, and
+        // the keys come in 0.7's order.
         assert_eq!(
-            json,
-            serde_json::json!({
-                "quantity": null, "product_id": null, "transaction_id": null,
-                "purchase_date_ms": null, "original_transaction_id": null,
-                "original_purchase_date_ms": null, "expires_date_ms": null,
-                "web_order_line_item_id": null, "cancellation_date_ms": null,
-                "cancellation_reason": null,
-                "is_trial_period": null, "is_in_intro_offer_period": null,
-                "unknown_attributes": {}
-            })
+            InAppPurchase::default().to_json(),
+            concat!(
+                r#"{"quantity":null,"product_id":null,"transaction_id":null,"#,
+                r#""purchase_date_ms":null,"original_transaction_id":null,"#,
+                r#""original_purchase_date_ms":null,"expires_date_ms":null,"#,
+                r#""web_order_line_item_id":null,"cancellation_date_ms":null,"#,
+                r#""cancellation_reason":null,"#,
+                r#""is_trial_period":null,"is_in_intro_offer_period":null,"#,
+                r#""unknown_attributes":{}}"#
+            )
+        );
+    }
+
+    #[test]
+    fn to_json_writes_the_canonical_bytes() {
+        // aprv-wire's tests pin a full receipt byte for byte through the
+        // ABI's answer; this pins the order the core owns: 0.7's key order,
+        // attribute types ascending by value, no whitespace.
+        let mut purchase = InAppPurchase::default();
+        purchase.quantity = Some(1);
+        purchase.web_order_line_item_id = Some(-1);
+        purchase.unknown_attributes = UnknownAttributes::from([(1714, vec![vec![0xfb, 0xff]])]);
+        let mut receipt = ReceiptPayload::default();
+        receipt.receipt_type = Some("Production".to_owned());
+        receipt.bundle_id = Some("a\"\\\u{1}\u{e9}".to_owned());
+        receipt.download_id = Some(i64::MAX);
+        receipt.in_app = vec![purchase];
+        receipt.unknown_attributes =
+            UnknownAttributes::from([(13, vec![vec![1]]), (9, vec![vec![], vec![2]])]);
+        assert_eq!(
+            receipt.to_json(),
+            concat!(
+                r#"{"receipt_type":"Production","app_item_id":null,"bundle_id":"a\"\\\u0001"#,
+                "\u{e9}",
+                r#"","bundle_id_bytes":null,"application_version":null,"opaque_value":null,"#,
+                r#""sha1_hash":null,"receipt_creation_date_ms":null,"#,
+                r#""download_id":"9223372036854775807","version_external_identifier":null,"#,
+                r#""in_app":[{"quantity":1,"product_id":null,"transaction_id":null,"#,
+                r#""purchase_date_ms":null,"original_transaction_id":null,"#,
+                r#""original_purchase_date_ms":null,"expires_date_ms":null,"#,
+                r#""web_order_line_item_id":"-1","cancellation_date_ms":null,"#,
+                r#""cancellation_reason":null,"is_trial_period":null,"#,
+                r#""is_in_intro_offer_period":null,"unknown_attributes":{"1714":["+/8="]}}],"#,
+                r#""original_purchase_date_ms":null,"preorder_date_ms":null,"#,
+                r#""original_application_version":null,"expiration_date_ms":null,"#,
+                r#""unknown_attributes":{"9":["","Ag=="],"13":["AQ=="]}}"#
+            )
         );
     }
 }

@@ -7,14 +7,16 @@ use std::sync::Arc;
 /// Why a verification failed.
 ///
 /// The set is closed: these eight values are the whole contract, and adding
-/// one is a breaking change.
+/// one is a breaking change in every language. Match on the reason, never
+/// on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Reason {
     /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
     /// bound (the ASN.1 nesting or value budget, embedded certificates,
     /// `SignerInfo`s) is exceeded.
     Malformed,
-    /// The input is over one of the fixed size caps.
+    /// The input is over one of the fixed size caps: 3,145,728 UTF-8 bytes
+    /// of receipt base64 or endpoint body, 262,144 of JWS.
     TooLarge,
     /// The signature does not match the content.
     InvalidSignature,
@@ -24,9 +26,9 @@ pub enum Reason {
     /// the chain instant.
     InvalidCertificate,
     /// A valid Apple certificate of the wrong kind: an Apple marker OID is
-    /// missing.
+    /// missing on the leaf or the intermediate.
     InvalidCertificatePurpose,
-    /// Apple signed it, but the content does not parse.
+    /// Apple signed it, but the content does not parse. Alert; do not retry.
     UnreadablePayload,
     /// The library failed before it could decide. Alert; do not retry.
     InternalError,
@@ -38,7 +40,8 @@ pub(crate) fn malformed(detail: impl Into<String>) -> Failure {
 }
 
 impl Reason {
-    /// The canonical `SCREAMING_SNAKE` token.
+    /// The canonical `SCREAMING_SNAKE` token every port and the wire spell
+    /// the reason with, such as `UNTRUSTED_CHAIN`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -104,9 +107,15 @@ impl core::str::FromStr for Reason {
 ///
 /// Match on [`reason`](Failure::reason). The [`message`](Failure::message)
 /// is safe to log (it never embeds raw input) but is not meant to be parsed,
-/// and may change between releases. [`source`](Error::source) carries the
-/// parser error behind [`Reason::UnreadablePayload`], so an operator can see
-/// why Apple-signed content did not parse.
+/// and may change between releases. Two messages are a stable hook,
+/// because the shared `decodeBase64` cases tell the two base64 decoders
+/// apart by them: a refused `receipt-data` text is `MALFORMED` with a
+/// message containing `receipt is not valid base64`, a refused `x5c` entry
+/// `INVALID_CERTIFICATE` with one containing `x5c entry is not valid
+/// base64`. [`source`](Error::source) carries the parser error behind
+/// [`Reason::UnreadablePayload`], so an operator can see why Apple-signed
+/// content did not parse; it is Rust-only, and no binding boundary carries
+/// it.
 ///
 /// Two failures are equal when their reason and message are; the source is
 /// not compared.
