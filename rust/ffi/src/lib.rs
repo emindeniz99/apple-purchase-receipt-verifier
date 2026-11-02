@@ -68,7 +68,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_panics_doc)]
 
-use aprv_surface::{Environment, Failure, Reason, Verifier};
+use aprv_surface::{Environment, Failure, JsonPayload, Reason, Verifier};
 use std::ffi::{c_char, CStr, CString};
 use std::sync::OnceLock;
 
@@ -261,7 +261,7 @@ const REASON_CODES: [(i32, &str); 8] = [
 fn reason_code(reason: Reason) -> i32 {
     REASON_CODES
         .iter()
-        .find(|(_, token)| *token == reason.token())
+        .find(|(_, token)| *token == reason.as_str())
         .map_or(AprvReason::UnknownReason as i32, |(code, _)| *code)
 }
 
@@ -413,8 +413,8 @@ fn outcome(result: Result<String, Failure>) -> (i32, String) {
     match result {
         Ok(json) => (AprvReason::Ok as i32, json),
         Err(failure) => {
-            let status = reason_code(failure.reason);
-            (status, error_json(status, &failure.message))
+            let status = reason_code(failure.reason());
+            (status, error_json(status, failure.message()))
         }
     }
 }
@@ -562,7 +562,7 @@ pub unsafe extern "C" fn aprv_verify_signed_data(
                 verifier
                     .inner
                     .verify_signed_data(input.as_bytes(), verifier.now_ms())
-                    .map(|payload| payload.json)
+                    .map(JsonPayload::into_json)
             })
         }
     })
@@ -683,7 +683,7 @@ pub unsafe extern "C" fn aprv_verify_receipt_bytes(
                 let result = verifier.inner.verify_receipt(input, verifier.now_ms());
                 let status = result
                     .as_ref()
-                    .map_or_else(|failure| reason_code(failure.reason), |_| 0);
+                    .map_or_else(|failure| reason_code(failure.reason()), |_| 0);
                 (status, aprv_wire::verify_receipt_result(&result))
             })
         }
@@ -711,7 +711,7 @@ pub unsafe extern "C" fn aprv_verify_signed_data_bytes(
                 let result = verifier.inner.verify_signed_data(input, verifier.now_ms());
                 let status = result
                     .as_ref()
-                    .map_or_else(|failure| reason_code(failure.reason), |_| 0);
+                    .map_or_else(|failure| reason_code(failure.reason()), |_| 0);
                 (status, aprv_wire::verify_signed_data_result(&result))
             })
         }
@@ -868,13 +868,13 @@ mod tests {
     /// enum growing a name to match.
     #[test]
     fn reason_codes_mirror_the_library() {
-        assert_eq!(Reason::ALL.len(), REASON_CODES.len());
-        for (reason, (code, token)) in Reason::ALL.iter().zip(REASON_CODES.iter()) {
+        assert_eq!(Reason::all().len(), REASON_CODES.len());
+        for (reason, (code, token)) in Reason::all().iter().zip(REASON_CODES.iter()) {
             assert_eq!(reason_code(*reason), *code, "code for {reason:?}");
-            assert_eq!(*token, reason.token(), "token for {reason:?}");
+            assert_eq!(*token, reason.as_str(), "token for {reason:?}");
             assert_eq!(
                 status_token(*code),
-                reason.token(),
+                reason.as_str(),
                 "status_token for {code}"
             );
         }

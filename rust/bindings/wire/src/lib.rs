@@ -195,10 +195,7 @@ struct Verified<P> {
 
 /// Apple's spelling of an environment, `null` for none.
 fn spelling(environment: Option<Environment>) -> Option<&'static str> {
-    environment.map(|environment| match environment {
-        Environment::Production => "Production",
-        Environment::Sandbox => "Sandbox",
-    })
+    environment.map(Environment::as_str)
 }
 
 /// A refusal: `{"verified":false,"reason":"<TOKEN>","message":"..."}`.
@@ -213,8 +210,8 @@ impl<'a> Refused<'a> {
     fn new(failure: &'a Failure) -> Self {
         Refused {
             verified: false,
-            reason: failure.reason.token(),
-            message: &failure.message,
+            reason: failure.reason().as_str(),
+            message: failure.message(),
         }
     }
 }
@@ -236,7 +233,7 @@ pub fn verify_receipt_result(result: &Result<ReceiptPayload, Failure>) -> String
         Ok(receipt) => to_json(&Verified {
             verified: true,
             payload: Receipt(receipt),
-            environment: spelling(receipt.environment().map(Environment::from)),
+            environment: spelling(receipt.environment()),
         }),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
@@ -251,8 +248,8 @@ pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> Strin
     match result {
         Ok(payload) => to_json(&Verified {
             verified: true,
-            payload: &payload.json,
-            environment: spelling(payload.environment),
+            payload: payload.json(),
+            environment: spelling(payload.environment()),
         }),
         Err(refusal) => to_json(&Refused::new(refusal)),
     }
@@ -369,16 +366,11 @@ mod tests {
         verify_signed_data_result,
     };
     use apple_purchase_receipt_verifier::__internal as seams;
-    use aprv_surface::{
-        Environment, Failure, JsonPayload, Reason, ReceiptPayload, UnknownAttributes,
-    };
+    use aprv_surface::{Reason, ReceiptPayload, UnknownAttributes};
 
     #[test]
     fn a_failure_carries_exactly_three_members_in_a_fixed_order() {
-        let refusal = Failure {
-            reason: Reason::UntrustedChain,
-            message: "a \"quoted\" \\ line\nbreak \u{1}".to_owned(),
-        };
+        let refusal = seams::failure(Reason::UntrustedChain, "a \"quoted\" \\ line\nbreak \u{1}");
         let expected = r#"{"verified":false,"reason":"UNTRUSTED_CHAIN","message":"a \"quoted\" \\ line\nbreak \u0001"}"#;
         assert_eq!(verify_receipt_result(&Err(refusal.clone())), expected);
         assert_eq!(verify_signed_data_result(&Err(refusal)), expected);
@@ -387,10 +379,7 @@ mod tests {
     #[test]
     fn a_verified_jws_carries_its_payload_as_a_string_holding_the_signed_text() {
         let json = "{\"b\":1, \"a\":\"\u{e9}\"}";
-        let answer = verify_signed_data_result(&Ok(JsonPayload {
-            json: json.to_owned(),
-            environment: None,
-        }));
+        let answer = verify_signed_data_result(&Ok(seams::json_payload(json)));
         assert_eq!(
             answer,
             "{\"verified\":true,\"payload\":\"{\\\"b\\\":1, \\\"a\\\":\\\"\u{e9}\\\"}\",\"environment\":null}"
@@ -577,17 +566,18 @@ mod tests {
                 format!("{{\"verified\":true,\"payload\":{payload},\"environment\":{written}}}")
             );
         }
-        for (environment, written) in [
-            (Some(Environment::Production), "\"Production\""),
-            (Some(Environment::Sandbox), "\"Sandbox\""),
-            (None, "null"),
+        // A JWS payload's environment is the core's reading of its claims;
+        // the payload is written as signed.
+        for (json, written) in [
+            (r#"{"environment":"Production"}"#, "\"Production\""),
+            (r#"{"data":{"environment":"Sandbox"}}"#, "\"Sandbox\""),
+            (r#"{"environment":"Xcode"}"#, "null"),
+            ("{}", "null"),
         ] {
+            let payload = serde_json::to_string(json).unwrap();
             assert_eq!(
-                verify_signed_data_result(&Ok(JsonPayload {
-                    json: "{}".to_owned(),
-                    environment,
-                })),
-                format!("{{\"verified\":true,\"payload\":\"{{}}\",\"environment\":{written}}}")
+                verify_signed_data_result(&Ok(seams::json_payload(json))),
+                format!("{{\"verified\":true,\"payload\":{payload},\"environment\":{written}}}")
             );
         }
     }
