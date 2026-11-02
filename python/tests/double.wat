@@ -23,7 +23,7 @@
 ;; instance twice shows at once), and refuses (ok:false) a configuration
 ;; whose first root's base64 starts with "R". A verify before init traps.
 (module
-  (import "aprv:verifier/host@0.1.0" "random-get" (func $random-get (param i32 i32)))
+  (import "aprv:verifier/host@0.2.0" "random-get" (func $random-get (param i32 i32)))
   (memory (export "memory") 16)
   (global $top (mut i32) (i32.const 4096))
   (global $inited (mut i32) (i32.const 0))
@@ -46,10 +46,10 @@
 
   ;; every result is freed by its post-return, so the bump pointer resets
   (func $free (param i32) (global.set $top (i32.const 4096)))
-  (func (export "cabi_post_aprv:verifier/verify@0.1.0#init") (param i32) (call $free (local.get 0)))
-  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-receipt") (param i32) (call $free (local.get 0)))
-  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-signed-data") (param i32) (call $free (local.get 0)))
-  (func (export "cabi_post_aprv:verifier/verify@0.1.0#verify-receipt-endpoint") (param i32) (call $free (local.get 0)))
+  (func (export "cabi_post_aprv:verifier/verify@0.2.0#init") (param i32) (call $free (local.get 0)))
+  (func (export "cabi_post_aprv:verifier/verify@0.2.0#verify-receipt") (param i32) (call $free (local.get 0)))
+  (func (export "cabi_post_aprv:verifier/verify@0.2.0#verify-signed-data") (param i32) (call $free (local.get 0)))
+  (func (export "cabi_post_aprv:verifier/verify@0.2.0#verify-receipt-endpoint") (param i32) (call $free (local.get 0)))
   (func (export "_initialize"))
 
   ;; answer (ptr, len) in the return area and return its address
@@ -128,7 +128,7 @@
     (global.set $top (i32.add (local.get $p) (i32.const 512)))
     (local.get $p))
 
-  (func (export "aprv:verifier/verify@0.1.0#init") (param $ptr i32) (param $len i32) (result i32)
+  (func (export "aprv:verifier/verify@0.2.0#init") (param $ptr i32) (param $len i32) (result i32)
     (if (global.get $inited) (then unreachable))
     (if (i32.and
           (i32.gt_u (local.get $len) (i32.const 11))
@@ -137,9 +137,9 @@
     (global.set $inited (i32.const 1))
     (call $ret (i32.const 512) (i32.const 37)))
 
-  (func (export "aprv:verifier/verify@0.1.0#verify-receipt") (param i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.2.0#verify-receipt") (param i64 i32 i32) (result i32)
     (call $verify (i32.const 0) (i32.const 0) (local.get 0) (local.get 1) (local.get 2)))
-  (func (export "aprv:verifier/verify@0.1.0#verify-signed-data") (param i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.2.0#verify-signed-data") (param i64 i32 i32) (result i32)
     (call $verify (i32.const 1) (i32.const 0) (local.get 0) (local.get 1) (local.get 2)))
-  (func (export "aprv:verifier/verify@0.1.0#verify-receipt-endpoint") (param i32 i64 i32 i32) (result i32)
+  (func (export "aprv:verifier/verify@0.2.0#verify-receipt-endpoint") (param i32 i64 i32 i32) (result i32)
     (call $verify (i32.const 2) (local.get 0) (local.get 1) (local.get 2) (local.get 3))))

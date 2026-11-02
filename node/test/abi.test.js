@@ -78,20 +78,20 @@ function module({ imports = [], exports = [] }) {
   return new WebAssembly.Module(new Uint8Array(bytes));
 }
 
-test('a module without the @0.1.0 exports is an ABI mismatch naming what it has', () => {
+test('a module without the @0.2.0 exports is an ABI mismatch naming what it has', () => {
   const problem = abiProblem(module({ exports: ['aprv:verifier/verify@2.0.0#init'] }));
-  assert.match(problem, /does not implement aprv:verifier\/verify@0\.1\.0/);
-  assert.match(problem, /missing aprv:verifier\/verify@0\.1\.0#init/);
+  assert.match(problem, /does not implement aprv:verifier\/verify@0\.2\.0/);
+  assert.match(problem, /missing aprv:verifier\/verify@0\.2\.0#init/);
   assert.match(problem, /exports aprv:verifier\/verify@2\.0\.0#init/);
 });
 
 test('a module that imports anything but random-get is an ABI mismatch', () => {
   const ops = ['init', 'verify-receipt', 'verify-signed-data', 'verify-receipt-endpoint'].map(
-    (op) => `aprv:verifier/verify@0.1.0#${op}`,
+    (op) => `aprv:verifier/verify@0.2.0#${op}`,
   );
   const extra = module({
     imports: [
-      ['aprv:verifier/host@0.1.0', 'random-get'],
+      ['aprv:verifier/host@0.2.0', 'random-get'],
       ['wasi_snapshot_preview1', 'fd_write'],
     ],
     exports: ops,
@@ -99,21 +99,34 @@ test('a module that imports anything but random-get is an ABI mismatch', () => {
   assert.match(abiProblem(extra), /must import exactly .*random-get; it imports .*fd_write/);
   const none = module({ exports: ops });
   assert.match(abiProblem(none), /it imports nothing/);
-  const exact = module({ imports: [['aprv:verifier/host@0.1.0', 'random-get']], exports: ops });
+  const exact = module({ imports: [['aprv:verifier/host@0.2.0', 'random-get']], exports: ops });
   assert.equal(abiProblem(exact), null);
 });
 
-test('env 2, 255 and 2^32-1 trap', () => {
-  for (const env of [2, 255, 2 ** 32 - 1]) {
-    traps(() => ready().verifyReceiptEndpoint(env, now(), G5_REQUEST));
+// `env` is the WIT enum `environment` (ABI 0.2.0): jco takes a case name
+// and throws a TypeError for anything else before the module is entered,
+// so the discriminant traps (2, 255, 2^32-1) are a hand-rolled host's to
+// test (tools/wasm-trap-host.mjs abi-tests). The facade's Slot drops the
+// instance after any throw.
+test('an environment that is not a case name throws a TypeError at the binding', () => {
+  for (const env of ['staging', 'Production', 0, 1, 2, null]) {
+    assert.throws(
+      () => ready().verifyReceiptEndpoint(env, now(), G5_REQUEST),
+      TypeError,
+      String(env),
+    );
   }
-  assert.equal(JSON.parse(ready().verifyReceiptEndpoint(1, now(), G5_REQUEST)).status, 0);
+  assert.equal(
+    JSON.parse(ready().verifyReceiptEndpoint('production', now(), G5_REQUEST)).status,
+    21007,
+  );
+  assert.equal(JSON.parse(ready().verifyReceiptEndpoint('sandbox', now(), G5_REQUEST)).status, 0);
 });
 
 test('a verify before init traps, and so does a second init', () => {
   traps(() => bindings().verifyReceipt(now(), G5));
   traps(() => bindings().verifySignedData(now(), JWS));
-  traps(() => bindings().verifyReceiptEndpoint(1, now(), G5_REQUEST));
+  traps(() => bindings().verifyReceiptEndpoint('sandbox', now(), G5_REQUEST));
   const b = ready();
   traps(() => b.init(DEFAULTS));
 });
@@ -170,12 +183,12 @@ test('a random-get answer of the wrong length traps', () => {
 test('a trapped instance refuses every later call; another instance is untouched', () => {
   const a = ready();
   const b = ready();
-  traps(() => a.verifyReceiptEndpoint(2, now(), G5_REQUEST));
+  traps(() => a.init(DEFAULTS));
   assert.throws(
-    () => a.verifyReceiptEndpoint(1, now(), G5_REQUEST),
+    () => a.verifyReceiptEndpoint('sandbox', now(), G5_REQUEST),
     /cannot enter component instance/,
   );
-  assert.equal(JSON.parse(b.verifyReceiptEndpoint(1, now(), G5_REQUEST)).status, 0);
+  assert.equal(JSON.parse(b.verifyReceiptEndpoint('sandbox', now(), G5_REQUEST)).status, 0);
 });
 
 test('2,000 calls leave linear memory the same size', () => {
@@ -210,7 +223,7 @@ test('the facade copies at most one byte over the cap, and the module still answ
   const body = `{"receipt-data":"${huge}"}`;
   assert.equal(
     createVerifier(createConfig()).verifyReceiptEndpoint(Environment.SANDBOX, body),
-    ready().verifyReceiptEndpoint(1, now(), utf8.encode(body)),
+    ready().verifyReceiptEndpoint('sandbox', now(), utf8.encode(body)),
   );
 
   // Linear memory holds the capped copy, not the 4 MiB input.

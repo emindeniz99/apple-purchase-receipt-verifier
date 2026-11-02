@@ -22,7 +22,8 @@ on 2026-10-03 the owner amended R17 again, reversing its 2026-10-02
 client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
 form of `init`'s configuration (Q30); on 2026-10-06 the owner's
-decision Q70 added R44, and the owner added R45 (Q71).
+decision Q70 added R44, and the owner added R45 (Q71); on 2026-11-02
+the owner added R46 (ABI 0.2.0), which amends R23 and R24.
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -2050,7 +2051,8 @@ caller's root bytes as they are, and the core reads DER or PEM.
   OpenSSL refuses, or anything else is the existing refusal, with the
   existing message. No format parameter, no new error kind, no WIT
   change: the ABI version stays, and the WIT's comment that a root is
-  `<base64 DER>` waits for the next ABI change, since CI diffs that file.
+  `<base64 DER>` waits for the next ABI change, since CI diffs that file
+  (done in ABI 0.2.0, R46).
 - **PEM is read as OpenSSL reads it.** A block starts at the start of a
   line. Text around the blocks, and blocks of other types (a key, a
   `TRUSTED CERTIFICATE`, a CRL), are passed over, so a bundle with a key
@@ -2361,7 +2363,7 @@ the Java implementation goes.
 - **The WIT does not change.** `init(config-json) -> string` keeps its
   signature; only the string's shape moved. The WIT's doc comment, which
   still quotes `{"ok":true}`, waits for the next ABI change, since CI
-  diffs that file.
+  diffs that file (done in ABI 0.2.0, R46).
 - **Decision, the environment (Q19 A):** a verified answer of
   `verify-receipt` and of `verify-signed-data` carries a top-level
   `environment` beside `payload`:
@@ -2537,6 +2539,80 @@ neither is an R20 divergence.
 
 ---
 
+## R46. ABI 0.2.0: the environment as a WIT enum, `now-ms` as an `s64`
+
+**Status: accepted** (owner, 2026-11-02; decisions D1 to D5 and D7 of
+the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
+`now-ms`). Released with 0.13.0.
+
+- **Decision, the WIT:** the package becomes `aprv:verifier@0.2.0`.
+  `env` is `enum environment { production, sandbox }` and `now-ms` is an
+  `s64` on all three verify calls. The doc comments now say what `init`
+  answers (`max_input_bytes`, R42), that a root is DER or PEM (R39) and
+  that an empty `roots` list is refused (R23, Q30). The import is still
+  exactly `random-get`. Both changes flatten to the core types 0.1.0 had
+  (an enum of two cases to an `i32` discriminant, `s64` to `i64`), so a
+  hand-rolled host keeps its signature table and changes only the
+  version in its names; jco and Wasmtime bindings take a case name.
+- **Decision, the checked lift (D1):** wit-bindgen 0.63.0 lifts an enum
+  with `transmute` unless debug assertions are on, which is why R23
+  rejected an enum. `[profile.wasm.package.aprv-abi] debug-assertions =
+  true` in `rust/Cargo.toml` turns them on for the guest crate alone
+  (cargo keeps `-C overflow-checks=off`). Measured on the real module
+  ([enum lift][enumlift]):
+  - unchecked, env 2 answered as production (21007 for the sandbox G5
+    receipt) and 255 and 2^32-1 as sandbox, all as values;
+  - checked, 0 and 1 answer as themselves and 2, 255 and 2^32-1 trap:
+    `Trap::UnreachableCodeReached` on Wasmtime, `wasm error:
+    unreachable` on wazero, `RuntimeError: unreachable` on V8 and
+    `TrapException: Trapped on unreachable instruction` on Endive;
+  - the check costs 4,865 bytes (+0.17%) against the unchecked enum, and
+    the 0.2.0 module is 4,525 bytes larger than 0.1.0's. A panic hook
+    that traps would add 317 bytes and is not used;
+  - `tools/reproduce-wasm.sh` rebuilds the module byte for byte.
+- **The guard is the existing tests.** Every hand-rolled host's
+  "env 2, 255, 2^32-1 traps" test and the ABI fuzz oracle fail without
+  the setting (shown on the Rust ABI host with an unchecked build); each
+  test's comment names it.
+- **Decision, `now-ms` (D2):** an `s64`, the core's own instant, so
+  every value reaches the core and the guest's u64-to-i64 refusal goes,
+  with `aprv-surface`'s `now_ms_from_u64` and `endpoint_internal_error`.
+  `aprv-server`'s `X-Aprv-Now-Ms` header and `--now-ms` flag narrow to 0
+  to `i64::MAX`: above it is a 400 or a usage error, where 0.1.0 took
+  any u64.
+- **Decision, clocks before 1970 (D3):** every package still answers
+  `INTERNAL_ERROR` (21009 at the endpoint), refusing the clock before
+  the call. Java `-wasm` had relied on the u64 for it; both its engines
+  now refuse it themselves, with the message .NET uses.
+- **Decision, the C ABI (D4):** `AprvEnvironment` keeps 1 and 2.
+  Renumbering would turn an existing caller's 1 from production into
+  sandbox, and 0 stays invalid for a zero-initialised argument.
+- **Not in this version (D5):** an `endpointJson` export (ROADMAP.md)
+  and the `expect {bundleId, environment}` argument (R36). Either would
+  cost another ABI version later.
+- **Rollout (D7):** one pull request moves every binding, merged just
+  before the 0.13.0 release pull request, whose branch refreshes the Go
+  and Swift copies, every pin and the parity corpus (R14, R35). Until
+  that release merges, `go test` and `swift test` in a plain checkout of
+  `main` meet the committed 0.1.0 module and fail with an ABI error, and
+  so does the nightly corpus; CI on a pull request tests the module it
+  builds.
+- **Who it breaks:** a host bound to the `aprv.component.wasm` or
+  `aprv.wit` release assets of 0.1.0, `aprv --component` with a 0.1.0
+  component, and a PHP package of this release against a separately
+  deployed `aprv` of an earlier one (the `abi` strings differ).
+- **Decision, doc-only WIT edits** (owner, 2026-11-02, D6 of the plan):
+  a name or a type in the WIT is the ABI and moves the package version; a
+  doc-comment-only edit does not. 0.1.0's comments went stale (R39, R42)
+  and waited for the next bump because the old wording ("changing the WIT is changing the ABI
+  version") made fixing them cost a full bump. The rule is checked, not
+  trusted: on a pull request `rust-wasm-checks` runs
+  `tools/check-wit-version.sh` against the base, which, when the
+  `package` line is unchanged, requires `wasm-tools component wit` of
+  both files to match once their `///` lines are dropped.
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -2569,7 +2645,8 @@ One table for everything the plan measured or considered and rejected.
 | `now_ms` as an 8-byte little-endian prefix on the input | A private framing rule inside a byte string; the canonical ABI passes `now-ms` as a typed `u64` argument at no cost | [canonical ABI][cabi] | — |
 | One generic `call(op, args...)` export | Loses the per-function signature; a hand-rolled host would have to encode an argument list, which is what the canonical ABI's flattening already specifies | the owner's discussion of 2026-09-29; no evidence note | — |
 | WIT `string` for the inputs | A WIT `string` must be UTF-8 and the release-mode lift is unchecked, so 243 non-UTF-8 JWS rows could not cross; `list<u8>` carries any bytes and the core answers as ABI v1 did | [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
-| A WIT `enum` for the environment | Lifted with an unchecked `transmute` in release builds; a `u32` the guest matches traps on every out-of-range value on every host | [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
+| A WIT `enum` for the environment | Lifted with an unchecked `transmute` in release builds; a `u32` the guest matches traps on every out-of-range value on every host. Superseded by R46 (2026-11-02): with debug assertions on for `aprv-abi` the lift is checked and traps the same way | [canonical ABI][cabi]; [canonical ABI final][cabifinal]; [enum lift][enumlift] | — |
+| Keeping `env: u32` in ABI 0.2.0 | Hand-rolled hosts would see no difference, but jco and wasmtime-py do not range-check a `u32` (ToUint32, ctypes) and the release assets would keep numbering the environments against nothing a reader can see; the checked enum costs 4,865 bytes and one Cargo setting the existing trap tests guard (R46) | [enum lift][enumlift] | the checked lift stops trapping, or a toolchain drops the per-package `debug-assertions` override |
 | WASI 0.2 (`wasm32-wasip2`) as the build target | The canonical ABI is independent of the WASI version; the p1 module with the link-time C file has no WASI imports left to adapt, and the component wrapper needs no adapter. p2 would add the adapter and the `wasi:*` imports the C file exists to remove | [canonical ABI][cabi] | a host needs WASI 0.2 interfaces from the guest |
 | memory64 | A 3 MiB input and a 256 MiB limit fit 32-bit addressing with room; memory64 costs bounds checks and is unsupported on Endive | the owner's discussion of 2026-09-29; no evidence note | inputs approach 4 GiB |
 | JCS, RFC 8785 canonical JSON | No signature is computed over our JSON and the fixtures compare by value; canonical form has no consumer here (R34) | [0.7 API][api07] | our JSON is ever signed or hashed |
@@ -2609,6 +2686,7 @@ One table for everything the plan measured or considered and rejected.
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
 [cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
+[enumlift]: ../evidence/2026-11-02-abi-0.2-enum-lift.md
 [api07]: ../design/0.7-api.md
 [cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md

@@ -56,7 +56,7 @@ final class HttpTransportTest extends TestCase
     private static function info(
         string $source = 'defaults',
         array $fingerprints = [],
-        string $abi = 'aprv:verifier@0.1.0',
+        string $abi = 'aprv:verifier@0.2.0',
         mixed $maxInputBytes = 3145729,
     ): array {
         return [
@@ -140,7 +140,7 @@ final class HttpTransportTest extends TestCase
 
     public function testTheCutIsTheLengthTheServerStatedNotAConstant(): void
     {
-        $info = self::info('defaults', [], 'aprv:verifier@0.1.0', 5);
+        $info = self::info('defaults', [], 'aprv:verifier@0.2.0', 5);
         $server = $this->server([self::INFO_PATH => $info, 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
         $transport->open(null);
@@ -155,7 +155,7 @@ final class HttpTransportTest extends TestCase
     public function testAServerThatStatesNoInputLengthFailsCreate(): void
     {
         foreach ([null, 0, -1, '3145729', 1.5] as $stated) {
-            $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.1.0', $stated)]);
+            $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.2.0', $stated)]);
             try {
                 (new HttpTransport($server->url))->open(null);
                 self::fail('create must refuse a server stating ' . json_encode($stated));
@@ -315,7 +315,7 @@ final class HttpTransportTest extends TestCase
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
-            self::assertStringContainsString('aprv:verifier@0.1.0', $e->getMessage());
+            self::assertStringContainsString('aprv:verifier@0.2.0', $e->getMessage());
         }
     }
 
@@ -338,7 +338,7 @@ final class HttpTransportTest extends TestCase
         yield 'another root' => [[$a], self::info('configured', [$fb]), false];
         yield 'a server that reports no roots' => [
             [$a],
-            ['status' => 200, 'body' => '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":3145729}}'],
+            ['status' => 200, 'body' => '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729}}'],
             false,
         ];
     }

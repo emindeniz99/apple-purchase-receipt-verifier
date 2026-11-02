@@ -59,7 +59,9 @@ function answer(slots, row) {
         case 'verify-signed-data':
           return b.verifySignedData(now, input);
         case 'verify-receipt-endpoint':
-          return b.verifyReceiptEndpoint(row.env, now, input);
+          // The archive's calls number the environment 0 and 1, as the
+          // core module's discriminant; jco takes the WIT enum's case name.
+          return b.verifyReceiptEndpoint(['production', 'sandbox'][row.env] ?? row.env, now, input);
         default:
           throw new Error(`unknown fn ${row.fn}`);
       }

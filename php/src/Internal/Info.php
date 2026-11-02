@@ -15,7 +15,7 @@ use RuntimeException;
 final class Info
 {
     /** The ABI of the WIT this package's wire contract is written against. */
-    public const ABI = 'aprv:verifier@0.1.0';
+    public const ABI = 'aprv:verifier@0.2.0';
 
     private function __construct()
     {

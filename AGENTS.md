@@ -63,12 +63,15 @@ where they overlap, they agree.
   carry DER to the module). Do not grow the allowlist to make a wrapper
   "help" the core.
 - **`aprv.wasm` imports exactly `random-get`, and its WIT is the
-  contract.** `rust/bindings/abi/wit/aprv.wit` (`aprv:verifier@0.1.0`) is
+  contract.** `rust/bindings/abi/wit/aprv.wit` (`aprv:verifier@0.2.0`) is
   what every host binds. `rust/bindings/abi/build.sh` and
   `tools/check-wasm.sh` fail on any other import or export, and CI diffs
   the interface read back from the component against the committed file.
-  Changing the WIT is changing the ABI version: the export names carry it,
-  so every wrapper must move with it in the same PR.
+  Changing a name or a type in the WIT is changing the ABI version: the
+  export names carry it, so every wrapper must move with it in the same PR.
+  A doc-comment-only edit is not an ABI change and keeps the version; CI
+  (`tools/check-wit-version.sh`) fails a PR whose WIT changed anything but
+  `///` lines without moving its `package` version.
 - **Every copy of the module is pinned, and only the release tooling
   refreshes it.** Each package checks its `aprv.wasm` (Node: the
   component) against the SHA-256 in the `.sha256` file beside it. Go and

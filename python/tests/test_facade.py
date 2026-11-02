@@ -237,12 +237,12 @@ class AbiMismatchTest(unittest.TestCase):
         Verifier.__new__(Verifier)._setup(Config(roots=[ROOT]), lambda: runtime)
 
     def test_a_module_of_another_abi_version_is_refused(self) -> None:
-        wasm = double_wat({"verify@0.1.0#init": "verify@2.0.0#init"})
+        wasm = double_wat({"verify@0.2.0#init": "verify@2.0.0#init"})
         with self.assertRaises(RuntimeError) as caught:
             self.create(wasm)
         self.assertIsInstance(caught.exception, _host.AbiMismatchError)
         message = str(caught.exception)
-        self.assertIn("ABI 0.1.0", message)
+        self.assertIn("ABI 0.2.0", message)
         self.assertIn("aprv:verifier/verify@2.0.0#init", message, "names the exports it has")
 
     def test_a_module_that_imports_anything_else_is_refused(self) -> None:

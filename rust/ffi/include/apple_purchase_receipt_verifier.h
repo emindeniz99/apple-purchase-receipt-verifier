@@ -50,6 +50,12 @@
 #include <stdint.h>
 
 // The environment [`aprv_verify_receipt_endpoint`] answers as.
+//
+// This ABI numbers the two 1 and 2, and answers `InvalidArgument` for 0
+// and for any other value, so a zero-initialised argument names neither.
+// `aprv.wasm`'s WIT `environment` enum numbers the same two 0 and 1. This
+// ABI keeps 1 and 2: renumbering would silently turn an existing caller's
+// 1 from production into sandbox.
 enum AprvEnvironment
 #ifdef __cplusplus
   : uint32_t

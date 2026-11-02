@@ -165,13 +165,13 @@ public class FacadeTests
     public void AModuleOfAnotherAbiVersionFailsCreateNamingWhatItExports()
     {
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Over(new StubModule { Version = "2.0.0" }));
-        Assert.Contains("aprv:verifier@0.1.0", error.Message, StringComparison.Ordinal);
+        Assert.Contains("aprv:verifier@0.2.0", error.Message, StringComparison.Ordinal);
         Assert.Contains("aprv:verifier/verify@2.0.0#init", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("aprv:verifier/verify@0.1.0#verify-signed-data")]
-    [InlineData("cabi_post_aprv:verifier/verify@0.1.0#init")]
+    [InlineData("aprv:verifier/verify@0.2.0#verify-signed-data")]
+    [InlineData("cabi_post_aprv:verifier/verify@0.2.0#init")]
     [InlineData("cabi_realloc")]
     public void AModuleLackingAnExportFailsCreate(string missing)
     {
@@ -190,7 +190,7 @@ public class FacadeTests
             "#init\") (param i32 i32) (result i32)", "#init\") (param i32 i32 i32) (result i32)", StringComparison.Ordinal);
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => new AprvRuntime(Module.ConvertText(wat), null));
-        Assert.Contains("aprv:verifier/verify@0.1.0#init does not have the canonical-ABI shape", error.Message, StringComparison.Ordinal);
+        Assert.Contains("aprv:verifier/verify@0.2.0#init does not have the canonical-ABI shape", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

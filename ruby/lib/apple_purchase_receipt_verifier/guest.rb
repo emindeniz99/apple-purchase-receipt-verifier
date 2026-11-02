@@ -88,8 +88,8 @@ module ApplePurchaseReceiptVerifier
     # Calls one operation.
     #
     # @param name [String] one of {Runtime::OPERATIONS}
-    # @param scalars [Array<Integer>] the operation's `u32` and `u64`
-    #   parameters, in declaration order
+    # @param scalars [Array<Integer>] the operation's `environment` (its
+    #   discriminant, 0 or 1) and `s64` parameters, in declaration order
     # @param input [String] the `list<u8>` parameter's bytes; at most
     #   {#max_input_bytes} of them are passed on
     # @return [String] the operation's `string` result, UTF-8

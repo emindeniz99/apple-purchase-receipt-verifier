@@ -34,7 +34,7 @@ $entry = [
 file_put_contents($dir . '/log.jsonl', json_encode($entry, JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND);
 
 if (($arguments[0] ?? '') === 'info') {
-    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.1.0","limits":{"max_input_bytes":3145729}}';
+    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729}}';
     exit(0);
 }
 if (isset($mode['sleep'])) {

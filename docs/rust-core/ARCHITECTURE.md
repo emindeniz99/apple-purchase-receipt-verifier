@@ -173,16 +173,25 @@ rounds on the same `wasm32-wasip1` core module as ABI v1
 ([canonical ABI][cabi], [canonical ABI final][cabifinal]).
 
 ```wit
-package aprv:verifier@0.1.0;
+package aprv:verifier@0.2.0;
 
 interface verify {
-  /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
-  /// Answers {"ok":true} or {"ok":false,"message":"..."}; a second call after {"ok":true} traps.
+  /// Which of Apple's two verifyReceipt URLs `verify-receipt-endpoint` answers as.
+  enum environment {
+    production,
+    sandbox,
+  }
+
+  /// Once per instance, before any verify call. `{"roots":["<base64 of DER or PEM>", ...]}`;
+  /// `{}` or no bytes mean the three Apple roots built into the module; an empty `roots` list is refused.
+  /// Answers {"ok":true,"max_input_bytes":N} or {"ok":false,"message":"..."}. A refused init may be
+  /// retried; an init after an accepting answer traps, and so does a verify call before one.
   init: func(config-json: list<u8>) -> string;
-  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
-  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
-  /// env: 0 production, 1 sandbox; anything else traps.
-  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+  /// `now-ms`: the host's clock in milliseconds since the Unix epoch, for an input with no usable date.
+  verify-receipt: func(now-ms: s64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: s64, jws: list<u8>) -> string;
+  /// Apple's verifyReceipt response body for `request-json`, byte for byte.
+  verify-receipt-endpoint: func(env: environment, now-ms: s64, request-json: list<u8>) -> string;
 }
 
 interface host {
@@ -195,30 +204,27 @@ world aprv {
 }
 ```
 
-The WIT file is the contract (its doc comment on `init` still quotes the
-answer before R42 added `max_input_bytes`, and its "empty" now means no
-bytes, since the module refuses an empty `roots` list (R23, Q30); the
-comment waits for the next ABI version, because any edit to the WIT is
-an ABI change by this repository's rule). It lives in
+The WIT file is the contract. It lives in
 `rust/bindings/abi/wit/`, and CI diffs it against what `wasm-tools
 component wit` reads back from the built module (§9). The version in the
 package name is the ABI version:
-export names carry it (`aprv:verifier/verify@0.1.0#init`), so a wrapper
+export names carry it (`aprv:verifier/verify@0.2.0#init`), so a wrapper
 built for one version finds no export on a module of another and fails at
 `create` instead of misreading arguments.
 
 **What the core module exports** (the canonical ABI's flattening of the
-WIT; `list<u8>` and `string` become `(ptr, len)`, `u64` becomes `i64`,
-`u32` becomes `i32`, and a returned string comes back through a return
-area):
+WIT; `list<u8>` and `string` become `(ptr, len)`, `s64` becomes `i64`,
+the `environment` enum and `u32` become `i32`, and a returned string
+comes back through a return area; ABI 0.2.0 changed the WIT types of
+`env` and `now-ms` and none of these):
 
 ```text
-import  "aprv:verifier/host@0.1.0" "random-get"                     (len i32, retptr i32) -> ()
-export  "aprv:verifier/verify@0.1.0#init"                            (ptr, len) -> retptr
-export  "aprv:verifier/verify@0.1.0#verify-receipt"                  (now i64, ptr, len) -> retptr
-export  "aprv:verifier/verify@0.1.0#verify-signed-data"              (now i64, ptr, len) -> retptr
-export  "aprv:verifier/verify@0.1.0#verify-receipt-endpoint"         (env i32, now i64, ptr, len) -> retptr
-export  "cabi_post_aprv:verifier/verify@0.1.0#<each of the four>"   (retptr) -> ()
+import  "aprv:verifier/host@0.2.0" "random-get"                     (len i32, retptr i32) -> ()
+export  "aprv:verifier/verify@0.2.0#init"                            (ptr, len) -> retptr
+export  "aprv:verifier/verify@0.2.0#verify-receipt"                  (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@0.2.0#verify-signed-data"              (now i64, ptr, len) -> retptr
+export  "aprv:verifier/verify@0.2.0#verify-receipt-endpoint"         (env i32, now i64, ptr, len) -> retptr
+export  "cabi_post_aprv:verifier/verify@0.2.0#<each of the four>"   (retptr) -> ()
 export  "cabi_realloc"                                                (old, old_size, align, new_size) -> ptr
 export  memory, _initialize
 ```
@@ -248,15 +254,20 @@ older module and is a module failure.
   core, which answers a non-UTF-8 JWS with `MALFORMED` as a value (the
   0.6 core's `INVALID_JWS_FORMAT`), the same 243 rows ABI v1 answered ([canonical ABI final][cabifinal]).
   Every output is JSON text the guest produced, so `string` is safe there.
-- **`env` is a `u32`, not a WIT enum.** An enum lifts with an unchecked
-  `transmute` in release builds; the `u32` is matched in the guest, which
-  traps on anything but 0 and 1 (2, 255 and 2^32-1 all trapped on every
-  host). Generated bindings do not range-check it: jco applies ToUint32
-  (`2**32 + 1` becomes 1) and wasmtime-py wraps through ctypes, so the
-  wrapper's own `Environment` type is what keeps a caller on 0 or 1
-  ([canonical ABI final][cabifinal], finding 2).
-- **`now-ms` is a `u64` argument** on every verify call (§6). The core's
-  chain instant takes at most `i64::MAX`.
+- **`env` is a WIT enum, lifted with a check** (DECISIONS.md R46). jco and
+  Wasmtime bindings take a case name and refuse anything else before the
+  module is entered. A hand-rolled host passes the discriminant, 0
+  (`production`) or 1 (`sandbox`). wit-bindgen lifts an enum with an
+  unchecked `transmute` unless debug assertions are on, and unchecked the
+  real module answered 2 as production and 255 as sandbox;
+  `rust/Cargo.toml` turns them on for `aprv-abi` alone
+  (`[profile.wasm.package.aprv-abi]`), so 2, 255 and 2^32-1 trap on every
+  host, and every hand-rolled host's env-trap test guards the setting
+  ([enum lift][enumlift]). The wrapper's own `Environment` type still
+  keeps a caller on the two cases.
+- **`now-ms` is an `s64` argument** on every verify call (§6), the core's
+  own instant type, so every value reaches the core. Every wrapper refuses
+  a clock before 1970 itself (`INTERNAL_ERROR`, STATUS.md).
 - **`init`** parses the roots once per instance. `{}` means the three
   Apple roots compiled into the module, and it is what every wrapper sends
   for them; no bytes at all mean the same. An empty `roots` list is
@@ -278,7 +289,9 @@ older module and is a module failure.
   to that string, so the largest receipt the ABI takes is 2,359,296 bytes
   of DER, as Apple's own endpoint takes base64 ([ABI v1][abi]).
 - **Traps** are `core::arch::wasm32::unreachable()`: no panic path, no
-  message formatting.
+  message formatting. The one exception is the `env` lift's check, a
+  panic in wit-bindgen's glue that `panic = "abort"` ends in
+  `unreachable` too.
 
 **Two ways to call it.** A host with a component runtime binds the WIT
 and writes no ABI code: jco on Node, Deno and Bun (a generated `aprv.js`),
@@ -317,7 +330,7 @@ memory the same size.
 | Verified | the module's result | the payload (0.7) |
 | Verification failure | the module's result | a result with the 0.7 `Reason` |
 | Caller misuse | the wrapper's own checks (a null `Config` or `Environment`, an empty root set, a root `init` refuses) | the language's programmer error at `create` or at the call, as in 0.7 |
-| ABI mismatch | the module lacks the `@0.1.0` exports the wrapper binds, or the runtime rejects the imports | a hard failure at `create` naming the version the wrapper expects and the export names the module has; never a verdict |
+| ABI mismatch | the module lacks the `@0.2.0` exports the wrapper binds, or the runtime rejects the imports | a hard failure at `create` naming the version the wrapper expects and the export names the module has; never a verdict |
 | Trap or internal failure | a guest trap, a runtime error, an out-of-range result pointer, malformed result JSON | `INTERNAL_ERROR` (21009 at the endpoint); the instance is discarded; the cause names the trap |
 | Server process failure | `aprv-server` did not answer: start failed, the child died, the connection broke, HTTP 5xx | `INTERNAL_ERROR` (21009 at the endpoint) with a cause of its own type, so it is never mistaken for a trap |
 
@@ -413,8 +426,8 @@ the hand-written ABI code of the final round
 - Memory: `ByteArrayMemory`, 24 to 42% faster than the default with
   byte-identical output ([wasm speed][speed]).
 - **Hand-rolled canonical ABI, 35 lines**: a four-entry signature table
-  (`u32`, `u64`, `list<u8>`), `cabi_realloc` for the input, the export by
-  its `@0.1.0` name, the return area read, `cabi_post_*`. A wrong Java
+  (the enum's discriminant, `s64`, `list<u8>`), `cabi_realloc` for the
+  input, the export by its `@0.2.0` name, the return area read, `cabi_post_*`. A wrong Java
   type or argument count is a host error before any call. `random-get`
   from `SecureRandom`, written through `cabi_realloc` into guest memory.
 - A trap reaches Java as `WasmRuntimeException`, `TrapException` or
@@ -856,7 +869,7 @@ workspace ([CMS everywhere §1][cms]).
 | The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |
 | `aprv.wasm` takes no unmeasured path | Every change runs the corpus through a host whose import object traps on anything unexpected, with the module's own WASI stubs trapping; any trap or any row that differs from native fails |
 | One `aprv.wasm` everywhere | The release builds it once; every package's copy (npm, Go, Swift, PyPI, RubyGems, NuGet, the Endive input, the server's `.cwasm` input) is checked against its published SHA-256; the committed Go and Swift copies are rebuilt in CI and diffed |
-| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
+| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap on a hand-rolled host, through the checked lift of R46; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
 | The wire shapes match their schemas | Every corpus answer and every `init` configuration and answer validates against the JSON Schema 2020-12 files in `rust/bindings/wire/schema/`, from the core, the C ABI and `aprv.wasm` |
 | The server's HTTP contract is its OpenAPI document | Spectral lints `rust/server/openapi.yaml`; Schemathesis runs it against the server in the `aprv-server` job; non-result errors are RFC 9457 |
 | Same verdicts everywhere | Every host runs every `fixtures/cases.json` case as one test each; the `-wasm` artifact runs them once per engine; the main Java artifact runs them too (SURFACE.md §6) |
@@ -876,6 +889,7 @@ workspace ([CMS everywhere §1][cms]).
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
 [cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
+[enumlift]: ../evidence/2026-11-02-abi-0.2-enum-lift.md
 [payload]: ../evidence/2026-09-26-openssl-asn1-payload.md
 [speed]: ../evidence/2026-09-26-wasm-speed.md
 [endive]: ../evidence/2026-09-26-endive-build-time-jvm.md

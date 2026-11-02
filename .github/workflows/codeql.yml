@@ -223,12 +223,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # CodeQL reads the source and never runs the library. aprv.wasm is not
-      # in git (ci.yml's rust-wasm builds it for the jobs that run it), and
-      # Go's go:embed, Swift's resource list and the .NET project refuse to
-      # compile without a file there, which leaves the library itself out of
-      # those three databases. An empty file satisfies the compile; nothing
-      # built here is run or shipped.
+      # CodeQL reads the source and never runs the library. Go and Swift
+      # commit aprv.wasm (DECISIONS.md R14), but .NET does not (ci.yml's
+      # rust-wasm builds it for the jobs that run it), and the .NET project
+      # refuses to compile without a file there, which would leave the
+      # library itself out of its database. An empty file satisfies the
+      # compile; the step leaves a committed copy alone, and nothing built
+      # here is run or shipped.
       - name: an empty stand-in for aprv.wasm, for the compile only
         if: env.ANALYZE == 'true' && contains(fromJSON('["go", "swift", "csharp"]'), matrix.language)
         shell: bash

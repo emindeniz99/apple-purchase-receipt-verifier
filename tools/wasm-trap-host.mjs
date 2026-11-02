@@ -4,7 +4,7 @@
 // canonical-ABI final round's hand-rolled hosts do
 // (docs/evidence/2026-09-29-canonical-abi-final/hosts/wazero/main.go).
 //
-// The import object supplies `random-get` from aprv:verifier/host@0.1.0 and,
+// The import object supplies `random-get` from aprv:verifier/host@0.2.0 and,
 // for every other import the module declares, a function that throws. So
 // the module can take no path nobody measured: a call to any other import
 // traps the call, and the run fails. A module that declares any import but
@@ -27,7 +27,8 @@
 //        difference, a trap, or an unexpected import call.
 //   node tools/wasm-trap-host.mjs abi-tests <module.wasm> <cases.json>
 //        The ABI tests of the final round that a hand-rolled host can run
-//        (ARCHITECTURE.md §9): env 2, 255 and 2^32-1 trap; verify before
+//        (ARCHITECTURE.md §9): env 2, 255 and 2^32-1 trap; a clock before
+//        1970 is a value; verify before
 //        init and a second init trap; a bad root is {"ok":false} and init
 //        retries; a wrong-length random-get traps; a trap in one instance
 //        leaves another verifying; 2,000 calls leave memory the same size.
@@ -40,15 +41,17 @@ import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parseJsonExact, readFixture } from './lib/fixtures.mjs';
 
-const IFACE = 'aprv:verifier/verify@0.1.0#';
-const HOST_MODULE = 'aprv:verifier/host@0.1.0';
+const IFACE = 'aprv:verifier/verify@0.2.0#';
+const HOST_MODULE = 'aprv:verifier/host@0.2.0';
 const RANDOM_GET = 'random-get';
 
 class HostError extends Error {}
 
 // --- canonical ABI (hand-written) begin ---------------------------------
 
-// Each export's WIT parameters, in order: 'w' u32, 'd' u64, 'b' list<u8>.
+// Each export's WIT parameters, in order: 'w' the `environment` enum's
+// discriminant, lowered as any u32 so a test can pass one the enum lacks
+// (0 production, 1 sandbox); 'd' s64; 'b' list<u8>.
 const SIGS = { init: 'b', 'verify-receipt': 'db', 'verify-signed-data': 'db', 'verify-receipt-endpoint': 'wdb' };
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
@@ -107,8 +110,8 @@ class Guest {
     args.forEach((a, i) => {
       if (sig[i] === 'w' && typeof a === 'number' && Number.isInteger(a) && a >= 0 && a <= 0xffffffff) {
         out.push(a | 0);
-      } else if (sig[i] === 'd' && typeof a === 'bigint' && a >= 0n && a < 1n << 64n) {
-        out.push(BigInt.asIntN(64, a));
+      } else if (sig[i] === 'd' && typeof a === 'bigint' && a >= -(1n << 63n) && a < 1n << 63n) {
+        out.push(a);
       } else if (sig[i] === 'b' && a instanceof Uint8Array) {
         const ptr = this.exports.cabi_realloc(0, 0, 1, a.length) >>> 0;
         this.write(ptr, a); // the guest takes ownership of this buffer
@@ -586,10 +589,17 @@ function modeAbiTests(modulePath, casesPath) {
   r = attempt(() => g.call('init', bytesOf('{"roots":[]}')));
   check('an empty root list is refused: {} is the one spelling of the built-in roots', r.out === '{"ok":false,"message":"roots must not be empty"}', show(r));
 
+  // wit-bindgen's enum lift traps on these only because rust/Cargo.toml
+  // turns debug assertions on for aprv-abi ([profile.wasm.package.aprv-abi]);
+  // without it 2 answers as production and 255 as sandbox (DECISIONS.md R46).
   for (const env of [2, 255, 0xffffffff]) {
     r = attempt(() => fresh().call('verify-receipt-endpoint', env, now(), request));
     check(`endpoint with env ${env} traps`, r.trap === true, show(r));
   }
+  // now-ms is an s64 (ABI 0.2.0): a clock before 1970 is a value, not a trap.
+  r = attempt(() => fresh().call('verify-receipt', -1n, g5));
+  const atMin = attempt(() => fresh().call('verify-receipt-endpoint', 1, -(1n << 63n), request));
+  check('now-ms -1 and i64::MIN are values', !r.error && JSON.parse(r.out).verified === true && atMin.out === '{"status":21009}', `${show(r)}; ${show(atMin)}`);
 
   let wrong = fresh(jwsConfig, { randomTrim: 1 });
   r = attempt(() => wrong.call('verify-signed-data', now(), jws));

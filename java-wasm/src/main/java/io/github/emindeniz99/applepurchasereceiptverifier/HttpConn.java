@@ -150,7 +150,7 @@ final class HttpConn implements Closeable {
             head.append("X-Aprv-Token: ").append(target.token).append("\r\n");
         }
         if (nowMs != null) {
-            head.append("X-Aprv-Now-Ms: ").append(Long.toUnsignedString(nowMs)).append("\r\n");
+            head.append("X-Aprv-Now-Ms: ").append(Long.toString(nowMs)).append("\r\n");
         }
         head.append("Content-Type: application/octet-stream\r\nContent-Length: ")
                 .append(body.length)

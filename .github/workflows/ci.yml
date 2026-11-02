@@ -2174,6 +2174,23 @@ jobs:
           .github/scripts/install-wasm-tools.sh "$dir"
           echo "$dir" >> "$GITHUB_PATH"
           PATH="$dir:$PATH" tools/check-wasm.sh "$RUNNER_TEMP/aprv" rust/bindings/abi/wit/aprv.wit
+      # A name or a type in the WIT is the ABI and moves the package version;
+      # a doc-comment-only edit does not (AGENTS.md). Against the PR's base:
+      # with the package line unchanged, the WIT must read back identical
+      # once its `///` lines are dropped.
+      - name: an interface change moves the WIT package version
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          if ! git cat-file -e "$BASE_SHA:rust/bindings/abi/wit/aprv.wit" 2>/dev/null; then
+            echo "the base has no rust/bindings/abi/wit/aprv.wit; nothing to compare"
+            exit 0
+          fi
+          git show "$BASE_SHA:rust/bindings/abi/wit/aprv.wit" > "$RUNNER_TEMP/base.wit"
+          tools/check-wit-version.sh "$RUNNER_TEMP/base.wit" rust/bindings/abi/wit/aprv.wit
       - name: the ABI tests on a hand-rolled host
         run: node tools/wasm-trap-host.mjs abi-tests "$RUNNER_TEMP/aprv/aprv.wasm" fixtures/cases.json
       - name: every case through the trap-on-anything host

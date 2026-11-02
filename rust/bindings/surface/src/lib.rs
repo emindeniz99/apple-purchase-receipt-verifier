@@ -149,15 +149,6 @@ pub struct Failure {
     pub message: String,
 }
 
-impl Failure {
-    fn internal(message: &str) -> Failure {
-        Failure {
-            reason: Reason::InternalError,
-            message: message.to_owned(),
-        }
-    }
-}
-
 impl From<core_api::Failure> for Failure {
     fn from(failure: core_api::Failure) -> Failure {
         Failure {
@@ -373,36 +364,10 @@ impl Verifier {
     }
 }
 
-/// The instant a boundary received, as the surface's `now_ms`.
-///
-/// The canonical ABI carries `now-ms` as a `u64`, and the core's instant is
-/// an `i64`: a value above `i64::MAX` names no instant the core can judge
-/// at, and is refused rather than narrowed.
-///
-/// # Errors
-/// An `INTERNAL_ERROR` [`Failure`]: the caller's clock, not the input, is
-/// broken.
-pub fn now_ms_from_u64(now_ms: u64) -> Result<i64, Failure> {
-    i64::try_from(now_ms).map_err(|_| Failure::internal("the clock is outside the range of an i64"))
-}
-
-/// The endpoint's answer for a call that failed before the core could run
-/// it, with a clock beyond `i64` ([`now_ms_from_u64`]): the status-only body
-/// `{"status":21009}` the core answers for every `INTERNAL_ERROR`
-/// (`AppleStatus::INTERNAL_DATA_ACCESS_ERROR`), as a clock that throws is
-/// answered in 0.7.
-#[must_use]
-pub fn endpoint_internal_error() -> String {
-    format!(
-        "{{\"status\":{}}}",
-        core_api::AppleStatus::INTERNAL_DATA_ACCESS_ERROR
-    )
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
-    use super::{core_api, now_ms_from_u64, Environment, Failure, Reason, Verifier};
+    use super::{core_api, Environment, Reason, Verifier};
     use std::path::PathBuf;
 
     fn fixture(relative: &str) -> Vec<u8> {
@@ -537,14 +502,5 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
-    }
-
-    #[test]
-    fn a_clock_beyond_i64_is_an_internal_error_never_an_instant() {
-        assert_eq!(now_ms_from_u64(0), Ok(0));
-        assert_eq!(now_ms_from_u64(i64::MAX as u64), Ok(i64::MAX));
-        let failure: Failure = now_ms_from_u64(i64::MAX as u64 + 1).unwrap_err();
-        assert_eq!(failure.reason, Reason::InternalError);
-        assert_eq!(now_ms_from_u64(u64::MAX).unwrap_err(), failure);
     }
 }

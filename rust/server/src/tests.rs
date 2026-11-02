@@ -11,7 +11,7 @@
 
 use crate::http::{self, App, ROUTES};
 use crate::roots::{Roots, DEFAULT_ROOT_SHA256};
-use crate::runtime::{Load, Op, Runtime, Verifier};
+use crate::runtime::{Environment, Load, Op, Runtime, Verifier};
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
@@ -151,8 +151,8 @@ async fn a_verification_result_is_200_with_the_module_json_byte_for_byte() {
     // The endpoint answers Apple's format on both routes.
     let req = [br#"{"receipt-data":""#.as_slice(), &g5(), br#""}"#].concat();
     for (path, env) in [
-        ("/v1/verify-receipt/sandbox", 1),
-        ("/v1/verify-receipt/production", 0),
+        ("/v1/verify-receipt/sandbox", Environment::Sandbox),
+        ("/v1/verify-receipt/production", Environment::Production),
     ] {
         let (s, _, body) = send(
             &r,
@@ -183,7 +183,7 @@ fn module_answer(v: &Verifier, op: Op, input: &[u8]) -> String {
         .unwrap()
 }
 
-const NOW: u64 = 1_700_000_000_000;
+const NOW: i64 = 1_700_000_000_000;
 
 /// Each route with the size fixtures it takes (fixtures/limits, at and over
 /// the caps) and bodies far over the module's input length and past
@@ -192,11 +192,11 @@ fn size_inputs() -> Vec<(&'static str, Op, String, Vec<u8>)> {
     let receipt = Op::VerifyReceipt { now_ms: NOW };
     let jws = Op::VerifySignedData { now_ms: NOW };
     let production = Op::Endpoint {
-        env: 0,
+        env: Environment::Production,
         now_ms: NOW,
     };
     let sandbox = Op::Endpoint {
-        env: 1,
+        env: Environment::Sandbox,
         now_ms: NOW,
     };
     let routes = [
@@ -354,7 +354,7 @@ async fn over_a_connection_the_drain_keeps_it_and_past_the_drain_it_closes() {
     let want = module_answer(
         &v,
         Op::Endpoint {
-            env: 1,
+            env: Environment::Sandbox,
             now_ms: NOW,
         },
         &vec![b'A'; max_input()],
@@ -426,7 +426,13 @@ async fn over_a_connection_whitespace_around_the_clock_is_not_part_of_it() {
         r#"{{"receipt-data":"{}"}}"#,
         String::from_utf8(g5()).unwrap()
     );
-    let answer = |now_ms| module_answer(&v, Op::Endpoint { env: 1, now_ms }, body.as_bytes());
+    let answer = |now_ms| {
+        let op = Op::Endpoint {
+            env: Environment::Sandbox,
+            now_ms,
+        };
+        module_answer(&v, op, body.as_bytes())
+    };
     let want = answer(NOW);
     assert_ne!(want, answer(NOW + 1000), "the answer moves with the clock");
     tokio::task::spawn_blocking(move || {
@@ -518,7 +524,17 @@ async fn a_bad_clock_header_404_and_405_are_problems() {
     // " 1" reaches the handler only here, where nothing parsed HTTP; over a
     // connection hyper strips the padding first
     // (over_a_connection_whitespace_around_the_clock_is_not_part_of_it).
-    for bad in ["", "-1", "1.5", "18446744073709551616", "0x10", " 1"] {
+    // WIT `now-ms` is an `s64` (ABI 0.2.0): above i64::MAX is refused too.
+    for bad in [
+        "",
+        "-1",
+        "1.5",
+        "9223372036854775808",
+        "18446744073709551615",
+        "18446744073709551616",
+        "0x10",
+        " 1",
+    ] {
         let (s, ct, body) = send(
             &r,
             "POST",
@@ -534,11 +550,11 @@ async fn a_bad_clock_header_404_and_405_are_problems() {
         &r,
         "POST",
         "/v1/receipt/verify",
-        &[("x-aprv-now-ms", "18446744073709551615")],
+        &[("x-aprv-now-ms", "9223372036854775807")],
         g5(),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "u64::MAX is a clock");
+    assert_eq!(s, StatusCode::OK, "i64::MAX is a clock");
     let (s, ct, body) = send(&r, "GET", "/v1/nothing", &[], vec![]).await;
     assert_eq!(
         (s, problem(&ct, &body)["code"].as_str()),
@@ -709,11 +725,8 @@ fn a_store_holds_exactly_one_component_instance() {
 fn a_trapped_pool_instance_is_discarded_and_the_next_call_gets_a_fresh_one() {
     let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
     let v = Verifier::new(rt, b"{}".to_vec(), true).unwrap();
-    let req = [br#"{"receipt-data":""#.as_slice(), &g5(), br#""}"#].concat();
-    // env 2 is not a value a route produces; the guest traps on it.
-    let e = v
-        .invoke(Op::Endpoint { env: 2, now_ms: 0 }, &req)
-        .unwrap_err();
+    // A pooled instance has had its init; a second one traps in the guest.
+    let e = v.invoke(Op::Init, b"{}").unwrap_err();
     assert!(matches!(e, crate::runtime::InvokeError::Trap(_)), "{e:?}");
     assert!(v
         .invoke(Op::VerifyReceipt { now_ms: 0 }, &g5())

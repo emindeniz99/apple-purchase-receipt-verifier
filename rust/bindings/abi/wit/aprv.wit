@@ -1,13 +1,22 @@
-package aprv:verifier@0.1.0;
+package aprv:verifier@0.2.0;
 
 interface verify {
-  /// Once per instance. `{"roots":["<base64 DER>", ...]}`; empty or {} = the built-in Apple roots.
-  /// Answers {"ok":true} or {"ok":false,"message":"..."}; a second call after {"ok":true} traps.
+  /// Which of Apple's two verifyReceipt URLs `verify-receipt-endpoint` answers as.
+  enum environment {
+    production,
+    sandbox,
+  }
+
+  /// Once per instance, before any verify call. `{"roots":["<base64 of DER or PEM>", ...]}`;
+  /// `{}` or no bytes mean the three Apple roots built into the module; an empty `roots` list is refused.
+  /// Answers {"ok":true,"max_input_bytes":N} or {"ok":false,"message":"..."}. A refused init may be
+  /// retried; an init after an accepting answer traps, and so does a verify call before one.
   init: func(config-json: list<u8>) -> string;
-  verify-receipt: func(now-ms: u64, receipt-base64: list<u8>) -> string;
-  verify-signed-data: func(now-ms: u64, jws: list<u8>) -> string;
-  /// env: 0 production, 1 sandbox; anything else traps.
-  verify-receipt-endpoint: func(env: u32, now-ms: u64, request-json: list<u8>) -> string;
+  /// `now-ms`: the host's clock in milliseconds since the Unix epoch, for an input with no usable date.
+  verify-receipt: func(now-ms: s64, receipt-base64: list<u8>) -> string;
+  verify-signed-data: func(now-ms: s64, jws: list<u8>) -> string;
+  /// Apple's verifyReceipt response body for `request-json`, byte for byte.
+  verify-receipt-endpoint: func(env: environment, now-ms: s64, request-json: list<u8>) -> string;
 }
 
 interface host {

@@ -140,6 +140,11 @@ class EndiveAbiTest {
 
     // ------------------------------------------------------------ env
 
+    /**
+     * wit-bindgen's enum lift traps on these only because rust/Cargo.toml turns
+     * debug assertions on for aprv-abi ({@code [profile.wasm.package.aprv-abi]});
+     * without it 2 answers as production and 255 as sandbox (DECISIONS.md R46).
+     */
     @Test
     void anEnvOtherThanZeroOrOneTraps() throws Exception {
         for (int env : new int[] {2, 255, -1}) {
