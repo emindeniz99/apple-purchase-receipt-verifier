@@ -544,9 +544,11 @@ strings, which the module tells apart (a PEM string holding several
 certificates is one entry): `new Config(roots: [$myRoot])`.
 "Apple's roots plus mine" is all four, Apple's three read from Apple's PKI
 page or the repository's `certs/`: the package carries no copy. With a
-server URL, the server reports the SHA-256 of each root as its `--roots`
-file decodes it, and a PEM block there decodes to its DER, so give the
-`Config` DER for a server whose file holds PEM. Leaving the roots out
+server URL, the server reports the SHA-256 of the DER of each certificate
+it trusts: PEM in its `--roots` file, whether a block or PEM bytes in a
+base64 line, counts as the DER of each certificate in it. The client
+hashes each `Config` root as given, so give the `Config` one DER string
+per certificate for a server whose file holds PEM. Leaving the roots out
 (`new Config()`) means the built-in Apple roots. An
 empty list is not "no roots": `Verifier::create` refuses it with an
 `InvalidArgumentException`, so a list that came up empty by mistake never
