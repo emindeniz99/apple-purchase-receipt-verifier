@@ -1568,8 +1568,8 @@ jobs:
         working-directory: ruby
         run: gem push apple-purchase-receipt-verifier-*.gem
 
-  # Held (OD-03 in docs/rust-core/STATUS.md): the core stays at 0.7 on
-  # crates.io until openssl-sys accepts openssl-src 400.x. A registry build
+  # Held (OD-03 in docs/rust-core/STATUS.md): the core is not on
+  # crates.io, and waits until openssl-sys accepts openssl-src 400.x. A registry build
   # of this tree would pull openssl-src 300.x (OpenSSL 3), which
   # aprv-openssl's build script refuses, and aprv-openssl itself is not on
   # crates.io yet. The job runs again once the owner sets the repository
