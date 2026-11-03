@@ -528,12 +528,14 @@ const INSIDE: i64 = 1_735_689_600_000;
 const PAST: i64 = 4_070_908_800_000;
 
 /// The inputs the per-call-time tests run: a dated and a dateless receipt,
-/// a JWS with its signedDate, and input that fails before any clock.
+/// JWSs with their signedDate and one with no date at all, and input that
+/// fails before any clock.
 fn timed_inputs() -> (Vec<TrustAnchor>, Vec<String>, Vec<String>) {
     let roots = vec![
         common::receipt_root(),
         common::jws_root(),
         common::anchor("generated-0.7/divergence-receipt-root.der"),
+        common::anchor("generated/divergence-jws-root.der"),
     ];
     let receipts = vec![
         base64_encode(&common::receipt_der()),
@@ -545,6 +547,7 @@ fn timed_inputs() -> (Vec<TrustAnchor>, Vec<String>, Vec<String>) {
     let jwss = vec![
         common::transaction_jws(),
         common::app_transaction_jws(),
+        common::read_text_fixture("generated/transaction-no-signed-date.jws"),
         "a.b.c".to_owned(),
     ];
     (roots, receipts, jwss)
@@ -574,12 +577,21 @@ fn an_at_call_never_reads_the_configured_clock() {
             .reason(),
         Reason::InvalidCertificate
     );
-    for jws in &jwss[..2] {
+    // The third states neither signedDate nor receiptCreationDate, so only
+    // the instant decides its chain's validity.
+    for jws in &jwss[..3] {
         assert!(verifier.verify_signed_data_at(jws, INSIDE).is_ok());
         assert!(verifier
             .verify_signed_data_bytes_at(jws.as_bytes(), INSIDE)
             .is_ok());
     }
+    assert_eq!(
+        verifier
+            .verify_signed_data_at(&jwss[2], PAST)
+            .unwrap_err()
+            .reason(),
+        Reason::InvalidCertificate
+    );
     let body = format!("{{\"receipt-data\":\"{dateless}\"}}");
     for now in [INSIDE, INSIDE + 1] {
         let answer = verifier.verify_receipt_endpoint_at(Environment::Sandbox, &body, now);
