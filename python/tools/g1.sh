@@ -4,18 +4,19 @@
 #
 #     PYTHON=/path/to/venv/bin/python tools/g1.sh G1_DIR
 #
-# G1_DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
-# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
-# rows/module-<corpus>.jsonl and same.py. The steps:
+# G1_DIR is the directory tools/corpus.sh g1 assembles (the nightly's
+# corpus-reference job): aprv.wasm, aprv.component.wasm and aprv.wit built
+# from the commit, with the SHA256SUMS over them, the pinned
+# calls/<corpus>.pinned.jsonl, rows/module-<corpus>.jsonl derived from that
+# module, and same.py. The steps:
 #   1. .github/scripts/place-module.sh checks G1_DIR against its SHA256SUMS
 #      and puts aprv.wasm in the package, rewriting aprv.wasm.sha256 in this
 #      checkout. Both are for this run only and never committed: the release
 #      tooling refreshes the pin;
 #   2. every corpus through the host layer, compared byte for byte with the
 #      module's own rows. A differing row is reported, never adjusted.
-# Rows only: the test suite runs in ci.yml against the freshly built
-# module, and the archive's module predates whatever the core and the
-# shared cases changed since its release. Exit status is 0 only when every
+# Rows only: the test suite runs in ci.yml against the module built from
+# the same commit. Exit status is 0 only when every
 # row is identical. The module and the outputs stay outside the repository.
 set -eu
 G1=${1:?usage: tools/g1.sh G1_DIR}

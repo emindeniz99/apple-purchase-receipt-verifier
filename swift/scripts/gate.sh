@@ -4,11 +4,13 @@
 #
 #   swift/scripts/gate.sh DIR [--pin]
 #
-# DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
-# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl
-# (round 13's calls format, every clock pinned), rows/module-<corpus>.jsonl
-# (the module's own answers through the trap host, the reference rows) and
-# same.py (the byte-for-byte row comparison).
+# DIR is the directory tools/corpus.sh g1 assembles (the nightly's
+# corpus-reference job): aprv.wasm, aprv.component.wasm and aprv.wit built
+# from the commit, with the SHA256SUMS over them, the pinned
+# calls/<corpus>.pinned.jsonl (round 13's calls format, every clock
+# pinned), rows/module-<corpus>.jsonl (that module's own answers through
+# the trap host, the reference rows) and same.py (the byte-for-byte row
+# comparison).
 #
 #  1. checks DIR/aprv.wasm against the committed aprv.wasm.sha256 (--pin
 #     accepts a module the pin does not name), then
@@ -23,9 +25,8 @@
 #     each corpus's rows with DIR/rows/module-<corpus>.jsonl.
 #
 # Rows only: the whole suite, every case in fixtures/cases.json included,
-# runs in ci.yml against the freshly built module, and the archive's module
-# predates whatever the core and the shared cases changed since its
-# release; swift/bench times the public API on its own.
+# runs in ci.yml against the module built from the same commit;
+# swift/bench times the public API on its own.
 #
 # Environment: SCRATCH_PATH is swift build's --scratch-path (default
 # .build), OUT where the rows and logs go (default $SCRATCH_PATH/gate),

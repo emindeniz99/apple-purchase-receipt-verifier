@@ -9,9 +9,8 @@
 # CALLS holds <corpus>.pinned.jsonl and ROWS the module's own answers,
 # module-<corpus>.jsonl. Rows only: the cargo tests, the shared cases, the
 # managed and hostile smokes and the OpenAPI checks run in ci.yml against
-# the freshly built component, and the archive's component predates
-# whatever the core and the shared cases changed since its release
-# (README.md, "Tests and checks", lists each command). Optional:
+# the component built from the same commit (README.md, "Tests and checks",
+# lists each command). Optional:
 #   COMPONENT_SHA256  refuse any other component
 #   SKIP_BUILD=1      reuse OUT's binary
 #   CARGO_TARGET_DIR  as usual; the release trees are deleted after the
