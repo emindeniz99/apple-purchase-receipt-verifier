@@ -111,7 +111,7 @@ std::thread_local! {
 /// default (100) applies; the caller bounds the path by the certificates
 /// it passes.
 ///
-/// Each run's store holds one of `anchors` and nothing else (see [`run`]).
+/// Each run's store holds one of `anchors` and nothing else (see `run`).
 /// `X509_V_FLAG_PARTIAL_CHAIN` lets OpenSSL end the path at that anchor
 /// whether or not it is self-signed. That is what OpenSSL accepts, not
 /// what verifies: the core needs the WWDR intermediate below the anchor
