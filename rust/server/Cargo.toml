@@ -48,8 +48,9 @@ wasmtime = { version = "=50.0.1", default-features = false, features = ["runtime
 getrandom = "0.4"
 sha2 = { version = "0.11", default-features = false }
 # Only for the roots configuration: base64 lines and PEM `CERTIFICATE`
-# blocks are decoded to take each root's SHA-256 fingerprint for
-# `GET /v1/info`. `pem` reads the blocks, on the same base64 crate.
+# blocks, including PEM a base64 line carries, are decoded to DER, which
+# `init` receives and `GET /v1/info` fingerprints. `pem` reads the
+# blocks, on the same base64 crate.
 base64 = { version = "0.23", default-features = false, features = ["std"] }
 pem = { version = "4", default-features = false, features = ["std"] }
 serde_json = "1"

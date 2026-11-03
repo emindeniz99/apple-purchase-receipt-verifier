@@ -7,7 +7,10 @@
 //! `init`'s answer. A `--roots` file is one raw DER certificate (Apple's
 //! `.cer` files) when its first byte is 0x30, the rule the core uses to
 //! tell DER from PEM; otherwise base64 lines and PEM blocks (the `pem`
-//! crate), decoded here only to fingerprint the DER.
+//! crate). A root that is PEM, whether a block in the file or PEM bytes
+//! a base64 line or the managed roots line carries, is unwrapped here to
+//! the DER of each certificate in it, and only that DER reaches `init`:
+//! what `init` anchors is then exactly what `/v1/info` fingerprints.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -29,8 +32,9 @@ pub const DEFAULT_ROOT_SHA256: [&str; 3] = [
 pub enum Roots {
     /// The three Apple roots built into the module.
     Defaults,
-    /// The caller's own roots: the DER of each base64 line or PEM block, or
-    /// the PEM bytes a base64 line carried.
+    /// The caller's own roots, each the bytes `init` receives: a base64
+    /// line's DER, or the DER of one certificate of a PEM block or of PEM
+    /// bytes a base64 line carried. Never PEM.
     Configured(Vec<Vec<u8>>),
 }
 
@@ -46,6 +50,8 @@ impl Roots {
         }
     }
 
+    /// SHA-256 of each root `init` anchors, over its DER. `init` anchors a
+    /// DER root as the bytes it was given, and it is never given PEM.
     pub fn fingerprints(&self) -> Vec<String> {
         match self {
             Roots::Defaults => DEFAULT_ROOT_SHA256.iter().map(|s| s.to_string()).collect(),
@@ -93,59 +99,13 @@ impl Roots {
     }
 
     /// A text `--roots` file: one base64 root per line, or PEM `CERTIFICATE`
-    /// blocks, which the `pem` crate decodes to DER. Blank lines and lines
-    /// starting with `#` are ignored. An empty file is refused: an empty
-    /// root set is a caller's mistake, never a request for the defaults
-    /// (omit `--roots` for those).
-    ///
-    /// The lines from a `-----BEGIN` line to the next line starting with
-    /// `-----` are one block, handed to `pem::parse` whole: it matches the
-    /// END label to the BEGIN label and decodes the base64 between them.
+    /// blocks, which the `pem` crate decodes to DER. A base64 line may carry
+    /// PEM bytes, read the same way. Blank lines and lines starting with
+    /// `#` are ignored. An empty file is refused: an empty root set is a
+    /// caller's mistake, never a request for the defaults (omit `--roots`
+    /// for those).
     pub fn from_file_text(text: &str) -> Result<Roots, String> {
-        let mut ders = Vec::new();
-        let mut block: Option<String> = None;
-        for (n, raw) in text.lines().enumerate() {
-            let line = raw.trim();
-            // A delimiter line is five dashes, a label with no dash in it,
-            // and five dashes: `pem::parse` would skip text after the first
-            // closing dashes, which the old reader refused.
-            if line.starts_with("-----") && !is_delimiter(line) {
-                return Err(format!("line {}: malformed PEM line {line}", n + 1));
-            }
-            if let Some(b) = block.as_mut() {
-                // Blank lines would read as the end of RFC 1421 headers.
-                if line.is_empty() {
-                    continue;
-                }
-                // `pem` drops whitespace inside the base64; this file never
-                // allowed it there.
-                if !line.starts_with("-----") && line.contains(char::is_whitespace) {
-                    return Err(format!("line {}: whitespace inside PEM base64", n + 1));
-                }
-                b.push_str(line);
-                b.push('\n');
-                if line.starts_with("-----") {
-                    ders.push(
-                        certificate(b).map_err(|e| format!("line {}: PEM block: {e}", n + 1))?,
-                    );
-                    block = None;
-                }
-                continue;
-            }
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if line.starts_with("-----BEGIN ") {
-                block = Some(format!("{line}\n"));
-            } else if line.starts_with("-----") {
-                return Err(format!("line {}: {line} outside a PEM block", n + 1));
-            } else {
-                ders.push(decode(line).map_err(|e| format!("line {}: {e}", n + 1))?);
-            }
-        }
-        if block.is_some() {
-            return Err("a PEM block has no END line".into());
-        }
+        let ders = read_text(text, true)?;
         if ders.is_empty() {
             return Err(
                 "the roots file holds no root; omit --roots for the built-in Apple roots".into(),
@@ -177,11 +137,89 @@ impl Roots {
                 let s = r
                     .as_str()
                     .ok_or_else(|| format!("roots[{i}] is not a string"))?;
-                decode(s).map_err(|e| format!("roots[{i}]: {e}"))
+                decode(s)
+                    .and_then(root)
+                    .map_err(|e| format!("roots[{i}]: {e}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Roots::Configured(ders))
+        Ok(Roots::Configured(ders.concat()))
     }
+}
+
+/// The roots in a text: PEM blocks, blank lines, and, when `lines` is set
+/// (a `--roots` file), `#` comments and base64 lines, each one [`root`].
+/// PEM bytes a base64 line carries are read with `lines` unset: blocks and
+/// blank lines only, so any other text in them is refused rather than
+/// passed over as OpenSSL's reader would.
+///
+/// The lines from a `-----BEGIN` line to the next line starting with
+/// `-----` are one block, handed to `pem::parse` whole: it matches the END
+/// label to the BEGIN label and decodes the base64 between them.
+fn read_text(text: &str, lines: bool) -> Result<Vec<Vec<u8>>, String> {
+    let mut ders = Vec::new();
+    let mut block: Option<String> = None;
+    for (n, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        // A delimiter line is five dashes, a label with no dash in it, and
+        // five dashes: `pem::parse` would skip text after the first closing
+        // dashes, which the old reader refused.
+        if line.starts_with("-----") && !is_delimiter(line) {
+            return Err(format!("line {}: malformed PEM line {line}", n + 1));
+        }
+        if let Some(b) = block.as_mut() {
+            // Blank lines would read as the end of RFC 1421 headers.
+            if line.is_empty() {
+                continue;
+            }
+            // `pem` drops whitespace inside the base64; this file never
+            // allowed it there.
+            if !line.starts_with("-----") && line.contains(char::is_whitespace) {
+                return Err(format!("line {}: whitespace inside PEM base64", n + 1));
+            }
+            b.push_str(line);
+            b.push('\n');
+            if line.starts_with("-----") {
+                ders.push(certificate(b).map_err(|e| format!("line {}: PEM block: {e}", n + 1))?);
+                block = None;
+            }
+            continue;
+        }
+        if line.is_empty() || (lines && line.starts_with('#')) {
+            continue;
+        }
+        if line.starts_with("-----BEGIN ") {
+            block = Some(format!("{line}\n"));
+        } else if line.starts_with("-----") {
+            return Err(format!("line {}: {line} outside a PEM block", n + 1));
+        } else if lines {
+            ders.extend(
+                decode(line)
+                    .and_then(root)
+                    .map_err(|e| format!("line {}: {e}", n + 1))?,
+            );
+        } else {
+            return Err(format!("line {}: text outside a PEM block", n + 1));
+        }
+    }
+    if block.is_some() {
+        return Err("a PEM block has no END line".into());
+    }
+    Ok(ders)
+}
+
+/// One root as `init` takes it, as the DER `init` will anchor: bytes the
+/// core reads as PEM (`-----BEGIN` after any ASCII whitespace, its
+/// `TrustAnchor::from_der_or_pem` rule) become the DER of each
+/// certificate in them; any other bytes, DER or not, pass as they are, for
+/// `init` to anchor whole or refuse.
+fn root(bytes: Vec<u8>) -> Result<Vec<Vec<u8>>, String> {
+    if !bytes.trim_ascii_start().starts_with(b"-----BEGIN") {
+        return Ok(vec![bytes]);
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|_| "PEM root: not UTF-8".to_owned())?;
+    // Its first line that is not blank is a BEGIN line, so it holds a
+    // block or is refused for one without an END line.
+    read_text(text, false).map_err(|e| format!("PEM root: {e}"))
 }
 
 /// One PEM block's DER, if the block is a `CERTIFICATE`.
@@ -304,6 +342,132 @@ mod tests {
         let line = STANDARD.encode(&ders[0]);
         let both = Roots::from_file_text(&format!("{line}\n{pem}")).unwrap();
         assert_eq!(both.fingerprints(), [TEST_CA_SHA256, TEST_CA_SHA256]);
+    }
+
+    fn pem_of(ders: &[Vec<u8>]) -> String {
+        let mut pem = String::new();
+        for der in ders {
+            pem += "-----BEGIN CERTIFICATE-----\n";
+            for chunk in STANDARD.encode(der).as_bytes().chunks(64) {
+                pem += std::str::from_utf8(chunk).unwrap();
+                pem += "\n";
+            }
+            pem += "-----END CERTIFICATE-----\n";
+        }
+        pem
+    }
+
+    /// The finding this guards (review N7): a base64 line, or a managed
+    /// roots entry, that carries PEM bytes was passed to `init` as PEM and
+    /// fingerprinted as the PEM text, a hash no client compares. Now the
+    /// PEM is unwrapped here, `init` receives the DER, and `/v1/info`
+    /// reports the DER's SHA-256, the same as for the DER root itself.
+    #[test]
+    fn a_pem_root_in_a_base64_line_is_fingerprinted_as_its_der() {
+        let ders: Vec<Vec<u8>> = certs().into_iter().map(|(_, b)| b).collect();
+        let der_line = STANDARD.encode(&ders[2]);
+        let pem_line = STANDARD.encode(pem_of(&ders[2..]));
+        let der_json = format!(r#"{{"roots":["{der_line}"]}}"#);
+        for r in [
+            Roots::from_file_text(&format!("{der_line}\n")).unwrap(),
+            Roots::from_file_text(&format!("{pem_line}\n")).unwrap(),
+            Roots::from_config_json(&der_json).unwrap(),
+            Roots::from_config_json(&format!(r#"{{"roots":["{pem_line}"]}}"#)).unwrap(),
+        ] {
+            assert_eq!(r, Roots::Configured(vec![ders[2].clone()]));
+            assert_eq!(r.fingerprints(), [DEFAULT_ROOT_SHA256[2]]);
+            // `init` is given the DER, never the PEM.
+            assert_eq!(r.config_json(), der_json.as_bytes());
+        }
+    }
+
+    /// A PEM bundle in one base64 line is one root to `init`, which
+    /// anchors every certificate in it, so it reports one fingerprint per
+    /// certificate, in order; leading whitespace and blank lines are kept
+    /// to the core's rule for telling PEM from DER.
+    #[test]
+    fn a_pem_bundle_in_a_base64_line_has_one_fingerprint_per_certificate() {
+        let ders: Vec<Vec<u8>> = certs().into_iter().map(|(_, b)| b).collect();
+        let bundle = format!("\r\n  {}\n\n", pem_of(&ders).replace('\n', "\r\n"));
+        let line = STANDARD.encode(&bundle);
+        for r in [
+            Roots::from_file_text(&format!("# bundle\n{line}\n")).unwrap(),
+            Roots::from_config_json(&format!(r#"{{"roots":["{line}"]}}"#)).unwrap(),
+        ] {
+            assert_eq!(r, Roots::Configured(ders.clone()));
+            assert_eq!(r.fingerprints(), DEFAULT_ROOT_SHA256);
+        }
+        // Next to a DER line, in configuration order.
+        let der_line = STANDARD.encode(&ders[1]);
+        let r =
+            Roots::from_config_json(&format!(r#"{{"roots":["{der_line}","{line}"]}}"#)).unwrap();
+        assert_eq!(
+            r.fingerprints(),
+            [
+                DEFAULT_ROOT_SHA256[1],
+                DEFAULT_ROOT_SHA256[0],
+                DEFAULT_ROOT_SHA256[1],
+                DEFAULT_ROOT_SHA256[2]
+            ]
+        );
+    }
+
+    /// PEM bytes in a base64 line are blocks and blank lines only: other
+    /// text, which OpenSSL's reader would pass over, is refused, so no
+    /// certificate reaches `init` that `/v1/info` does not report.
+    #[test]
+    fn refuses_a_pem_root_with_anything_but_blocks() {
+        let der = certs().remove(0).1;
+        let pem = pem_of(&[der]);
+        let line = |text: &str| STANDARD.encode(text);
+        let refused = |text: &str| Roots::from_file_text(&format!("{}\n", line(text))).unwrap_err();
+        assert_eq!(
+            refused(&format!("{pem}trailing text\n")),
+            "line 1: PEM root: line 29: text outside a PEM block"
+        );
+        assert_eq!(
+            refused(&format!("{pem}# a comment\n")),
+            "line 1: PEM root: line 29: text outside a PEM block"
+        );
+        assert_eq!(
+            refused("-----BEGIN CERTIFICATE-----\nAQID\n"),
+            "line 1: PEM root: a PEM block has no END line"
+        );
+        assert_eq!(
+            refused("-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n"),
+            "line 1: PEM root: line 3: PEM block: only CERTIFICATE PEM blocks are read, not PRIVATE KEY"
+        );
+        assert_eq!(
+            Roots::from_config_json(&format!(
+                r#"{{"roots":["{}"]}}"#,
+                STANDARD.encode(b"-----BEGIN \xff")
+            ))
+            .unwrap_err(),
+            "roots[0]: PEM root: not UTF-8"
+        );
+        // Bytes that are neither DER nor PEM still pass whole, for `init`
+        // to refuse, as before.
+        assert_eq!(
+            Roots::from_file_text("AQID\n").unwrap(),
+            Roots::Configured(vec![vec![1, 2, 3]])
+        );
+    }
+
+    /// The built-in roots are reported as the pinned fingerprints, which
+    /// this change leaves as they were.
+    #[test]
+    fn the_built_in_roots_report_the_pinned_fingerprints() {
+        assert_eq!(
+            Roots::Defaults.info(),
+            json!({
+                "source": "defaults",
+                "sha256": [
+                    "b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024",
+                    "c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050",
+                    "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",
+                ],
+            })
+        );
     }
 
     #[test]
