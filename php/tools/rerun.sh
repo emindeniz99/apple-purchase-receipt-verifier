@@ -3,8 +3,7 @@
 # corpus through the façade over both transports, compared with the module's
 # own rows. Rows only: the phpunit suites (the shared cases through the CLI
 # and over HTTP, the façade, transport and installer tests) run in ci.yml
-# against the freshly built binary, and the archive's module predates
-# whatever the core and the shared cases changed since its release.
+# against the binary built from the same commit.
 #
 #   tools/rerun.sh /path/to/aprv /path/to/g1
 #

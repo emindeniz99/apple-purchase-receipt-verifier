@@ -29,6 +29,13 @@ use std::sync::Arc;
 /// The clock is read only when a verdict needs it, so input that fails its
 /// own checks never reaches it.
 ///
+/// Every method has an `_at` twin that takes the instant as an argument,
+/// `now_ms` in epoch milliseconds, in place of the [`Config`] clock, which
+/// it never reads. The instant is used where the clock would be: the chain
+/// instant of a receipt or JWS that carries no usable signing date, and
+/// the endpoint's `request_date`. At the same instant the two forms give
+/// the same answer.
+///
 /// ```no_run
 /// use apple_purchase_receipt_verifier::{Config, Verifier};
 ///
@@ -37,6 +44,8 @@ use std::sync::Arc;
 ///     Ok(receipt) => println!("{}", receipt.to_json()),
 ///     Err(failure) => eprintln!("rejected: {}", failure.reason()),
 /// }
+/// // The same check at a given instant, whatever the configured clock says.
+/// let _ = verifier.verify_receipt_at("MIIT...", 1_735_689_600_000);
 /// ```
 #[derive(Clone)]
 pub struct Verifier {
@@ -70,7 +79,29 @@ impl Verifier {
     /// # Errors
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_receipt_bytes(&self, base64: &[u8]) -> Result<ReceiptPayload, Failure> {
-        self.contained(|clock| receipt::verify(base64, &self.roots, clock))
+        self.receipt(base64, &*self.clock)
+    }
+
+    /// [`verify_receipt`](Verifier::verify_receipt) at `now_ms`, epoch
+    /// milliseconds, in place of the [`Config`] clock.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_receipt_at(&self, base64: &str, now_ms: i64) -> Result<ReceiptPayload, Failure> {
+        self.verify_receipt_bytes_at(base64.as_bytes(), now_ms)
+    }
+
+    /// [`verify_receipt_bytes`](Verifier::verify_receipt_bytes) at
+    /// `now_ms`, epoch milliseconds, in place of the [`Config`] clock.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_receipt_bytes_at(
+        &self,
+        base64: &[u8],
+        now_ms: i64,
+    ) -> Result<ReceiptPayload, Failure> {
+        self.receipt(base64, &move || now_ms)
     }
 
     /// Verifies an Apple-signed compact JWS and returns its payload,
@@ -90,7 +121,29 @@ impl Verifier {
     /// # Errors
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_signed_data_bytes(&self, jws: &[u8]) -> Result<JsonPayload, Failure> {
-        self.contained(|clock| jws::verify(jws, &self.roots, clock))
+        self.signed_data(jws, &*self.clock)
+    }
+
+    /// [`verify_signed_data`](Verifier::verify_signed_data) at `now_ms`,
+    /// epoch milliseconds, in place of the [`Config`] clock.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_signed_data_at(&self, jws: &str, now_ms: i64) -> Result<JsonPayload, Failure> {
+        self.verify_signed_data_bytes_at(jws.as_bytes(), now_ms)
+    }
+
+    /// [`verify_signed_data_bytes`](Verifier::verify_signed_data_bytes) at
+    /// `now_ms`, epoch milliseconds, in place of the [`Config`] clock.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_signed_data_bytes_at(
+        &self,
+        jws: &[u8],
+        now_ms: i64,
+    ) -> Result<JsonPayload, Failure> {
+        self.signed_data(jws, &move || now_ms)
     }
 
     /// The response body Apple's `verifyReceipt` endpoint at `environment`
@@ -110,23 +163,72 @@ impl Verifier {
         environment: Environment,
         request_json: &[u8],
     ) -> String {
+        self.endpoint(environment, request_json, &*self.clock)
+    }
+
+    /// [`verify_receipt_endpoint`](Verifier::verify_receipt_endpoint) at
+    /// `now_ms`, epoch milliseconds, in place of the [`Config`] clock:
+    /// `request_date` is `now_ms`.
+    #[must_use]
+    pub fn verify_receipt_endpoint_at(
+        &self,
+        environment: Environment,
+        request_json: &str,
+        now_ms: i64,
+    ) -> String {
+        self.verify_receipt_endpoint_bytes_at(environment, request_json.as_bytes(), now_ms)
+    }
+
+    /// [`verify_receipt_endpoint_bytes`](Verifier::verify_receipt_endpoint_bytes)
+    /// at `now_ms`, epoch milliseconds, in place of the [`Config`] clock:
+    /// `request_date` is `now_ms`.
+    #[must_use]
+    pub fn verify_receipt_endpoint_bytes_at(
+        &self,
+        environment: Environment,
+        request_json: &[u8],
+        now_ms: i64,
+    ) -> String {
+        self.endpoint(environment, request_json, &move || now_ms)
+    }
+
+    // The one implementation of each operation. `now` is how to get the
+    // time, never the time itself: the Config clock for the plain methods,
+    // a closure returning `now_ms` for the `_at` ones. It is wrapped in a
+    // lazy `Clock`, read at most once and only where a verdict needs it.
+
+    fn receipt(&self, base64: &[u8], now: &dyn Fn() -> i64) -> Result<ReceiptPayload, Failure> {
+        self.contained(now, |clock| receipt::verify(base64, &self.roots, clock))
+    }
+
+    fn signed_data(&self, jws: &[u8], now: &dyn Fn() -> i64) -> Result<JsonPayload, Failure> {
+        self.contained(now, |clock| jws::verify(jws, &self.roots, clock))
+    }
+
+    fn endpoint(
+        &self,
+        environment: Environment,
+        request_json: &[u8],
+        now: &dyn Fn() -> i64,
+    ) -> String {
         if let Err(failure) = self.check_anchors() {
             return endpoint::status_only(endpoint::status(failure.reason()));
         }
-        let clock = Clock::new(&*self.clock);
+        let clock = Clock::new(now);
         catch_unwind(AssertUnwindSafe(|| {
             endpoint::respond(environment, request_json, &self.roots, &clock)
         }))
         .unwrap_or_else(|_| endpoint::status_only(endpoint::status(Reason::InternalError)))
     }
 
-    /// Runs `verify` with a lazy clock, containing a panic.
+    /// Runs `verify` with a lazy clock over `now`, containing a panic.
     fn contained<T>(
         &self,
+        now: &dyn Fn() -> i64,
         verify: impl FnOnce(&Clock<'_>) -> Result<T, Failure>,
     ) -> Result<T, Failure> {
         self.check_anchors()?;
-        let clock = Clock::new(&*self.clock);
+        let clock = Clock::new(now);
         catch_unwind(AssertUnwindSafe(|| verify(&clock))).unwrap_or_else(|_| {
             // Nothing that is only known after a panic, its text included,
             // reaches the caller.
@@ -159,14 +261,15 @@ impl fmt::Debug for Verifier {
     }
 }
 
-/// The configured clock, read at most once and only when asked.
+/// How to get the time (the configured clock, or a fixed `now_ms`), read
+/// at most once and only when asked.
 pub(crate) struct Clock<'a> {
-    read: &'a ClockFn,
+    read: &'a dyn Fn() -> i64,
     millis: Cell<Option<i64>>,
 }
 
 impl<'a> Clock<'a> {
-    pub(crate) fn new(read: &'a ClockFn) -> Clock<'a> {
+    pub(crate) fn new(read: &'a dyn Fn() -> i64) -> Clock<'a> {
         Clock {
             read,
             millis: Cell::new(None),
@@ -225,7 +328,9 @@ mod tests {
         // as a client "deny". Its text never reaches the caller.
         let verifier = Verifier::new(crate::Config::default());
         let failure = verifier
-            .contained(|_| -> Result<(), crate::Failure> { panic!("secret panic text") })
+            .contained(&|| 0, |_| -> Result<(), crate::Failure> {
+                panic!("secret panic text")
+            })
             .unwrap_err();
         assert_eq!(failure.reason(), Reason::InternalError);
         assert_eq!(failure.message(), "unexpected internal failure");

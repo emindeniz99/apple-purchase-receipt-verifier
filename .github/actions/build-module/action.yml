@@ -5,8 +5,8 @@ description: >-
   $HOME/.cache/aprv-wasm-toolchain (tools/wasm-toolchain.sh), the Rust
   channel rust/rust-toolchain.toml names with the wasm32-wasip1 target,
   then rust/bindings/abi/build.sh. ci.yml's rust-wasm and nightly.yml's
-  corpus-reference use it; the build reproduces, so both get the same
-  bytes from the same tree. A caller that caches the toolchain directory
+  corpus-reference and java-differential use it; the build reproduces,
+  so all three get the same bytes from the same tree. A caller that caches the toolchain directory
   restores it before this step (a test job may; a publish job never does,
   which is why release.yml and release-please.yml do not use this). Jobs
   call it as `uses: ./.github/actions/build-module`, after their checkout

@@ -432,8 +432,10 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   `rust-core` merges into `main` once, when every gate has passed.
 - Everything stays 0.x; 1.0 is a separate decision.
 - The first crates.io publish waits until something needs it.
-- **crates.io after 0.8 (owner, 2026-09-30).** The core crate stays at
-  0.7 on crates.io until an `openssl-sys` release can vendor OpenSSL 4.
+- **crates.io after 0.8 (owner, 2026-09-30).** The core crate is not
+  published to crates.io until an `openssl-sys` release can vendor
+  OpenSSL 4. (This entry said it "stays at 0.7" there; corrected
+  2026-11-03: no version of either crate was ever published.)
   The owner opened
   [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
   an opt-in `vendored-4` feature that builds `openssl-src` 400.x and
@@ -1491,6 +1493,25 @@ FlatBuffers as the encoding.
   The ABI carries `now-ms: u64` on every verify call anyway, so an
   override later is additive.
 
+**Amended 2026-11-03** (owner, "option B"; review A7). The Rust core
+takes a per-call time.
+
+- **Decision:** the core's `Verifier` gains `verify_receipt_at`,
+  `verify_signed_data_at` and `verify_receipt_endpoint_at`, with
+  `_bytes` variants, each taking `now_ms` and never reading the
+  `Config` clock. The `Config` clock stays, so the Rust API keeps the
+  shape the other eight packages share.
+- **Why:** it matches the WIT, whose verify exports take `now-ms` per
+  call. `aprv-surface` used to set a thread-local before each call for a
+  `Config` clock closure to read back; it now calls the `_at` methods,
+  and the thread-local is gone.
+- **One implementation.** Both forms run one internal function per
+  operation, which takes how to get the time, not the time: the
+  `Config` clock, or a closure returning `now_ms`. The clock is still
+  read at most once, and only for a receipt or JWS with no usable
+  signing date and for the endpoint's `request_date`; verdicts, messages
+  and the wire answers are unchanged.
+
 ---
 
 ## R25. Java: two artifacts, both Java 8, and the Engine API
@@ -2098,6 +2119,45 @@ caller's root bytes as they are, and the core reads DER or PEM.
   `/v1/info` reports the SHA-256 of the file's bytes, which is the DER's.
   Each `--roots` flag adds its file's roots, in order; managed mode, which
   takes its roots on stdin, is unchanged.
+
+**Amended 2026-11-03** (owner; review B9, fable F2). A root must be a
+root: every anchor must sit above the WWDR intermediate.
+
+- **Why:** the core looks for the intermediate below the anchor. A
+  receipt's WWDR marker is read from the path once the anchor is taken
+  off it, and a JWS path must be exactly leaf, `x5c[1]`, anchor. So an
+  anchor that is the intermediate, or below it, never verifies a receipt
+  or a JWS: `INVALID_CERTIFICATE_PURPOSE` and `UNTRUSTED_CHAIN`. Pinned
+  beside its root, the intermediate makes the order of the anchors
+  decide: after the root, a genuine input verifies; before it, OpenSSL
+  ends the path at the intermediate and the genuine input is refused with
+  those reasons (measured with the generated receipt and transaction JWS;
+  `an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_decides`
+  in `rust/tests/trust_pinning.rs`). Every case fails closed: what is
+  refused is genuine, and nothing unsigned is accepted.
+- **Decision:** documented, not refused. `TrustAnchor`,
+  `ConfigBuilder::roots`, `rust/README.md` and SURFACE.md §2 say to pin
+  roots only. Refusing an anchor that carries the WWDR marker at
+  `build()`, and making the per-anchor runs independent of one another,
+  stay open.
+
+**Amended 2026-11-03** (owner; review B10, fable F3). One public reader.
+
+- **Decision:** `TrustAnchor::from_der_or_pem` is the only public way to
+  make an anchor. `TrustAnchor::from_pem` is removed and
+  `TrustAnchor::from_der` is private; the exception for `from_pem` above
+  ends here.
+- **Why:** `from_pem` kept the first certificate of a bundle and dropped
+  the rest without an error, where `from_der_or_pem` on the same bytes
+  returns them all. A caller who passed Apple's three-root bundle to it
+  pinned one root, which keeps working until the day Apple signs under
+  another. Two readers with different cardinality on one type is the
+  mistake; `from_der` was a second spelling of the DER half of
+  `from_der_or_pem`.
+- **Who it reaches:** Rust callers only, and only those building from git
+  or a path: the crate has never been published to crates.io. A doctest
+  in `src/lib.rs` fails to compile if either reader becomes public
+  again.
 
 ---
 

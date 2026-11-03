@@ -11,7 +11,7 @@
 mod common;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
-use apple_purchase_receipt_verifier::{AppleStatus, Environment, Reason, TrustAnchor, Verifier};
+use apple_purchase_receipt_verifier::{AppleStatus, Environment, Reason, Verifier};
 use common::pki::{
     self, basic_constraints, count, extension, index_of, last_index_of, latin1, marker, name,
     now_ms, now_rfc3339, parse_rfc3339, payload_now, random_below, random_bytes, random_rsa_spki,
@@ -68,7 +68,7 @@ fn material() -> &'static Material {
             false,
             Some(SIGNING_LEAF_OID),
         );
-        let my_verifier = common::verifier([TrustAnchor::from_der(&my_root).unwrap()]);
+        let my_verifier = common::verifier([common::anchor_from_der(&my_root)]);
         let my_genuine_der = sign_receipt_as(
             &payload_now(),
             now_ms(),

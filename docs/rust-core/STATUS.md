@@ -78,8 +78,8 @@ On `main`:
     `.sha256`, and `refresh-wasm-copies` rewrites both files together on
     the release branch. Cost the owner should know: about 1 MB of packed
     history per copy per release (the module is 2.9 MB, 0.9 MB zlib).
-  - OD-03: the core crate is held on crates.io at 0.7 until openssl-sys
-    accepts openssl-src 400 (`publish-crates` and the crates smoke are
+  - OD-03: the core crate is not published to crates.io (it never has
+    been) until openssl-sys accepts openssl-src 400 (`publish-crates` and the crates smoke are
     skipped with that reason in the workflow); the README documents the
     `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4>` path for a source build.
     The upstream request is the owner's item. Confirmed 2026-09-30; the

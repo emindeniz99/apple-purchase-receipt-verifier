@@ -3676,8 +3676,8 @@ jobs:
           ruby rubygems-smoke.rb
 
   # Held with crates.io itself (OD-03 in docs/rust-core/STATUS.md;
-  # checklist rows RL-16 and PS-07): the core stays at 0.7 on crates.io
-  # until openssl-sys accepts openssl-src 400.x, because a registry build of
+  # checklist rows RL-16 and PS-07): the core is not on crates.io, and
+  # waits until openssl-sys accepts openssl-src 400.x, because a registry build of
   # this tree would get OpenSSL 3, which aprv-openssl refuses, and
   # aprv-openssl is not on crates.io yet. It runs again, with
   # release.yml's publish-crates, once the owner sets the repository

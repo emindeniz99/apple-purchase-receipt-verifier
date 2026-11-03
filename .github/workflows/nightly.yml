@@ -164,19 +164,10 @@ jobs:
         with:
           path: ~/.cache/aprv-wasm-toolchain
           key: aprv-wasm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wasm-toolchain.sh') }}
-      - name: build aprv.wasm with the pinned toolchain
-        run: |
-          set -euo pipefail
-          dir="$HOME/.cache/aprv-wasm-toolchain"
-          tools/wasm-toolchain.sh "$dir" > "$RUNNER_TEMP/toolchain.env"
-          . "$RUNNER_TEMP/toolchain.env"
-          export WASI_SDK_DIR OPENSSL_WASM_DIR PATH
-          # build.sh runs from the repository root, where rustup does not
-          # read rust/rust-toolchain.toml: name its channel explicitly.
-          RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust/rust-toolchain.toml)"
-          export RUSTUP_TOOLCHAIN
-          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target wasm32-wasip1
-          rust/bindings/abi/build.sh "$RUNNER_TEMP/aprv"
+      - name: build aprv.wasm and the component
+        uses: ./.github/actions/build-module
+        with:
+          out-dir: ${{ runner.temp }}/aprv
       - name: the Java implementation against the core
         run: tools/differential.sh "$RUNNER_TEMP/aprv/aprv.wasm" "$RUNNER_TEMP/differential"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

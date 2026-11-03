@@ -173,21 +173,26 @@ fn an_empty_root_set_is_a_config_error_not_a_verdict() {
 
 #[test]
 fn a_bad_trust_anchor_is_a_config_error() {
-    assert!(TrustAnchor::from_der(&[0x30, 0x00]).is_err());
-    assert!(TrustAnchor::from_der(&[]).is_err());
-    assert!(TrustAnchor::from_pem("not a pem").is_err());
-    assert!(TrustAnchor::from_pem("-----BEGIN CERTIFICATE-----\nAAAA\n").is_err());
+    assert!(TrustAnchor::from_der_or_pem(&[0x30, 0x00]).is_err());
+    assert!(TrustAnchor::from_der_or_pem(&[]).is_err());
+    assert!(TrustAnchor::from_der_or_pem(b"not a pem").is_err());
+    assert!(TrustAnchor::from_der_or_pem(b"-----BEGIN CERTIFICATE-----\nAAAA\n").is_err());
 }
 
 #[test]
 fn der_and_pem_anchors_are_interchangeable() {
     let der = common::read_fixture("generated-0.7/receipt-root.der");
     let pem = format!(
-        "junk before\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\njunk after\n",
+        " \n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\njunk after\n",
         base64_encode(&der)
     );
-    let from_der = TrustAnchor::from_der(&der).unwrap();
-    let from_pem = TrustAnchor::from_pem(&pem).unwrap();
+    // PEM is told apart by its first line: text before the first block,
+    // which the removed `from_pem` passed over, makes the bytes neither.
+    assert!(TrustAnchor::from_der_or_pem(format!("junk before\n{pem}").as_bytes()).is_err());
+    let from_der = common::anchor_from_der(&der);
+    let mut from_pem = TrustAnchor::from_der_or_pem(pem.as_bytes()).unwrap();
+    assert_eq!(from_pem.len(), 1);
+    let from_pem = from_pem.remove(0);
     assert_eq!(from_der.der(), from_pem.der());
     let receipt = common::receipt_der();
     assert_eq!(
@@ -434,9 +439,13 @@ fn the_clock_is_read_only_when_a_verdict_needs_it() {
         verifier.verify_receipt_endpoint(Environment::Sandbox, "{}"),
         "{\"status\":21002}"
     );
-    // A receipt that states its creation date needs no clock to verify.
+    // A receipt that states its creation date needs no clock to verify,
+    // and neither does a JWS that states its signedDate.
     let dated = base64_encode(&common::receipt_der());
     assert!(verifier.verify_receipt(&dated).is_ok());
+    assert!(clock_panics(common::jws_root())
+        .verify_signed_data(&common::transaction_jws())
+        .is_ok());
     // The endpoint's request_date does.
     let body = format!("{{\"receipt-data\":\"{dated}\"}}");
     assert_eq!(
@@ -510,6 +519,116 @@ fn a_broken_clock_is_not_hidden_behind_an_earlier_signer_infos_failure() {
         .unwrap_err();
     assert_eq!(failure.reason(), Reason::InternalError);
     assert_eq!(failure.message(), "the configured clock panicked");
+}
+
+/// 2025-01-01, inside the dateless receipt's chain window, and 2099-01-01,
+/// past it (the shared cases `receipt/accept-missing-creation-date` and
+/// `endpoint/clock-past-the-window-rejects-a-dateless-receipt`).
+const INSIDE: i64 = 1_735_689_600_000;
+const PAST: i64 = 4_070_908_800_000;
+
+/// The inputs the per-call-time tests run: a dated and a dateless receipt,
+/// a JWS with its signedDate, and input that fails before any clock.
+fn timed_inputs() -> (Vec<TrustAnchor>, Vec<String>, Vec<String>) {
+    let roots = vec![
+        common::receipt_root(),
+        common::jws_root(),
+        common::anchor("generated-0.7/divergence-receipt-root.der"),
+    ];
+    let receipts = vec![
+        base64_encode(&common::receipt_der()),
+        base64_encode(&common::read_fixture(
+            "generated-0.7/receipt-no-creation-date.der",
+        )),
+        "AAAA".to_owned(),
+    ];
+    let jwss = vec![
+        common::transaction_jws(),
+        common::app_transaction_jws(),
+        "a.b.c".to_owned(),
+    ];
+    (roots, receipts, jwss)
+}
+
+#[test]
+fn an_at_call_never_reads_the_configured_clock() {
+    // A clock that panics would answer INTERNAL_ERROR wherever it is read:
+    // the `_at` methods take their instant from the argument instead.
+    let (roots, receipts, jwss) = timed_inputs();
+    let verifier = Verifier::new(
+        Config::builder()
+            .roots(roots)
+            .clock(|| panic!("the caller's clock broke"))
+            .build()
+            .unwrap(),
+    );
+    let dateless = &receipts[1];
+    assert!(verifier.verify_receipt_at(dateless, INSIDE).is_ok());
+    assert!(verifier
+        .verify_receipt_bytes_at(dateless.as_bytes(), INSIDE)
+        .is_ok());
+    assert_eq!(
+        verifier
+            .verify_receipt_at(dateless, PAST)
+            .unwrap_err()
+            .reason(),
+        Reason::InvalidCertificate
+    );
+    for jws in &jwss[..2] {
+        assert!(verifier.verify_signed_data_at(jws, INSIDE).is_ok());
+        assert!(verifier
+            .verify_signed_data_bytes_at(jws.as_bytes(), INSIDE)
+            .is_ok());
+    }
+    let body = format!("{{\"receipt-data\":\"{dateless}\"}}");
+    for now in [INSIDE, INSIDE + 1] {
+        let answer = verifier.verify_receipt_endpoint_at(Environment::Sandbox, &body, now);
+        assert!(
+            answer.contains(&format!("\"request_date_ms\":\"{now}\"")),
+            "{answer}"
+        );
+        assert_eq!(
+            verifier.verify_receipt_endpoint_bytes_at(Environment::Sandbox, body.as_bytes(), now),
+            answer
+        );
+    }
+}
+
+#[test]
+fn each_at_method_answers_as_the_clock_based_one_at_the_same_instant() {
+    let (roots, receipts, jwss) = timed_inputs();
+    let at_call = common::verifier(roots.clone());
+    for now in [INSIDE, PAST] {
+        let clocked = common::verifier_at(roots.clone(), now);
+        for receipt in &receipts {
+            let expected = clocked.verify_receipt(receipt);
+            assert_eq!(at_call.verify_receipt_at(receipt, now), expected);
+            assert_eq!(
+                at_call.verify_receipt_bytes_at(receipt.as_bytes(), now),
+                expected
+            );
+            for environment in [Environment::Production, Environment::Sandbox] {
+                let body = format!("{{\"receipt-data\":\"{receipt}\"}}");
+                let expected = clocked.verify_receipt_endpoint(environment, &body);
+                assert_eq!(
+                    at_call.verify_receipt_endpoint_at(environment, &body, now),
+                    expected
+                );
+                assert_eq!(
+                    at_call.verify_receipt_endpoint_bytes_at(environment, body.as_bytes(), now),
+                    expected
+                );
+            }
+        }
+        for jws in &jwss {
+            let expected = clocked.verify_signed_data(jws);
+            assert_eq!(at_call.verify_signed_data_at(jws, now), expected);
+            assert_eq!(
+                at_call.verify_signed_data_bytes_at(jws.as_bytes(), now),
+                expected
+            );
+        }
+    }
 }
 
 #[test]
