@@ -81,10 +81,14 @@ R41).
   package has a public mapping helper (`fromReceiptType`,
   `fromJwsEnvironment` and their twins went in 0.8; DECISIONS.md R42).
   Whether to accept an environment is the caller's decision.
-- **No per-call time.** The `Config` clock is read once per call by the
-  wrapper and crosses the ABI as `now-ms` (ARCHITECTURE.md §6). The ABI
-  carries `now-ms` per call, so a public override later is additive
-  (DECISIONS.md R24).
+- **No per-call time in the 0.7 API.** The `Config` clock is read once
+  per call by the wrapper and crosses the ABI as `now-ms`
+  (ARCHITECTURE.md §6). The Rust core alone adds a per-call form beside
+  it: `verify_receipt_at`, `verify_signed_data_at` and
+  `verify_receipt_endpoint_at` (and their `_bytes` variants) take
+  `now_ms` and never read the `Config` clock, which matches the WIT's
+  per-call `now-ms`. `aprv-surface` calls them with the wrapper's
+  `now_ms` (DECISIONS.md R24).
 - **A root is a root.** Every caller-pinned anchor must sit above the
   WWDR intermediate, as Apple's three roots do. The core looks for the
   intermediate below the anchor (the receipt's marker check, and the JWS
@@ -220,7 +224,7 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 |---|---|---|
 | `Config.roots()` | `Vec<Vec<u8>>` of roots, each DER or PEM (the core tells them apart), empty = the three compiled-in Apple roots | `init(config-json: list<u8>)`: `{"roots":["<base64 DER or PEM>", ...]}`, or `{}` for the compiled-in roots (an empty list is refused); answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}` |
 | the input length a host hands over | `MAX_INPUT_BYTES`, the core's largest cap plus one | `"max_input_bytes"` in `init`'s answer |
-| `Config.clock()` | not modelled: the wrapper reads it | `now-ms: s64`, the first argument of each verify export (every wrapper refuses a clock before 1970 itself) |
+| `Config.clock()` | not modelled: the wrapper reads it, and `now_ms` reaches the core's `_at` methods | `now-ms: s64`, the first argument of each verify export (every wrapper refuses a clock before 1970 itself) |
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
 | `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: environment, now-ms, request-json: list<u8>)` |

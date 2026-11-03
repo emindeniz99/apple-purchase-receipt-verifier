@@ -398,8 +398,13 @@ after the compile ([Python wasmtime][pywt]); WasmKit about 3 ms
   DRBG reads the clock during `init` at all is unmeasured; Phase 1's gate
   is that the module imports only `random-get` and answers the corpus as
   before.
-- No public API takes a per-call time. 0.7 dropped it; the ABI carries
-  `now-ms` per call anyway, so a per-call override later is additive.
+- The 0.7 API takes no per-call time; 0.7 dropped it. The Rust core adds
+  one beside its `Config` clock (owner, 2026-11-03): each verify method
+  has an `_at` twin taking `now_ms`, which never reads the clock. The
+  bridge uses them: `aprv-surface` passes the call's `now_ms` straight to
+  the `_at` method, so no thread-local carries the instant to a clock
+  closure any more. One internal implementation serves both forms, so the
+  clock stays as lazy as before.
 - Callers still cannot move the validity instant of an input that
   carries its own date, which is THREAT-MODEL §3.5 of the root threat
   model.

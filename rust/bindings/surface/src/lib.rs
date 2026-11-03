@@ -14,10 +14,12 @@
 //!   UTF-8 are input like any other: the core judges them by the same rules
 //!   (they can never be base64, base64url or JSON).
 //! - **The instant is an argument.** The wrapper reads its `Config` clock
-//!   once per call and passes the value as `now_ms`, epoch milliseconds.
-//!   The core uses it for two things only: the certificate-validity instant
-//!   when the receipt or JWS carries no usable signing date, and
-//!   `request_date` in the endpoint response.
+//!   once per call and passes the value as `now_ms`, epoch milliseconds,
+//!   which reaches the core's `_at` methods unchanged; the core's own
+//!   `Config` clock is never set or read here. The core uses the instant
+//!   for two things only: the certificate-validity instant when the
+//!   receipt or JWS carries no usable signing date, and `request_date` in
+//!   the endpoint response.
 //! - **No unsigned integers, but for one.** Ids are `i64`, since an ASN.1
 //!   INTEGER in hostile input can be negative. The receipt types are the
 //!   core's own, so an unknown attribute's type is the core's `u32`, which
@@ -40,7 +42,6 @@
 )]
 
 use apple_purchase_receipt_verifier as core_api;
-use std::cell::Cell;
 
 /// The library's version, for startup logs: the core's own.
 pub const VERSION: &str = core_api::VERSION;
@@ -101,12 +102,6 @@ pub fn decode_base64(text: &[u8]) -> Option<Vec<u8>> {
 
 // -------------------------------------------------------------- verifier
 
-thread_local! {
-    /// The instant of the call in progress on this thread. Every call sets
-    /// it before the core runs, and the core's clock reads nothing else.
-    static NOW_MS: Cell<i64> = const { Cell::new(0) };
-}
-
 /// Verifies what Apple signed, offline, against a fixed set of roots. Made
 /// once; share it, or make one per thread.
 #[derive(Debug, Clone)]
@@ -129,7 +124,9 @@ impl Verifier {
     /// [`ConfigError`] naming the first root that is not a certificate (by
     /// its index), or saying the bundled roots did not load.
     pub fn new(roots: &[Vec<u8>]) -> Result<Verifier, ConfigError> {
-        let mut builder = core_api::Config::builder().clock(|| NOW_MS.with(Cell::get));
+        // No clock: every call passes its instant to the core's `_at`
+        // methods, which never read the Config clock.
+        let mut builder = core_api::Config::builder();
         if !roots.is_empty() {
             let mut anchors = Vec::with_capacity(roots.len());
             for (index, root) in roots.iter().enumerate() {
@@ -149,11 +146,6 @@ impl Verifier {
         })
     }
 
-    fn at<R>(&self, now_ms: i64, call: impl FnOnce(&core_api::Verifier) -> R) -> R {
-        NOW_MS.with(|now| now.set(now_ms));
-        call(&self.inner)
-    }
-
     /// Verifies a legacy PKCS#7 app receipt, given as the bytes of the
     /// base64 `receipt-data` string a client sends, and decodes its payload.
     ///
@@ -170,9 +162,7 @@ impl Verifier {
         receipt_base64: &[u8],
         now_ms: i64,
     ) -> Result<ReceiptPayload, Failure> {
-        self.at(now_ms, |verifier| {
-            verifier.verify_receipt_bytes(receipt_base64)
-        })
+        self.inner.verify_receipt_bytes_at(receipt_base64, now_ms)
     }
 
     /// Verifies an Apple-signed compact JWS (a transaction, renewal info, app
@@ -189,7 +179,7 @@ impl Verifier {
     /// # Errors
     /// A [`Failure`] naming the first check that failed.
     pub fn verify_signed_data(&self, jws: &[u8], now_ms: i64) -> Result<JsonPayload, Failure> {
-        self.at(now_ms, |verifier| verifier.verify_signed_data_bytes(jws))
+        self.inner.verify_signed_data_bytes_at(jws, now_ms)
     }
 
     /// The response body Apple's `verifyReceipt` at `environment` would
@@ -203,9 +193,8 @@ impl Verifier {
         request_json: &[u8],
         now_ms: i64,
     ) -> String {
-        self.at(now_ms, |verifier| {
-            verifier.verify_receipt_endpoint_bytes(environment, request_json)
-        })
+        self.inner
+            .verify_receipt_endpoint_bytes_at(environment, request_json, now_ms)
     }
 }
 

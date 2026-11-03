@@ -1491,6 +1491,25 @@ FlatBuffers as the encoding.
   The ABI carries `now-ms: u64` on every verify call anyway, so an
   override later is additive.
 
+**Amended 2026-11-03** (owner, "option B"; review A7). The Rust core
+takes a per-call time.
+
+- **Decision:** the core's `Verifier` gains `verify_receipt_at`,
+  `verify_signed_data_at` and `verify_receipt_endpoint_at`, with
+  `_bytes` variants, each taking `now_ms` and never reading the
+  `Config` clock. The `Config` clock stays, so the Rust API keeps the
+  shape the other eight packages share.
+- **Why:** it matches the WIT, whose verify exports take `now-ms` per
+  call. `aprv-surface` used to set a thread-local before each call for a
+  `Config` clock closure to read back; it now calls the `_at` methods,
+  and the thread-local is gone.
+- **One implementation.** Both forms run one internal function per
+  operation, which takes how to get the time, not the time: the
+  `Config` clock, or a closure returning `now_ms`. The clock is still
+  read at most once, and only for a receipt or JWS with no usable
+  signing date and for the endpoint's `request_date`; verdicts, messages
+  and the wire answers are unchanged.
+
 ---
 
 ## R25. Java: two artifacts, both Java 8, and the Engine API

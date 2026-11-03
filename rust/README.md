@@ -148,6 +148,18 @@ The defaults have one spelling, the `Default` trait. 0.7's
 The first two return `Result<_, Failure>`. The endpoint never fails: the
 Apple status code is a field of the body, for every input.
 
+Each method comes in two forms. The plain one reads the `Config` clock when
+it needs the time; the `_at` one takes the time as its last argument, epoch
+milliseconds, and never reads the clock. At the same instant they give the
+same answer. A `_bytes` variant of each takes the input as `&[u8]`.
+
+```rust
+let verifier = Verifier::new(config);
+let by_clock = verifier.verify_receipt(&receipt_base64);               // the Config clock
+let at_instant = verifier.verify_receipt_at(&receipt_base64, 1_735_689_600_000);
+let body = verifier.verify_receipt_endpoint_at(Environment::Sandbox, &request, 1_735_689_600_000);
+```
+
 `VERSION` is the library version; `AppleStatus` holds Apple's `verifyReceipt`
 status codes as constants.
 
@@ -255,8 +267,9 @@ into different byte strings that carry the same signed content.
 
 ## The clock
 
-`Config`'s clock is read at most once per call, and only when one of these
-needs it, after the input has passed every check that comes before:
+`Config`'s clock, or the `now_ms` of an `_at` method, is read at most once
+per call, and only when one of these needs it, after the input has passed
+every check that comes before:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
