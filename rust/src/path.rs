@@ -61,6 +61,19 @@ fn anchor_certificates(anchors: &[TrustAnchor]) -> Vec<Certificate> {
 /// Walking down means the only keys used are ones an anchor vouched for: a
 /// certificate carrying the attacker's own key (their choice of size and
 /// exponent) costs a name comparison per issuer, and is simply left out.
+///
+/// This is one of two top-down "who signed whom" walks. The OpenSSL
+/// adapter's `linked_above` (`rust/openssl/src/path.rs`, pairing with
+/// `Certificate::signed_by`) walks the certificates accepted here again,
+/// and `X509_verify_cert` then checks each link a third time. The two
+/// walks pair by different rules on purpose: this one with
+/// `Certificate::issued_by` (`X509_check_issued`, which judges the
+/// issuer's `keyUsage` and key identifiers, then the signature), so no
+/// key a pinned anchor did not vouch for is used; the adapter's by the
+/// issuer name and the signature alone, so that OpenSSL still reports an
+/// issuer whose `keyUsage` forbids signing as "not a CA"
+/// (REVIEW-LOG.md §11.3). Merging them into one walk is deliberately left
+/// for later.
 #[must_use]
 pub fn authenticated_top_down(
     embedded: &[Certificate],

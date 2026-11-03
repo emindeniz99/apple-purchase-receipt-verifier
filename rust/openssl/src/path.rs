@@ -220,6 +220,16 @@ fn run(
 /// comparisons, each followed by a signature check only on a name match,
 /// for the n certificates of `untrusted`, which the certificate cap bounds
 /// (10 for a receipt, 1 for a JWS).
+///
+/// This is the second of two top-down "who signed whom" walks; the
+/// core's `authenticated_top_down` (`rust/src/path.rs`, pairing with
+/// [`Certificate::issued_by`]) chose `untrusted` with the first, and
+/// `X509_verify_cert` checks each link a third time. The pairing rules
+/// differ on purpose: the core's judges the issuer's `keyUsage` and key
+/// identifiers, this one only the name and the signature, so OpenSSL
+/// still builds the path through an issuer whose `keyUsage` forbids
+/// signing and reports it as "not a CA" (REVIEW-LOG.md §11.3). Merging
+/// the two walks is deliberately left for later.
 fn linked_above(target: &Certificate, untrusted: &[Certificate]) -> Vec<Certificate> {
     let mut linked: Vec<&Certificate> = Vec::new();
     let mut frontier: Vec<&Certificate> = vec![target];
