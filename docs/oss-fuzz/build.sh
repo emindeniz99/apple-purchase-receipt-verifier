@@ -1,8 +1,9 @@
 #!/bin/bash -eu
 # Draft of projects/apple-purchase-receipt-verifier/build.sh for
-# google/oss-fuzz. Builds the five cargo-fuzz targets in rust/fuzz and
+# google/oss-fuzz. Builds the seven cargo-fuzz targets in rust/fuzz and
 # gives each a seed corpus from the fixtures rust/fuzz/run.sh seeds it
-# with. abi-call (rust/fuzz/abi) is left out; README.md says why.
+# with; the two payload targets' seeds are extracted from the fixtures by
+# rust/fuzz/derive-seeds.py, as run.sh does. abi-call (rust/fuzz/abi) is left out; README.md says why.
 #
 # OSS-Fuzz's CC and CFLAGS carry the sanitizer and coverage flags, and
 # openssl-src builds OpenSSL with them, so libFuzzer follows edges inside
@@ -15,7 +16,7 @@ fixtures="$repo/fixtures"
 cd "$repo/rust/fuzz"
 cargo fuzz build -O --debug-assertions
 
-targets="verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi"
+targets="verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi receipt-payload jws-payload"
 for target in $targets; do
   cp "target/x86_64-unknown-linux-gnu/release/$target" "$OUT/"
 done
@@ -39,3 +40,11 @@ seed verify-receipt-base64 "$fixtures/generated/receipt-b64" "$fixtures/public-r
 seed verify-transaction "$fixtures/generated" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode"
 seed endpoint-json "$repo/rust/fuzz/seeds/endpoint-json"
 seed ffi "$fixtures/generated/receipt-b64" "$fixtures/generated" "$repo/rust/fuzz/seeds/endpoint-json"
+derived="$(mktemp -d)"
+python3 -I "$repo/rust/fuzz/derive-seeds.py" receipt-payload "$derived/receipt-payload" \
+  "$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/public-receipts" "$fixtures/apple-official/xcode"
+python3 -I "$repo/rust/fuzz/derive-seeds.py" jws-payload "$derived/jws-payload" \
+  "$fixtures/generated" "$fixtures/generated-0.7" "$fixtures/apple-official/mock_signed_data" "$fixtures/apple-official/xcode"
+seed receipt-payload "$derived/receipt-payload"
+seed jws-payload "$derived/jws-payload"
+rm -rf "$derived"

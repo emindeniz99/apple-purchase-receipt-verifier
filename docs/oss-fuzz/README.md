@@ -10,7 +10,7 @@ one.
 |---|---|
 | `project.yaml` | Homepage, repository, language `rust`, the contact OSS-Fuzz reports to, AddressSanitizer and libFuzzer |
 | `Dockerfile` | `base-builder-rust` (clang, a nightly Rust, cargo-fuzz), `make`, `perl` and `zip`, and a shallow clone of this repository |
-| `build.sh` | `cargo fuzz build -O --debug-assertions` in `rust/fuzz`, the five target binaries copied to `$OUT`, and one seed corpus zip per target from the same fixture directories `rust/fuzz/run.sh` seeds it with |
+| `build.sh` | `cargo fuzz build -O --debug-assertions` in `rust/fuzz`, the seven target binaries copied to `$OUT`, and one seed corpus zip per target from the same fixture directories `rust/fuzz/run.sh` seeds it with (for the two payload targets, the bytes `rust/fuzz/derive-seeds.py` extracts from them) |
 
 ## What OSS-Fuzz builds
 
@@ -29,11 +29,11 @@ overrides `rust/rust-toolchain.toml`. The core's floor is Rust 1.85, so the
 crates here fit it; a dependency that needs a newer compiler shows up as a
 failed `build_fuzzers` below.
 
-## The five targets, and why not six
+## The seven targets, and why not eight
 
 `verify-receipt`, `verify-receipt-base64`, `verify-transaction`,
-`endpoint-json` and `ffi` (`rust/fuzz/README.md` lists what each reaches
-and its invariant).
+`endpoint-json`, `ffi`, `receipt-payload` and `jws-payload`
+(`rust/fuzz/README.md` lists what each reaches and its invariant).
 
 `abi-call` (`rust/fuzz/abi/`) is not in this draft, although R37 names six
 targets. It reads `aprv.wasm` from the `APRV_WASM` environment variable,
