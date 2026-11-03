@@ -55,6 +55,25 @@ fn four_segments_are_rejected() {
 }
 
 #[test]
+fn the_segment_count_is_reported_without_collecting_the_segments() {
+    // The longest input the cap admits, all dots: the refusal states every
+    // segment `split` would yield, though the check takes at most four.
+    let dots = ".".repeat(262_144);
+    let failure = expect_err(&dots);
+    assert_eq!(failure.reason(), Reason::Malformed);
+    assert_eq!(
+        failure.message(),
+        "expected 3 dot-separated segments, got 262145"
+    );
+    for (jws, segments) in [("", 1), ("a", 1), ("a.b", 2), ("a.b.c.d", 4), ("....", 5)] {
+        assert_eq!(
+            expect_err(jws).message(),
+            format!("expected 3 dot-separated segments, got {segments}")
+        );
+    }
+}
+
+#[test]
 fn a_header_that_is_not_json_is_rejected() {
     let (_, payload, signature) = common::split_jws(&common::transaction_jws());
     let header = common::base64url(b"not json at all");
