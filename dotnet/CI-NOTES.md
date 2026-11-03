@@ -62,6 +62,25 @@ default `Config`; `.github/smoke/nuget-smoke` is that consumer
 `endpoint: "status":0` for the genuine G5 receipt from a local feed on
 .NET 10.
 
+## Wasmtime advisory GHSA-mghf-wjfp-p5xm (2026-11-03)
+
+Cranelift on aarch64 can miscompile a `br_table` with more than about
+256k targets into a jump to an offset the module chooses. The fixed
+releases are wasmtime 36.0.19, 48.0.7 and 49.0.4; 50.0.0 came out after
+them and is not affected. The `Wasmtime` package on nuget.org stops at
+48.0.2, inside the affected range, so `linux-arm64`, `osx-arm64` and
+`win-arm64` run an affected compiler, and there is no newer package to
+move to.
+
+Not exploitable through this library. The bug needs an attacker to
+supply the Wasm module, and the only module this assembly compiles is
+its embedded `aprv.wasm`, checked against its pinned SHA-256 before it
+loads. Caller input reaches that module as data, never as code.
+
+Move to the first `Wasmtime` package at 48.0.7 or later when nuget.org
+has one. The other packages already run a fixed Wasmtime: the server
+crate and Python 50.0.1, Ruby 50.0.0.
+
 ## Platforms and the musl note
 
 - Wasmtime 48.0.2 ships native libraries for `linux-x64` (glibc 2.28),
