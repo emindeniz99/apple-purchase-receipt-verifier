@@ -381,7 +381,7 @@ components:
               enum: [defaults, configured]
             sha256:
               type: array
-              description: SHA-256 of each root's DER, in configuration order.
+              description: SHA-256 of the DER of each certificate the roots configure, in configuration order; a PEM root reports one per certificate in it, never a hash of the PEM text.
               items:
                 type: string
                 pattern: '^[0-9a-f]{64}$'
