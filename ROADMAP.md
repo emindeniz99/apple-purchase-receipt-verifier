@@ -616,6 +616,18 @@ Still worth filing as issues:
 
 ## Later / hardening
 
+- **Refuse a trust anchor at or below the WWDR intermediate (owner,
+  2026-11-03: later).** Refuse, at `Config::build` and at `init`, an
+  anchor that is the WWDR intermediate or any certificate below it.
+  Pinned beside its root, such an anchor makes the verdict depend on the
+  anchor order: measured, root first verifies, intermediate first refuses
+  genuine input (`INVALID_CERTIFICATE_PURPOSE` for a receipt,
+  `UNTRUSTED_CHAIN` for a JWS). It fails closed, so it stays documented
+  only for now (DECISIONS.md R39, amendment of 2026-11-03; the test
+  `an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_decides`
+  in `rust/tests/trust_pinning.rs`). The fix is a behaviour change:
+  the Rust core, the Java implementation and shared cases in
+  `fixtures/cases.json` together.
 - **JWS chain shape and algorithm generality (owner, 2026-10-14, Q170).**
   Java pins a JWS to exactly three `x5c` entries and ES256, and matches a
   receipt issuer name with `X500Principal.equals`. Two Codex reviews
