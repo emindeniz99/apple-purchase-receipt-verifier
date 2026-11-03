@@ -169,7 +169,7 @@ fn a_copy_of_the_signer_identity_ahead_of_the_signer_does_not_decide_the_verdict
     // vouches for it.
     let mut copy = builder.certificates[signer].clone();
     *copy.last_mut().unwrap() ^= 0x01;
-    assert!(TrustAnchor::from_der(&copy).is_ok());
+    assert!(TrustAnchor::from_der_or_pem(&copy).is_ok());
     builder.certificates.insert(0, copy);
     assert!(verifier().verify(&builder.build()).is_ok());
 }
@@ -776,7 +776,7 @@ fn a_vouched_signer_on_an_unimplemented_curve_is_judged_on_its_key_first() {
     builder.certificates = vec![signer, intermediate];
     builder.signer_issuer = name("Test WWDR");
     builder.signer_serial = vec![3];
-    let pinned = verifier_with(TrustAnchor::from_der(&root).unwrap());
+    let pinned = verifier_with(common::anchor_from_der(&root));
     assert_eq!(
         pinned.verify(&builder.build()).unwrap_err().reason(),
         Reason::InvalidCertificate
@@ -838,7 +838,7 @@ fn a_dateless_receipt_is_judged_at_the_clock_to_the_millisecond() {
     let at = |millis: i64| {
         let verifier = Verifier::new(
             Config::builder()
-                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .roots([common::anchor_from_der(&root)])
                 .clock(move || millis)
                 .build()
                 .unwrap(),

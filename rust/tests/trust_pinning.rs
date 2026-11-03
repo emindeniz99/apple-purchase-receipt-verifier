@@ -44,7 +44,7 @@ fn public_style_chain() -> (Certificate, Certificate, TrustAnchor) {
     (
         Certificate::from_der(&test_data("public-style-leaf.der")).unwrap(),
         Certificate::from_der(&test_data("public-style-intermediate.der")).unwrap(),
-        TrustAnchor::from_der(&test_data("public-style-root.der")).unwrap(),
+        common::anchor_from_der(&test_data("public-style-root.der")),
     )
 }
 
@@ -122,7 +122,8 @@ fn os_trust_store_roots_do_not_verify_apple_signed_material() {
     // rejected, because those roots did not issue it.
     let roots: Vec<TrustAnchor> = os_trust_store_roots()
         .iter()
-        .filter_map(|der| TrustAnchor::from_der(der).ok())
+        .filter_map(|der| TrustAnchor::from_der_or_pem(der).ok())
+        .flatten()
         .collect();
     if roots.is_empty() {
         eprintln!("note: no OS trust store found at the conventional paths; skipping");
@@ -166,8 +167,8 @@ fn os_trust_store_roots() -> Vec<Vec<u8>> {
                 break;
             };
             let block = &after[..end + "-----END CERTIFICATE-----".len()];
-            if let Ok(anchor) = TrustAnchor::from_pem(block) {
-                out.push(anchor.der().to_vec());
+            if let Ok(anchors) = TrustAnchor::from_der_or_pem(block.as_bytes()) {
+                out.extend(anchors.iter().map(|anchor| anchor.der().to_vec()));
             }
             rest = &after[end..];
         }
@@ -531,7 +532,7 @@ fn an_anchor_is_trusted_by_fiat_whatever_its_window_ca_flag_or_path_length() {
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
     let mut refused = Vec::new();
     for (what, root) in anchors {
-        let verifier = common::verifier_at([TrustAnchor::from_der(&root).unwrap()], INSTANT);
+        let verifier = common::verifier_at([common::anchor_from_der(&root)], INSTANT);
         if let Err(failure) = common::verify_der(&verifier, &receipt) {
             refused.push(format!("a receipt under an anchor {what}: {failure}"));
         }
@@ -609,7 +610,7 @@ fn lookalikes() -> Lookalikes {
     let root =
         |key, serial| mint::certificate("Twin Root", key, "Twin Root", key, serial, true, None);
     let certificate = |der: Vec<u8>| Certificate::from_der(&der).unwrap();
-    let anchor = |der: Vec<u8>| TrustAnchor::from_der(&der).unwrap();
+    let anchor = |der: Vec<u8>| common::anchor_from_der(&der);
     Lookalikes {
         first_root: anchor(root(&first_key, 1)),
         second_root: anchor(root(&second_key, 2)),
@@ -720,7 +721,6 @@ fn an_anchor_named_as_the_intermediate_does_not_change_the_verdict() {
 /// and nothing unsigned is accepted.
 #[test]
 fn an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_decides() {
-    let one = |der: &[u8]| TrustAnchor::from_der_or_pem(der).unwrap().remove(0);
     let reason = |result: Result<(), apple_purchase_receipt_verifier::Failure>| {
         result.err().map(|failure| failure.reason())
     };
@@ -732,7 +732,7 @@ fn an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_de
     let intermediate = embedded
         .iter()
         .map(|certificate| certificate.to_der().unwrap())
-        .map(|der| one(&der))
+        .map(|der| common::anchor_from_der(&der))
         .find(|anchor| {
             Certificate::from_der(anchor.der())
                 .unwrap()
@@ -750,7 +750,7 @@ fn an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_de
     let jws = common::transaction_jws();
     let header = common::jws_header(&jws);
     let x5c_1 = common::decode_base64(header["x5c"][1].as_str().unwrap());
-    let intermediate = one(&x5c_1);
+    let intermediate = common::anchor_from_der(&x5c_1);
     let root = common::jws_root();
     let verify = |roots: Vec<TrustAnchor>| {
         reason(common::verifier(roots).verify_signed_data(&jws).map(drop))
@@ -800,7 +800,7 @@ fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path() 
         mint::key(65),
         mint::key(66),
     );
-    let anchor = |der: Vec<u8>| TrustAnchor::from_der(&der).unwrap();
+    let anchor = |der: Vec<u8>| common::anchor_from_der(&der);
     let certificate = |der: Vec<u8>| Certificate::from_der(&der).unwrap();
     let intermediate = |key, root: &str, root_key, serial| {
         certificate(mint::certificate(
@@ -994,7 +994,7 @@ fn a_renewed_intermediate_verifies_beside_its_expired_twin_in_either_order() {
         builder.content = Some(content);
         builder.build()
     };
-    let verifier = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+    let verifier = common::verifier([common::anchor_from_der(&root)]);
     let orders = [
         vec![renewed.clone(), expired.clone(), signer.clone()],
         vec![expired.clone(), renewed.clone(), signer.clone()],
@@ -1028,10 +1028,9 @@ fn a_renewed_intermediate_verifies_beside_its_expired_twin_in_either_order() {
 fn an_intermediate_without_key_cert_sign_is_still_reported_as_not_a_ca() {
     use common::{der, der_int, der_oid, der_seq, mint};
     let (root_key, intermediate_key, leaf_key) = (mint::key(71), mint::key(72), mint::key(73));
-    let root = TrustAnchor::from_der(&mint::certificate(
+    let root = common::anchor_from_der(&mint::certificate(
         "KU Root", &root_key, "KU Root", &root_key, 1, true, None,
-    ))
-    .unwrap();
+    ));
     // keyUsage (critical) with digitalSignature only: 03 02 07 80.
     let algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
     let extensions = der_seq(&[
@@ -1142,7 +1141,7 @@ fn receipt_at_depth(below: u8, self_issued_tail: bool) -> (Vec<u8>, TrustAnchor)
     builder.signed_attrs = None;
     builder.signature_algorithm = der_seq(&[der_oid(mint::ECDSA_WITH_SHA256)]);
     builder.signature = leaf_key.sign_der(builder.content.as_deref().unwrap());
-    (builder.build(), TrustAnchor::from_der(&root).unwrap())
+    (builder.build(), common::anchor_from_der(&root))
 }
 
 #[test]

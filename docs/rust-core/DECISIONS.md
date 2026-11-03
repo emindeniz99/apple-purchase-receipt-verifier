@@ -2120,6 +2120,24 @@ root: every anchor must sit above the WWDR intermediate.
   `build()`, and making the per-anchor runs independent of one another,
   stay open.
 
+**Amended 2026-11-03** (owner; review B10, fable F3). One public reader.
+
+- **Decision:** `TrustAnchor::from_der_or_pem` is the only public way to
+  make an anchor. `TrustAnchor::from_pem` is removed and
+  `TrustAnchor::from_der` is private; the exception for `from_pem` above
+  ends here.
+- **Why:** `from_pem` kept the first certificate of a bundle and dropped
+  the rest without an error, where `from_der_or_pem` on the same bytes
+  returns them all. A caller who passed Apple's three-root bundle to it
+  pinned one root, which keeps working until the day Apple signs under
+  another. Two readers with different cardinality on one type is the
+  mistake; `from_der` was a second spelling of the DER half of
+  `from_der_or_pem`.
+- **Who it reaches:** Rust callers only, and only those building from git
+  or a path: the crate has never been published to crates.io. A doctest
+  in `src/lib.rs` fails to compile if either reader becomes public
+  again.
+
 ---
 
 ## R40. JSON from `serde_json`, each document as a map of raw values

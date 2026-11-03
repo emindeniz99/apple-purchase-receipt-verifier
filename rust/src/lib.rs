@@ -114,6 +114,20 @@ pub use verifier::Verifier;
 #[cfg(doctest)]
 struct VerdictsHaveNoPublicConstructor;
 
+/// [`TrustAnchor::from_der_or_pem`] is the one public way to make an
+/// anchor. Each block below must fail to compile; one that compiles means
+/// a second reader became public again.
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::TrustAnchor::from_der(&[0x30]);
+/// ```
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::TrustAnchor::from_pem("");
+/// ```
+#[cfg(doctest)]
+struct OneTrustAnchorReader;
+
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

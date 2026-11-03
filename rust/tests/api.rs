@@ -173,21 +173,26 @@ fn an_empty_root_set_is_a_config_error_not_a_verdict() {
 
 #[test]
 fn a_bad_trust_anchor_is_a_config_error() {
-    assert!(TrustAnchor::from_der(&[0x30, 0x00]).is_err());
-    assert!(TrustAnchor::from_der(&[]).is_err());
-    assert!(TrustAnchor::from_pem("not a pem").is_err());
-    assert!(TrustAnchor::from_pem("-----BEGIN CERTIFICATE-----\nAAAA\n").is_err());
+    assert!(TrustAnchor::from_der_or_pem(&[0x30, 0x00]).is_err());
+    assert!(TrustAnchor::from_der_or_pem(&[]).is_err());
+    assert!(TrustAnchor::from_der_or_pem(b"not a pem").is_err());
+    assert!(TrustAnchor::from_der_or_pem(b"-----BEGIN CERTIFICATE-----\nAAAA\n").is_err());
 }
 
 #[test]
 fn der_and_pem_anchors_are_interchangeable() {
     let der = common::read_fixture("generated-0.7/receipt-root.der");
     let pem = format!(
-        "junk before\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\njunk after\n",
+        " \n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\njunk after\n",
         base64_encode(&der)
     );
-    let from_der = TrustAnchor::from_der(&der).unwrap();
-    let from_pem = TrustAnchor::from_pem(&pem).unwrap();
+    // PEM is told apart by its first line: text before the first block,
+    // which the removed `from_pem` passed over, makes the bytes neither.
+    assert!(TrustAnchor::from_der_or_pem(format!("junk before\n{pem}").as_bytes()).is_err());
+    let from_der = common::anchor_from_der(&der);
+    let mut from_pem = TrustAnchor::from_der_or_pem(pem.as_bytes()).unwrap();
+    assert_eq!(from_pem.len(), 1);
+    let from_pem = from_pem.remove(0);
     assert_eq!(from_der.der(), from_pem.der());
     let receipt = common::receipt_der();
     assert_eq!(

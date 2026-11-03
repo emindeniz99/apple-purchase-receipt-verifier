@@ -190,8 +190,8 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
         .as_str()
         .unwrap();
     let der = common::decode_base64(leaf);
-    // TrustAnchor::from_der is the library's certificate reader, public.
-    assert!(TrustAnchor::from_der(&der).is_err());
+    // TrustAnchor::from_der_or_pem is the library's certificate reader, public.
+    assert!(TrustAnchor::from_der_or_pem(&der).is_err());
 
     let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
@@ -272,7 +272,7 @@ fn minted_jws_with(
     );
     let signature = sign(signing_input.as_bytes());
     let jws = format!("{signing_input}.{}", common::base64url(&signature));
-    (TrustAnchor::from_der(&root).unwrap(), jws)
+    (common::anchor_from_der(&root), jws)
 }
 
 #[test]
@@ -873,10 +873,7 @@ fn non_ascii_claims_round_trip_as_utf8() {
     })
     .to_string();
     let (root, jws) = common::mint::signed_jws(claims.as_bytes());
-    let verifier = common::verifier_at(
-        [apple_purchase_receipt_verifier::TrustAnchor::from_der(&root).unwrap()],
-        INSIDE_THE_CHAIN,
-    );
+    let verifier = common::verifier_at([common::anchor_from_der(&root)], INSIDE_THE_CHAIN);
     let payload = verifier.verify_signed_data(&jws).unwrap();
     assert_eq!(payload.json(), claims);
     let parsed = common::claims(&payload);
@@ -976,7 +973,7 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
     );
     let signature = leaf_key.sign_raw(signing_input.as_bytes());
     let minted = format!("{signing_input}.{}", common::base64url(&signature));
-    let pinned = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+    let pinned = common::verifier([common::anchor_from_der(&root)]);
     assert!(pinned.verify_signed_data(&minted).is_ok());
 
     // A P-521 leaf the minted intermediate vouches for, without the leaf
@@ -1034,7 +1031,7 @@ fn validity_is_judged_to_the_millisecond() {
         let (root, jws) = common::mint::signed_jws(payload.as_bytes());
         let verifier = Verifier::new(
             Config::builder()
-                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .roots([common::anchor_from_der(&root)])
                 .clock(|| 0)
                 .build()
                 .unwrap(),

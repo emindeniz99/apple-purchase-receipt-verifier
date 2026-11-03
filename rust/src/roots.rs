@@ -77,43 +77,13 @@ struct Anchor {
 }
 
 impl TrustAnchor {
-    /// Parses a DER certificate as an anchor.
-    ///
-    /// # Errors
-    /// [`ConfigError`] when the bytes are not a certificate. A bad anchor is
-    /// a configuration mistake, not a verification verdict.
-    pub fn from_der(der: &[u8]) -> Result<TrustAnchor, ConfigError> {
-        // One whole certificate that a strict reader decodes: the same bar
-        // as a certificate a receipt or a JWS carries.
-        match Certificate::from_der(der) {
-            Some(certificate) if certificate.is_readable() => Ok(TrustAnchor(Arc::new(Anchor {
-                der: der.to_vec(),
-                certificate,
-            }))),
-            _ => Err(not_a_certificate()),
-        }
-    }
-
-    /// Parses a PEM certificate as an anchor: the first certificate OpenSSL's
-    /// PEM reader finds. Every block is read, so one that OpenSSL refuses
-    /// refuses the input even after a good one.
-    ///
-    /// # Errors
-    /// [`ConfigError`] when the input holds no usable `CERTIFICATE` block.
-    pub fn from_pem(pem: &str) -> Result<TrustAnchor, ConfigError> {
-        TrustAnchor::all_from_pem(pem.as_bytes())?
-            .into_iter()
-            .next()
-            .ok_or_else(not_a_certificate)
-    }
-
     /// Reads one root as a caller gives it, DER or PEM, told apart by the
     /// bytes: a first byte of `0x30` (an ASN.1 SEQUENCE) is one DER
-    /// certificate, read by [`TrustAnchor::from_der`]; bytes that start
-    /// with `-----BEGIN` after any ASCII whitespace are PEM, read by
-    /// OpenSSL's PEM reader, and every certificate in them is an anchor, so
-    /// a bundle of several is one entry. The format is never a parameter:
-    /// what the bytes are decides it.
+    /// certificate; bytes that start with `-----BEGIN` after any ASCII
+    /// whitespace are PEM, read by OpenSSL's PEM reader, and every
+    /// certificate in them is an anchor, so a bundle of several is one
+    /// entry. The format is never a parameter: what the bytes are decides
+    /// it. This is the one public way to make an anchor.
     ///
     /// PEM is read as OpenSSL reads it: a block starts at the start of a
     /// line; text between and after the blocks, and blocks of other types
@@ -124,10 +94,24 @@ impl TrustAnchor {
     /// This is how the module's `init` reads each root, after the base64
     /// of its configuration is decoded.
     ///
+    /// ```no_run
+    /// use apple_purchase_receipt_verifier::{Config, TrustAnchor, Verifier};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // A DER `.cer` file gives one anchor; a PEM bundle gives every
+    /// // certificate in it.
+    /// let roots = TrustAnchor::from_der_or_pem(&std::fs::read("AppleRootCA-G3.cer")?)?;
+    /// let verifier = Verifier::new(Config::builder().roots(roots).build()?);
+    /// # let _ = verifier;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
     /// # Errors
     /// [`ConfigError`] when the bytes are neither, when PEM holds no
-    /// certificate, or when any certificate in them is not one the strict
-    /// reader of [`TrustAnchor::from_der`] accepts.
+    /// certificate, or when any certificate in them is not one whole
+    /// certificate a strict reader decodes. A bad anchor is a
+    /// configuration mistake, not a verification verdict.
     pub fn from_der_or_pem(bytes: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
         if bytes.first() == Some(&0x30) {
             return TrustAnchor::from_der(bytes).map(|anchor| vec![anchor]);
@@ -139,6 +123,19 @@ impl TrustAnchor {
             }
         }
         Err(not_a_certificate())
+    }
+
+    /// One DER certificate as an anchor: one whole certificate that a
+    /// strict reader decodes, the same bar as a certificate a receipt or a
+    /// JWS carries.
+    fn from_der(der: &[u8]) -> Result<TrustAnchor, ConfigError> {
+        match Certificate::from_der(der) {
+            Some(certificate) if certificate.is_readable() => Ok(TrustAnchor(Arc::new(Anchor {
+                der: der.to_vec(),
+                certificate,
+            }))),
+            _ => Err(not_a_certificate()),
+        }
     }
 
     /// Every certificate OpenSSL's PEM reader finds, each held to the bar
@@ -156,8 +153,8 @@ impl TrustAnchor {
     }
 
     /// The anchor's DER encoding: the bytes given to
-    /// [`TrustAnchor::from_der`], or the DER OpenSSL encodes for a
-    /// certificate read from PEM.
+    /// [`TrustAnchor::from_der_or_pem`] when they were DER, or the DER
+    /// OpenSSL encodes for a certificate read from PEM.
     #[must_use]
     pub fn der(&self) -> &[u8] {
         &self.0.der

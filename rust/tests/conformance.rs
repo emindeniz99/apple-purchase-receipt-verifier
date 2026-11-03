@@ -324,7 +324,7 @@ fn config(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Resu
             let mut roots = Vec::new();
             for id in spec.trusted_roots.fixtures.iter().flatten() {
                 let der = fixture_bytes(dir, fixtures, id)?;
-                roots.push(TrustAnchor::from_der(&der).map_err(|err| {
+                roots.extend(TrustAnchor::from_der_or_pem(&der).map_err(|err| {
                     Failed::from(format!("{}: root \"{id}\" does not parse: {err}", case.id))
                 })?);
             }

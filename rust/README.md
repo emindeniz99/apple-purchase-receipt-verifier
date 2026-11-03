@@ -104,18 +104,21 @@ use apple_purchase_receipt_verifier::{Config, TrustAnchor};
 let config = Config::default(); // Apple's three roots, the system clock
 
 let pinned = Config::builder()
-    .roots([TrustAnchor::from_der(&root_der)?]) // replaces the defaults
-    .clock(|| 1_735_689_600_000)                  // epoch milliseconds
+    .roots(TrustAnchor::from_der_or_pem(&root_bytes)?) // replaces the defaults
+    .clock(|| 1_735_689_600_000)                         // epoch milliseconds
     .build()?;
 ```
 
 An empty root set is a `ConfigError` from `build()`, never a verdict: a
 verifier with no roots would reject everything, and nobody would notice
 until production. So is a `TrustAnchor` whose bytes are not a certificate.
-`TrustAnchor::from_der_or_pem(&bytes)` reads bytes in either encoding,
-told apart by the bytes, and returns every certificate a PEM bundle holds;
-it is how the module's `init` reads each root. PEM goes through OpenSSL's
-reader, as does `TrustAnchor::from_pem`.
+`TrustAnchor::from_der_or_pem(&bytes)` is the one way to make an anchor.
+It reads bytes in either encoding, told apart by the bytes, and returns
+every certificate a PEM bundle holds, so its `Vec` goes straight into
+`roots(...)`; it is how the module's `init` reads each root. PEM goes
+through OpenSSL's reader. `TrustAnchor::from_der` and
+`TrustAnchor::from_pem` are gone: `from_pem` kept only the first
+certificate of a bundle without saying so.
 
 Pin roots only. An anchor must be a root above Apple's WWDR intermediate,
 because the receipt's marker check looks for the intermediate below the
