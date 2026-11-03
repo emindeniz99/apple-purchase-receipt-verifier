@@ -396,9 +396,9 @@ rejected alternatives with their measured reasons.
   every package's copy is checked against its SHA-256; only Go and the
   Swift package commit it, because their registries build from the git
   tree, and the release branch refreshes both copies and every pin
-  together. The core's crate stays at 0.7 on crates.io until `openssl-sys`
-  accepts OpenSSL 4; a crates.io build would get OpenSSL 3, which the
-  adapter refuses.
+  together. The core's crate is not published to crates.io until
+  `openssl-sys` accepts OpenSSL 4; a crates.io build would get OpenSSL 3,
+  which the adapter refuses.
 
 ## 1. Existing solutions (research, 2026-08)
 

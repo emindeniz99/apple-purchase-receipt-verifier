@@ -432,8 +432,10 @@ thread and two native copies leaked per Tomcat redeploy, JNA 5.17.0 and
   `rust-core` merges into `main` once, when every gate has passed.
 - Everything stays 0.x; 1.0 is a separate decision.
 - The first crates.io publish waits until something needs it.
-- **crates.io after 0.8 (owner, 2026-09-30).** The core crate stays at
-  0.7 on crates.io until an `openssl-sys` release can vendor OpenSSL 4.
+- **crates.io after 0.8 (owner, 2026-09-30).** The core crate is not
+  published to crates.io until an `openssl-sys` release can vendor
+  OpenSSL 4. (This entry said it "stays at 0.7" there; corrected
+  2026-11-03: no version of either crate was ever published.)
   The owner opened
   [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
   an opt-in `vendored-4` feature that builds `openssl-src` 400.x and

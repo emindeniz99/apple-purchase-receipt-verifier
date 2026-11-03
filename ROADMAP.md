@@ -16,7 +16,8 @@ Delete a line in the commit that ships it.
    enforce branch protection for admins, bootstrap RubyGems, NuGet and
    Docker Hub, submit the repository to Packagist, and settle the Maven
    Central release count and the Java 8 CI distribution (BOOTSTRAP.md has
-   each). crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4;
+   each). The crate is not published to crates.io until `openssl-sys`
+   accepts OpenSSL 4;
    the `-wasm` Maven artifact is held until the owner flips
    `APRV_PUBLISH_JAVA_WASM` (item 11).
 
@@ -25,8 +26,8 @@ Delete a line in the commit that ships it.
 Taken after #187 merged the Rust core into `main` (b96f14e). The records
 are in docs/rust-core/DECISIONS.md where they are architectural.
 
-1. **crates.io.** The core crate stays at 0.7 on crates.io until an
-   `openssl-sys` release can vendor OpenSSL 4. The owner opened
+1. **crates.io.** The core crate is not published to crates.io (it never
+   has been) until an `openssl-sys` release can vendor OpenSSL 4. The owner opened
    [rust-openssl#2692](https://github.com/rust-openssl/rust-openssl/pull/2692),
    an opt-in `vendored-4` feature; its CI results are in
    docs/evidence/2026-09-30-rust-openssl-vendored-4-upstream.md (R19).
@@ -313,8 +314,8 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   their own JVM and java.security and again under a SHA-1-free
   `jdk.certpath.disabledAlgorithms`. Move deployments to `java17-debian13`
   or `java21-debian13`.
-- **RubyGems and NuGet are still unbootstrapped, and crates.io is held at
-  0.7** (BOOTSTRAP.md has the owner actions). The release itself no longer breaks on them:
+- **RubyGems and NuGet are still unbootstrapped, and the crate has never
+  been published to crates.io** (BOOTSTRAP.md has the owner actions). The release itself no longer breaks on them:
   `release.yml` asks each of the three whether the package exists and skips
   the publish with a `::notice::` when it does not — before OIDC for
   crates.io and NuGet, and after a failed OIDC for RubyGems, whose pending
