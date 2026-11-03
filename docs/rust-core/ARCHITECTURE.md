@@ -52,6 +52,20 @@ the Wasm-first basis** (R22). The decisions it rests on are in
   independent of all of the above, maintained, and the live oracle (R33).
 ```
 
+**`rust/openssl/src/path.rs` is part of the trust-policy review
+boundary**, not only FFI. It holds three policy pieces: the anchor
+waivers (`waived`: an anchor's validity window, CA flag and path length
+are not judged), the per-anchor runs and the choice of which run's
+problems are reported (`run`), and the narrowing of the certificate bag
+to the certificates that sign the path (`linked_above`). They sit there
+together because each is a setting of one `X509_verify_cert` run.
+`waived` is decided inside OpenSSL's verify callback, a C function
+pointer, and the `unsafe` code that installs and runs it stays in the
+adapter; the per-anchor runs and the narrowing build the store and the
+untrusted stack OpenSSL's issuer lookup reads, so they live beside the
+call. The core still decides every verdict from the problems the adapter
+reports. Review that file with `rust/src/path.rs`.
+
 A fix in `rust/` rebuilds one `aprv.wasm` and reaches every Wasm-hosted
 package in the next release. No wrapper carries a parser, a signature
 check or a trust decision. The Java implementation is the one deliberate
@@ -872,6 +886,7 @@ workspace ([CMS everywhere §1][cms]).
 | One Rust implementation under eight languages | A CI job greps the non-Java wrappers for crypto, X.509 and ASN.1 APIs (`node:crypto`, `crypto.subtle`, `cryptography`, `crypto/x509`, `System.Security.Cryptography.Pkcs`, `openssl_*`, `OpenSSL::`, swift-crypto, ...) and fails on a hit outside tests |
 | The Java implementation stays independent | The main artifact depends on no Rust artifact; the `-wasm` module shares its API, not its code (R33) |
 | No hand-written ASN.1, CMS or X.509 in the core (R21) | `tools/check-layering.mjs` fails on a module named `asn1`, `x509`, `cms`, `chain` or `crypto` in `rust/src`, an ASN.1, X.509 or signature crate in the core's graph, `ASN1_get_object` anywhere in `rust/src`, or `ASN1_get_object` in the adapter outside its documented header walk (`rust/openssl/src/walk.rs`, which reads headers and decodes no value; rule 6) |
+| Trust policy is reviewed where it lives | Not mechanised: the policy is in `rust/src/` and in `rust/openssl/src/path.rs` (anchor waivers, per-anchor runs, bag narrowing; §1), and a review of either reads both. `tests/trust_pinning.rs` pins the behaviour of both, and that neither crate loads a trust path |
 | `unsafe` only at the edges | `#![forbid(unsafe_code)]` in the core, the surface and the wire crate; `unsafe` only in `aprv-openssl`, `aprv-abi`, `rust/ffi` and `aprv-server` (for `Module::deserialize`), each block with a `// SAFETY:` comment |
 | `aprv.wasm` imports exactly `random-get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
 | The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |

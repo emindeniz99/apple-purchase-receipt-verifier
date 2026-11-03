@@ -25,7 +25,7 @@ aprv-abi / aprv-wire   the canonical-ABI exports (WIT); the 0.7 canonical JSON b
 aprv-surface        the 0.7 model: operations, Reason, payloads, Failure, roots
       │  depends on the core only; no generator, no runtime, no wire format
       ▼
-aprv-core           every security decision
+aprv-core           every security decision (with aprv-openssl's path.rs)
 ```
 
 - **The core** parses, verifies and decides.
@@ -37,8 +37,13 @@ aprv-core           every security decision
   the clock read, instance pooling, trap recovery. Nothing else.
 
 Reviewing security means reviewing the core and its OpenSSL adapter,
-`aprv-openssl`, whose path validation (`rust/openssl/src/path.rs`) holds
-part of the chain policy (ARCHITECTURE.md §1). Reviewing a wrapper is
+`aprv-openssl`. The adapter is not policy-free: its path validation,
+`rust/openssl/src/path.rs`, holds the anchor waivers, the per-anchor runs
+and which run's problems are reported, and the narrowing of the
+certificate bag, so it is part of the trust-policy review boundary. They
+live there because each sets up one `X509_verify_cert` run, and the
+waivers run inside OpenSSL's C verify callback, whose `unsafe` code
+stays in the adapter (ARCHITECTURE.md §1). Reviewing a wrapper is
 mechanical: read the clock, move bytes in, move JSON out, map the
 outcome.
 
