@@ -1596,8 +1596,10 @@ jobs:
   # The exploratory pass over the core's four entry points (the receipt,
   # its base64 form, the transaction JWS and the endpoint JSON), with the
   # bounded JSON reader the core still writes by hand and OpenSSL's parsers
-  # beneath them; rust/fuzz/README.md lists the targets and their
-  # invariants. Seeds come from fixtures/, so a crasher is a mutation of a
+  # beneath them, and over the two payload decoders no random input
+  # reaches through a signature; rust/fuzz/README.md lists the targets and
+  # their invariants. Seeds come from fixtures/ (the payload targets' are
+  # extracted from them by run.sh), so a crasher is a mutation of a
   # genuine receipt or JWS, not of noise. It needs a nightly for the
   # sanitizer flags, which is why it is not part of the `rust` matrix. The
   # vendored OpenSSL here is not instrumented; nightly.yml's

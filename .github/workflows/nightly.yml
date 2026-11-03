@@ -103,7 +103,7 @@ jobs:
           mkdir -p "$logs"
           : > "$list"
           failed=0
-          for t in verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi; do
+          for t in verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi receipt-payload jws-payload; do
             if ./run.sh "$t" 600 > "$logs/$t.log" 2>&1; then
               echo "fuzz: $t ran 600 s without a finding"
             else
