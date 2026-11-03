@@ -7,7 +7,8 @@
 //! answers narrow questions ("is this one certificate", "does this
 //! `SignerInfo` verify under this certificate", "which problems does a path
 //! from this certificate to these anchors have at this second") and never
-//! decides a verdict. It knows nothing about JSON, the C ABI or Wasm.
+//! decides a verdict. It does hold trust policy, though: see the next two
+//! paragraphs. It knows nothing about JSON, the C ABI or Wasm.
 //!
 //! **Not a general-purpose OpenSSL binding.** It is published only because
 //! the core depends on it, moves in lockstep with the core's version, and
@@ -20,6 +21,15 @@
 //! runs once per candidate anchor and chooses which run's problems are
 //! reported, and groups OpenSSL's `X509_V_ERR_*` codes into the problem
 //! kinds the core turns into reasons. Review it with the core.
+//!
+//! Those pieces sit here, together, because each one is a setting of one
+//! `X509_verify_cert` run. The anchor waivers (`waived`) are decided inside
+//! OpenSSL's verify callback, a C function pointer, and the `unsafe` code
+//! that installs and runs it stays in this crate. The per-anchor runs build
+//! the `X509_STORE` each run sees, and the bag narrowing (`linked_above`)
+//! builds its untrusted stack, so both shape OpenSSL's issuer lookup and
+//! belong next to the call that runs it; which run's problems are reported
+//! is chosen from those runs.
 //!
 //! **The path validation is internal.** `__internal::verify_path` uses
 //! the keys of the certificates it is handed as untrusted to check the

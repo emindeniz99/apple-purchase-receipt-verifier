@@ -42,7 +42,7 @@ fn verifiers() -> &'static (Verifier, Verifier) {
                     .expect("a non-empty anchor set"),
             )
         };
-        let fixture = vec![TrustAnchor::from_der(JWS_ROOT).expect("fixture root")];
+        let fixture = TrustAnchor::from_der_or_pem(JWS_ROOT).expect("fixture root");
         (build(fixture), build(Config::default().roots().to_vec()))
     })
 }

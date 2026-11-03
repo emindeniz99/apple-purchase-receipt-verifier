@@ -169,8 +169,9 @@ where they overlap, they agree.
   can succeed are listed per registry in `BOOTSTRAP.md`. PHP publishes from
   the root `composer.json` (layout A) once the owner submits the repository to
   Packagist and installs its GitHub App; see the Packagist section there.
-  crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4
-  (`vars.APRV_PUBLISH_CRATES`, BOOTSTRAP.md).
+  The Rust crate has never been published to crates.io, and waits until
+  `openssl-sys` accepts OpenSSL 4 (`vars.APRV_PUBLISH_CRATES`,
+  BOOTSTRAP.md).
 - Maven Central's Usage Center caps `io.github.emindeniz99` at **7 releases
   per calendar month**, about 80 MB and about 1,000 files per calendar month
   (https://central.sonatype.org/publish/maven-central-publishing-limits/).

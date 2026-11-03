@@ -34,7 +34,7 @@ Releases** carry `aprv.wasm`, the component, the server binaries and
 `SHA256SUMS` with the workflow's own token.
 
 Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
-a one-time setup each, below); crates.io, held at 0.7 on purpose; the
+a one-time setup each, below); crates.io, never published, on purpose; the
 `-wasm` Maven artifact, held until the owner flips
 `APRV_PUBLISH_JAVA_WASM`; two owner decisions that are not registries, the
 Maven Central release count and the Java 8 CI distribution; and the
@@ -84,14 +84,15 @@ gem only in dashes, underscores or case, so publishing the dashed name may make
 the underscored one unclaimable. Confirm that at bootstrap; do not publish an
 empty stub gem for it.
 
-## crates.io — held at 0.7 until `openssl-sys` accepts OpenSSL 4
+## crates.io — not yet published, until `openssl-sys` accepts OpenSSL 4
 
 The 0.8 core runs on OpenSSL 4 through `aprv-openssl`, and the workspace
 builds it with a one-line `[patch.crates-io]` of `openssl-sys`, because
 `openssl-sys` 0.9.117 does not accept `openssl-src` 400.x. A patch applies
 only inside this workspace: a crates.io build of the crate would get
-OpenSSL 3, which `aprv-openssl`'s build script refuses. So the crate stays
-at 0.7 on crates.io, and `publish-crates`, the crates smoke in `ci.yml` and
+OpenSSL 3, which `aprv-openssl`'s build script refuses. So neither crate
+has ever been published to crates.io (no version exists there, 0.7
+included), and `publish-crates`, the crates smoke in `ci.yml` and
 the `crates` leg of `post-publish-smoke.yml` are skipped unless the
 repository variable `APRV_PUBLISH_CRATES` is `true`.
 

@@ -71,7 +71,15 @@ pub fn read_text_fixture(relative: &str) -> String {
 }
 
 pub fn anchor(relative: &str) -> TrustAnchor {
-    TrustAnchor::from_der(&read_fixture(relative)).expect("fixture is not a certificate")
+    anchor_from_der(&read_fixture(relative))
+}
+
+/// One DER certificate as one anchor, through the crate's one public
+/// reader, `TrustAnchor::from_der_or_pem`.
+pub fn anchor_from_der(der: &[u8]) -> TrustAnchor {
+    let mut anchors = TrustAnchor::from_der_or_pem(der).expect("not a certificate");
+    assert_eq!(anchors.len(), 1, "one DER certificate is one anchor");
+    anchors.remove(0)
 }
 
 // --- the shared generated corpus ---------------------------------------

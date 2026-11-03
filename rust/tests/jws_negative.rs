@@ -55,6 +55,25 @@ fn four_segments_are_rejected() {
 }
 
 #[test]
+fn the_segment_count_is_reported_without_collecting_the_segments() {
+    // The longest input the cap admits, all dots: the refusal states every
+    // segment `split` would yield, though the check takes at most four.
+    let dots = ".".repeat(262_144);
+    let failure = expect_err(&dots);
+    assert_eq!(failure.reason(), Reason::Malformed);
+    assert_eq!(
+        failure.message(),
+        "expected 3 dot-separated segments, got 262145"
+    );
+    for (jws, segments) in [("", 1), ("a", 1), ("a.b", 2), ("a.b.c.d", 4), ("....", 5)] {
+        assert_eq!(
+            expect_err(jws).message(),
+            format!("expected 3 dot-separated segments, got {segments}")
+        );
+    }
+}
+
+#[test]
 fn a_header_that_is_not_json_is_rejected() {
     let (_, payload, signature) = common::split_jws(&common::transaction_jws());
     let header = common::base64url(b"not json at all");
@@ -190,8 +209,8 @@ fn an_x5c_certificate_carrying_one_extension_twice_is_invalid_certificate() {
         .as_str()
         .unwrap();
     let der = common::decode_base64(leaf);
-    // TrustAnchor::from_der is the library's certificate reader, public.
-    assert!(TrustAnchor::from_der(&der).is_err());
+    // TrustAnchor::from_der_or_pem is the library's certificate reader, public.
+    assert!(TrustAnchor::from_der_or_pem(&der).is_err());
 
     let verifier = common::verifier([common::anchor("generated/hostile-jws-root.der")]);
     assert_eq!(
@@ -272,7 +291,7 @@ fn minted_jws_with(
     );
     let signature = sign(signing_input.as_bytes());
     let jws = format!("{signing_input}.{}", common::base64url(&signature));
-    (TrustAnchor::from_der(&root).unwrap(), jws)
+    (common::anchor_from_der(&root), jws)
 }
 
 #[test]
@@ -873,10 +892,7 @@ fn non_ascii_claims_round_trip_as_utf8() {
     })
     .to_string();
     let (root, jws) = common::mint::signed_jws(claims.as_bytes());
-    let verifier = common::verifier_at(
-        [apple_purchase_receipt_verifier::TrustAnchor::from_der(&root).unwrap()],
-        INSIDE_THE_CHAIN,
-    );
+    let verifier = common::verifier_at([common::anchor_from_der(&root)], INSIDE_THE_CHAIN);
     let payload = verifier.verify_signed_data(&jws).unwrap();
     assert_eq!(payload.json(), claims);
     let parsed = common::claims(&payload);
@@ -976,7 +992,7 @@ fn an_unimplemented_curve_is_judged_only_on_a_vouched_key() {
     );
     let signature = leaf_key.sign_raw(signing_input.as_bytes());
     let minted = format!("{signing_input}.{}", common::base64url(&signature));
-    let pinned = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+    let pinned = common::verifier([common::anchor_from_der(&root)]);
     assert!(pinned.verify_signed_data(&minted).is_ok());
 
     // A P-521 leaf the minted intermediate vouches for, without the leaf
@@ -1034,7 +1050,7 @@ fn validity_is_judged_to_the_millisecond() {
         let (root, jws) = common::mint::signed_jws(payload.as_bytes());
         let verifier = Verifier::new(
             Config::builder()
-                .roots([TrustAnchor::from_der(&root).unwrap()])
+                .roots([common::anchor_from_der(&root)])
                 .clock(|| 0)
                 .build()
                 .unwrap(),

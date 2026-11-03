@@ -639,8 +639,8 @@ Fully automated — do not publish from a laptop:
    publishes the Go module
    through `proxy.golang.org`. SwiftPM consumes the plain tag directly,
    and Packagist reads the tag once the owner has submitted the repository.
-   crates.io stays at 0.7 until `openssl-sys` accepts OpenSSL 4
-   (BOOTSTRAP.md).
+   crates.io is not yet published to, until `openssl-sys` accepts
+   OpenSSL 4 (BOOTSTRAP.md).
 
 Every publish job is version-gated: it skips loudly if the registry already
 has that version, so re-runs are safe, and each one proves the built artifact

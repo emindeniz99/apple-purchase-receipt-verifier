@@ -8,7 +8,7 @@
 mod common;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
-use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
+use apple_purchase_receipt_verifier::{Config, Environment, Reason, Verifier};
 use serde_json::Value;
 
 fn verifier() -> Verifier {
@@ -127,8 +127,7 @@ fn verifying_the_largest_genuine_receipt_is_fast_and_repeatable() {
 
 #[test]
 fn apples_official_jws_fixtures_verify_against_apples_test_ca() {
-    let ca = TrustAnchor::from_der(&common::read_fixture("apple-official/certs/testCA.der"))
-        .expect("Apple's test CA must parse");
+    let ca = common::anchor_from_der(&common::read_fixture("apple-official/certs/testCA.der"));
     // ecdsa-with-SHA384 over P-256 keys: the digest is wider than the field
     // and SEC1 truncation applies. A fixed "verify(message) with SHA-256"
     // implementation cannot verify this chain.

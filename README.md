@@ -146,7 +146,7 @@ version, and pin it.
 | RubyGems | `gem "apple-purchase-receipt-verifier"` | `require "apple_purchase_receipt_verifier"` |
 | NuGet | `dotnet add package ApplePurchaseReceiptVerifier` | `using ApplePurchaseReceiptVerifier;` |
 | Packagist | `composer require emindeniz99/apple-purchase-receipt-verifier`, then `vendor/bin/aprv-install` | `use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;` |
-| crates.io | `cargo add apple-purchase-receipt-verifier` | `use apple_purchase_receipt_verifier::{Config, Verifier};` |
+| crates.io (not yet published) | `cargo add apple-purchase-receipt-verifier` | `use apple_purchase_receipt_verifier::{Config, Verifier};` |
 | GitHub Releases, GHCR | the `aprv` binary for your platform, or `ghcr.io/emindeniz99/aprv-server` | HTTP, or `aprv verify-receipt` on stdin |
 
 The import namespace is the registry name in each ecosystem's casing
@@ -156,7 +156,8 @@ convention (`applepurchasereceiptverifier` / `apple_purchase_receipt_verifier` /
 Maven Central (the main artifact; `-wasm` is held), npm, PyPI, SwiftPM
 and the Go proxy publish on every release. RubyGems, NuGet, Packagist and Docker Hub each wait on a one-time
 owner action, listed in [BOOTSTRAP.md](./BOOTSTRAP.md). The Rust crate
-stays at 0.7 on crates.io until `openssl-sys` accepts OpenSSL 4; building
+has never been published to crates.io and waits until `openssl-sys`
+accepts OpenSSL 4; building
 the 0.8 core from source needs `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL
 4>` ([rust/openssl/README.md](rust/openssl/README.md)). C and C++ build
 from source against the core, and [rust/ffi/README.md](rust/ffi/README.md)

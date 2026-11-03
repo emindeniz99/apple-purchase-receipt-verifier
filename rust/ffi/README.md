@@ -127,8 +127,9 @@ answer 413 as Apple does, check the body's length in bytes before the call.
 ### The clock
 
 `aprv_verifier_new` takes `const int64_t *fixed_clock_unix_millis`: one
-instant, in milliseconds since the Unix epoch. `NULL` reads the system clock
-on every call. A pointer rather than a sentinel value because every `int64_t`
+instant, in milliseconds since the Unix epoch. `NULL` means the system
+clock, which the core reads during a call only when that call needs the
+time. A pointer rather than a sentinel value because every `int64_t`
 names a real instant, `0` included.
 
 It is an instant and not a callback on purpose. The Rust `Config` takes a

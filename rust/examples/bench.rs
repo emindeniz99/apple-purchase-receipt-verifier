@@ -178,8 +178,9 @@ fn worst_case() -> Vec<Value> {
                 .as_array()
                 .expect("root ids")
                 .iter()
-                .map(|root| {
-                    TrustAnchor::from_der(&bytes(root.as_str().expect("root id"))).expect("root")
+                .flat_map(|root| {
+                    TrustAnchor::from_der_or_pem(&bytes(root.as_str().expect("root id")))
+                        .expect("root")
                 });
             builder = builder.roots(roots.collect::<Vec<_>>());
         }
