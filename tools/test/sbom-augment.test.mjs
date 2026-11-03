@@ -88,7 +88,7 @@ test('server: adds wasmtime from Cargo.lock, musl, rustc and the embedded compon
   assert.equal(r.code, 0, r.err);
   const sbom = JSON.parse(readFileSync(out, 'utf8'));
   const by = (name) => sbom.components.find((c) => c.name === name);
-  assert.equal(by('wasmtime').version, '49.0.1');
+  assert.equal(by('wasmtime').version, '49.0.4');
   assert.equal(by('wasmtime').hashes[0].content, '0000000000000000000000000000000000000000000000000000000000000049');
   assert.equal(by('musl').version, 'rustc-1.98.1');
   const embedded = createHash('sha256').update(readFileSync(fx('component.bin'))).digest('hex');

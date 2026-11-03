@@ -36,6 +36,14 @@ person from trying them again.
 - Binaries and build outputs: `.so`, `.jar`, `.wasm`, `target/`, archives.
   Record their size and hash in the note instead.
 - Vendored or downloaded sources. Name the version and the URL.
+- Lockfiles (`Cargo.lock`, `go.sum`, `package-lock.json` and the like).
+  Nothing here ships, yet each pinned version was a Dependabot alert
+  once an advisory reached it, and nobody bumps a spike. Name the
+  versions that matter in the note instead; `.gitignore` here keeps the
+  files out. To rerun a spike, resolve fresh versions first
+  (`cargo generate-lockfile`, `go mod tidy`, `npm install`): a script
+  that passes `--locked` fails without one. Removed 2026-11-03, after
+  `wasmtime` 49.0.1 in two spike lockfiles raised a critical alert.
 - Absolute local paths, usernames, host names, tokens and keys.
 - Production receipts. Only the sandbox fixtures under `fixtures/` and
   receipts a spike generates from its own test PKI.
