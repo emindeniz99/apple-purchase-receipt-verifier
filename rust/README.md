@@ -383,9 +383,10 @@ denial-of-service cases pin this with a time budget, and the tests assert it
 directly through a seam that records every key used. The seam compiles only
 under the `test-seams` feature, which the crate's own tests turn on through
 a dev-dependency on the crate itself, so a plain `cargo test` runs them. The
-same feature gates the rest of `__internal` that only tests use (the date
-reader, the path policy, the `x5c` decoder, hand-built payloads and
-failures); without it, `__internal` holds only the input length, the
+same feature gates the rest of `__internal` that only tests and fuzz
+targets use (the date reader, the path policy, the `x5c` decoder, the
+payload decoders with no signature in front of them, hand-built payloads
+and failures); without it, `__internal` holds only the input length, the
 `receipt-data` decoder and a base64 encoder that the workspace's other
 crates and the fuzz targets use.
 

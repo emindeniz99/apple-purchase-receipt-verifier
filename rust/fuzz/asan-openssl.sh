@@ -10,7 +10,7 @@
 #
 # <openssl-dir> holds the instrumented build, or receives it: when it has no
 # lib/libcrypto.a, tools/openssl-asan.sh (the one pin of the OpenSSL
-# tarball) builds it there first. Each target (default: the five run.sh's
+# tarball) builds it there first. Each target (default: the seven run.sh's
 # `all` names, run one by one) then runs for <seconds> through run.sh,
 # linked against that build. A crash, a leak or a timeout stops that target
 # only: the next one still runs, and the script ends by naming every target
@@ -33,7 +33,7 @@ seconds="$2"
 shift 2
 targets=("$@")
 # One run.sh call per target: `run.sh all` stops at the first failure.
-[[ ${#targets[@]} -gt 0 ]] || targets=(verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi)
+[[ ${#targets[@]} -gt 0 ]] || targets=(verify-receipt verify-receipt-base64 verify-transaction endpoint-json ffi receipt-payload jws-payload)
 
 if [[ ! -f "$dir/lib/libcrypto.a" ]]; then
   "${OPENSSL_ASAN_SH:-$repo/tools/openssl-asan.sh}" "$dir" > /dev/null
