@@ -418,8 +418,10 @@ mod tests {
             out.extend([0x00, 0x00]);
             out
         };
-        let within = nested_octet_string(HELPER_DEPTH - 1);
+        // A child is walked on its own, so the SEQUENCE around it is not
+        // one of its levels: the bound is the child's own nesting.
         assert_eq!(children(&sequence(&within)), Some(vec![within.as_slice()]));
+        assert_eq!(children(&sequence(&deeper)), None);
         assert_eq!(children(&sequence(&far)), None);
     }
 }

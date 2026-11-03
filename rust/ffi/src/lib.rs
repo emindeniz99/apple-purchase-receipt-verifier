@@ -1253,6 +1253,26 @@ mod tests {
         }
     }
 
+    /// With no clock pinned, a dateless receipt is judged at the system
+    /// clock. The fixture chain is valid from 2024-01-01 to 2050-01-01, so
+    /// this expects `Ok` only until 2050-01-01; the epoch, or any other
+    /// stand-in for a missing clock, falls outside it.
+    #[test]
+    fn a_null_clock_judges_a_dateless_receipt_at_the_system_clock() {
+        let der = std::fs::read(fixture("generated-0.7/receipt-no-creation-date.der")).unwrap();
+        let root = std::fs::read(fixture("generated-0.7/divergence-receipt-root.der")).unwrap();
+        let base64 = CString::new(base64_encode(&der)).unwrap();
+        let ders = [root.as_ptr()];
+        let lens = [root.len()];
+        let verifier =
+            unsafe { aprv_verifier_new(ders.as_ptr(), lens.as_ptr(), 1, std::ptr::null()) };
+        assert!(!verifier.is_null());
+        let status =
+            unsafe { aprv_verify_receipt(verifier, base64.as_ptr(), std::ptr::null_mut()) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        unsafe { aprv_verifier_free(verifier) };
+    }
+
     // --- the rest of the surface -----------------------------------------
 
     #[test]

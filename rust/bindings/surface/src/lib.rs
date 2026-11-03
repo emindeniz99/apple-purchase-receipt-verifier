@@ -342,6 +342,44 @@ mod tests {
         assert_eq!(answer, "{\"status\":21002}");
     }
 
+    fn system_now() -> i64 {
+        let since_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap();
+        i64::try_from(since_epoch.as_millis()).unwrap()
+    }
+
+    #[test]
+    fn a_call_by_clock_reads_the_system_clock_when_the_input_needs_the_time() {
+        // A receipt with no creation date is judged at the system clock.
+        // Its chain is valid from 2024-01-01 to 2050-01-01, so this expects
+        // a verified receipt only until then; a stand-in such as the epoch
+        // falls outside it.
+        let root = fixture("generated-0.7/divergence-receipt-root.der");
+        let verifier = Verifier::new(&[root]).unwrap();
+        let receipt = core_api::__internal::base64_encode(&fixture(
+            "generated-0.7/receipt-no-creation-date.der",
+        ));
+        assert!(verifier.verify_receipt_by_clock(receipt.as_bytes()).is_ok());
+
+        // A valid body's request_date is the system clock's time during the
+        // call.
+        let body = format!("{{\"receipt-data\":\"{receipt}\"}}");
+        let before = system_now();
+        let answer =
+            verifier.verify_receipt_endpoint_by_clock(Environment::Sandbox, body.as_bytes());
+        let after = system_now();
+        assert!(answer.contains("\"status\":0"), "{answer}");
+        let marker = "\"request_date_ms\":\"";
+        let start = answer.find(marker).unwrap() + marker.len();
+        let length = answer[start..].find('"').unwrap();
+        let request_date: i64 = answer[start..start + length].parse().unwrap();
+        assert!(
+            (before..=after).contains(&request_date),
+            "{before} <= {request_date} <= {after}"
+        );
+    }
+
     #[test]
     fn the_instant_of_each_call_is_its_own_argument() {
         // The endpoint's request_date is the one output that shows now_ms.

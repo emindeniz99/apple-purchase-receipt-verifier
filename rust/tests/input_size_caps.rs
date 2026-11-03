@@ -393,6 +393,18 @@ fn a_jws_exactly_at_the_cap_reaches_the_signature_check() {
     assert_eq!(error.reason(), Reason::InvalidSignature, "{error}");
 }
 
+#[test]
+fn a_jws_of_dots_at_the_cap_is_refused_without_collecting_its_segments() {
+    // The cap admits 262,145 empty segments. The split takes at most four
+    // and the refusal only counts the rest: collecting them would allocate
+    // 16 bytes a segment, at least 4 MB.
+    let dots = ".".repeat(MAX_JWS_BYTES);
+    let verifier = common::jws_verifier();
+    let (error, allocated) = measure(|| verifier.verify_signed_data(&dots).unwrap_err());
+    assert!(allocated < REFUSAL_BUDGET, "allocated {allocated} bytes");
+    assert_eq!(error.reason(), Reason::Malformed);
+}
+
 // --- JWS header and payload nesting: unbounded within the size cap --------
 
 #[test]
