@@ -712,6 +712,55 @@ fn an_anchor_named_as_the_intermediate_does_not_change_the_verdict() {
     assert_eq!(failure.reason(), Reason::UntrustedChain, "{failure}");
 }
 
+/// What `TrustAnchor` documents: an anchor must be a root above the WWDR
+/// intermediate (fable review F2). The intermediate pinned alone never
+/// verifies, since the marker check and the JWS path need it below the
+/// anchor; pinned beside its root, the order decides whether a genuine
+/// input verifies. Every case fails closed: what is refused is genuine,
+/// and nothing unsigned is accepted.
+#[test]
+fn an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_decides() {
+    let one = |der: &[u8]| TrustAnchor::from_der_or_pem(der).unwrap().remove(0);
+    let reason = |result: Result<(), apple_purchase_receipt_verifier::Failure>| {
+        result.err().map(|failure| failure.reason())
+    };
+
+    let receipt = common::receipt_der();
+    let bag = openssl::pkcs7::Pkcs7::from_der(&receipt).unwrap();
+    let embedded = bag.signed().unwrap().certificates().unwrap();
+    let root = common::receipt_root();
+    let intermediate = embedded
+        .iter()
+        .map(|certificate| certificate.to_der().unwrap())
+        .map(|der| one(&der))
+        .find(|anchor| {
+            Certificate::from_der(anchor.der())
+                .unwrap()
+                .has_extension(INTERMEDIATE_OID)
+        })
+        .unwrap();
+    let verify = |roots: Vec<TrustAnchor>| {
+        reason(common::verify_der(&common::verifier(roots), &receipt).map(drop))
+    };
+    let purpose = Some(Reason::InvalidCertificatePurpose);
+    assert_eq!(verify(vec![intermediate.clone()]), purpose);
+    assert_eq!(verify(vec![intermediate.clone(), root.clone()]), purpose);
+    assert_eq!(verify(vec![root.clone(), intermediate.clone()]), None);
+
+    let jws = common::transaction_jws();
+    let header = common::jws_header(&jws);
+    let x5c_1 = common::decode_base64(header["x5c"][1].as_str().unwrap());
+    let intermediate = one(&x5c_1);
+    let root = common::jws_root();
+    let verify = |roots: Vec<TrustAnchor>| {
+        reason(common::verifier(roots).verify_signed_data(&jws).map(drop))
+    };
+    let untrusted = Some(Reason::UntrustedChain);
+    assert_eq!(verify(vec![intermediate.clone()]), untrusted);
+    assert_eq!(verify(vec![intermediate.clone(), root.clone()]), untrusted);
+    assert_eq!(verify(vec![root, intermediate]), None);
+}
+
 /// Two same-named roots that each vouch for a certificate in the bag: the
 /// genuine receipt's root, and another receipt's root whose intermediate and
 /// signer (a key on an unimplemented curve) sit in the same unsigned bag.

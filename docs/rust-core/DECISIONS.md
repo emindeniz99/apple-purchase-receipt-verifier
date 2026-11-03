@@ -2099,6 +2099,27 @@ caller's root bytes as they are, and the core reads DER or PEM.
   Each `--roots` flag adds its file's roots, in order; managed mode, which
   takes its roots on stdin, is unchanged.
 
+**Amended 2026-11-03** (owner; review B9, fable F2). A root must be a
+root: every anchor must sit above the WWDR intermediate.
+
+- **Why:** the core looks for the intermediate below the anchor. A
+  receipt's WWDR marker is read from the path once the anchor is taken
+  off it, and a JWS path must be exactly leaf, `x5c[1]`, anchor. So an
+  anchor that is the intermediate, or below it, never verifies a receipt
+  or a JWS: `INVALID_CERTIFICATE_PURPOSE` and `UNTRUSTED_CHAIN`. Pinned
+  beside its root, the intermediate makes the order of the anchors
+  decide: after the root, a genuine input verifies; before it, OpenSSL
+  ends the path at the intermediate and the genuine input is refused with
+  those reasons (measured with the generated receipt and transaction JWS;
+  `an_anchor_at_the_intermediate_never_verifies_and_beside_the_root_its_order_decides`
+  in `rust/tests/trust_pinning.rs`). Every case fails closed: what is
+  refused is genuine, and nothing unsigned is accepted.
+- **Decision:** documented, not refused. `TrustAnchor`,
+  `ConfigBuilder::roots`, `rust/README.md` and SURFACE.md §2 say to pin
+  roots only. Refusing an anchor that carries the WWDR marker at
+  `build()`, and making the per-anchor runs independent of one another,
+  stay open.
+
 ---
 
 ## R40. JSON from `serde_json`, each document as a map of raw values

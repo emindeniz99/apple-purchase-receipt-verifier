@@ -55,6 +55,16 @@ pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 /// which is standard PKIX trust-anchor semantics and is what lets a receipt
 /// signed years ago under a since-expired chain still verify at its own
 /// creation date.
+///
+/// **An anchor must be a root above the WWDR intermediate**, as Apple's
+/// three are. The intermediate must sit below the anchor: the receipt's
+/// marker check looks for it there, and a JWS path is always leaf,
+/// `x5c[1]`, anchor. So an anchor that is the WWDR intermediate, or any
+/// certificate below it, never verifies a receipt or a JWS. Pinned beside
+/// its root, the intermediate makes the order of the anchors matter:
+/// listed after the root it changes nothing, listed before it a genuine
+/// input is refused, and the reason given for a refusal depends on that
+/// order. Every such case fails closed; pin roots only.
 #[derive(Debug, Clone)]
 pub struct TrustAnchor(Arc<Anchor>);
 

@@ -112,8 +112,12 @@ std::thread_local! {
 /// it passes.
 ///
 /// Each run's store holds one of `anchors` and nothing else (see [`run`]).
-/// `X509_V_FLAG_PARTIAL_CHAIN` makes it a trust anchor whether or not it is
-/// self-signed, as a pinned anchor is. No purpose, policy, revocation or host check is asked
+/// `X509_V_FLAG_PARTIAL_CHAIN` lets OpenSSL end the path at that anchor
+/// whether or not it is self-signed. That is what OpenSSL accepts, not
+/// what verifies: the core needs the WWDR intermediate below the anchor
+/// (its marker check, and the JWS path of leaf, `x5c[1]`, anchor), so an
+/// anchor that is the intermediate, or below it, never verifies a receipt
+/// or a JWS. No purpose, policy, revocation or host check is asked
 /// for. An anchor is trusted by fiat: its own validity window, CA flag and
 /// path length constraint are not judged.
 ///

@@ -117,6 +117,15 @@ told apart by the bytes, and returns every certificate a PEM bundle holds;
 it is how the module's `init` reads each root. PEM goes through OpenSSL's
 reader, as does `TrustAnchor::from_pem`.
 
+Pin roots only. An anchor must be a root above Apple's WWDR intermediate,
+because the receipt's marker check looks for the intermediate below the
+anchor and a JWS path is always leaf, `x5c[1]`, anchor. An anchor that is
+the intermediate, or anything below it, never verifies a receipt or a
+JWS. Pinned beside its root, the intermediate makes the order of the roots
+matter: after the root it changes nothing; before it, a genuine receipt or
+JWS is refused, and the reason given depends on the order. Every such case
+fails closed.
+
 At startup, prefer `Config::builder().build()?` to `Config::default()`,
 even with nothing to set: it reports bundled roots that did not load as a
 `ConfigError` where the process can stop, while `Config::default()` cannot

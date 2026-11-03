@@ -81,6 +81,11 @@ pub struct ConfigBuilder {
 impl ConfigBuilder {
     /// The roots a chain must reach, replacing Apple's bundled ones. Tests
     /// use their own.
+    ///
+    /// Each must be a root above the WWDR intermediate: an anchor that is
+    /// the intermediate, or below it, never verifies a receipt or a JWS,
+    /// and pinned beside its root it makes the verdict and the reason
+    /// depend on the order of `roots` ([`TrustAnchor`]). Pin roots only.
     #[must_use]
     pub fn roots(mut self, roots: impl IntoIterator<Item = TrustAnchor>) -> Self {
         self.roots = Some(roots.into_iter().collect());

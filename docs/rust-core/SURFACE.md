@@ -85,6 +85,14 @@ R41).
   wrapper and crosses the ABI as `now-ms` (ARCHITECTURE.md §6). The ABI
   carries `now-ms` per call, so a public override later is additive
   (DECISIONS.md R24).
+- **A root is a root.** Every caller-pinned anchor must sit above the
+  WWDR intermediate, as Apple's three roots do. The core looks for the
+  intermediate below the anchor (the receipt's marker check, and the JWS
+  path of leaf, `x5c[1]`, anchor), so an anchor that is the intermediate,
+  or below it, never verifies. Pinned beside its root, the intermediate
+  makes the order of the roots decide whether a genuine input verifies
+  and which reason a refusal gives. Nothing refuses such an anchor at
+  setup; every case fails closed (DECISIONS.md R39).
 - **Startup failures** stay where 0.7 puts them: an empty root set is
   refused by `Verifier.create`; bundled roots that do not parse fail
   `Config.defaults()`. A Wasm host adds two of its own at `create`: an ABI
