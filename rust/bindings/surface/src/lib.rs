@@ -15,8 +15,10 @@
 //!   (they can never be base64, base64url or JSON).
 //! - **The instant is an argument.** The wrapper reads its `Config` clock
 //!   once per call and passes the value as `now_ms`, epoch milliseconds,
-//!   which reaches the core's `_at` methods unchanged; the core's own
-//!   `Config` clock is never set or read here. The core uses the instant
+//!   which reaches the core's `_at` methods unchanged. A caller with no
+//!   clock to read (the C ABI given a null clock) uses the `_by_clock`
+//!   calls instead, and the core reads the system clock, only when the
+//!   call needs the time. The core uses the instant
 //!   for two things only: the certificate-validity instant when the
 //!   receipt or JWS carries no usable signing date, and `request_date` in
 //!   the endpoint response.
@@ -124,8 +126,9 @@ impl Verifier {
     /// [`ConfigError`] naming the first root that is not a certificate (by
     /// its index), or saying the bundled roots did not load.
     pub fn new(roots: &[Vec<u8>]) -> Result<Verifier, ConfigError> {
-        // No clock: every call passes its instant to the core's `_at`
-        // methods, which never read the Config clock.
+        // The core's default clock, the system clock: the `_by_clock`
+        // calls read it, lazily; the others pass their instant to the
+        // core's `_at` methods, which never read it.
         let mut builder = core_api::Config::builder();
         if !roots.is_empty() {
             let mut anchors = Vec::with_capacity(roots.len());
@@ -195,6 +198,44 @@ impl Verifier {
     ) -> String {
         self.inner
             .verify_receipt_endpoint_bytes_at(environment, request_json, now_ms)
+    }
+
+    // The same three calls without an instant, for a caller that has no
+    // clock of its own to read (the C ABI given a null clock): the core
+    // reads the system clock, only when the call needs the time.
+
+    /// [`verify_receipt`](Verifier::verify_receipt) at the system clock's
+    /// time, read only when the receipt carries no usable creation date.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_receipt_by_clock(
+        &self,
+        receipt_base64: &[u8],
+    ) -> Result<ReceiptPayload, Failure> {
+        self.inner.verify_receipt_bytes(receipt_base64)
+    }
+
+    /// [`verify_signed_data`](Verifier::verify_signed_data) at the system
+    /// clock's time, read only when the payload carries no usable date.
+    ///
+    /// # Errors
+    /// A [`Failure`] naming the first check that failed.
+    pub fn verify_signed_data_by_clock(&self, jws: &[u8]) -> Result<JsonPayload, Failure> {
+        self.inner.verify_signed_data_bytes(jws)
+    }
+
+    /// [`verify_receipt_endpoint`](Verifier::verify_receipt_endpoint) at
+    /// the system clock's time, read only when the answer needs it
+    /// (`request_date`, or a receipt with no usable creation date).
+    #[must_use]
+    pub fn verify_receipt_endpoint_by_clock(
+        &self,
+        environment: Environment,
+        request_json: &[u8],
+    ) -> String {
+        self.inner
+            .verify_receipt_endpoint_bytes(environment, request_json)
     }
 }
 
@@ -281,6 +322,23 @@ mod tests {
         let failure = verifier.verify_signed_data(b"e\xff.e.e", 0).unwrap_err();
         assert_eq!(failure.reason(), Reason::Malformed);
         let answer = verifier.verify_receipt_endpoint(Environment::Sandbox, b"{\xff}", 0);
+        assert_eq!(answer, "{\"status\":21002}");
+    }
+
+    #[test]
+    fn a_call_by_clock_answers_as_a_call_at_an_instant_for_dated_input() {
+        // A dated receipt and a JWS with its signedDate never need the
+        // clock, so the system clock's path and a pinned instant agree.
+        let verifier = Verifier::new(&[]).unwrap();
+        assert_eq!(
+            verifier.verify_receipt_by_clock(&g5()),
+            verifier.verify_receipt(&g5(), 0)
+        );
+        assert_eq!(
+            verifier.verify_signed_data_by_clock(b"a.b"),
+            verifier.verify_signed_data(b"a.b", 0)
+        );
+        let answer = verifier.verify_receipt_endpoint_by_clock(Environment::Sandbox, b"{}");
         assert_eq!(answer, "{\"status\":21002}");
     }
 
