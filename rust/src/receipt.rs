@@ -64,7 +64,11 @@ pub(crate) fn verify(
         ));
     }
     let der = decode_receipt_data(base64)?;
-    let attributes = verify_envelope(&der, anchors, clock)?;
+    decode_signed_payload(verify_envelope(&der, anchors, clock)?)
+}
+
+/// The payload a passing signature hands on, decoded.
+fn decode_signed_payload(attributes: SignedAttributes) -> Result<ReceiptPayload, Failure> {
     // A trusted signer signed these bytes, so a payload this crate cannot
     // read is the library's failure or a format Apple added, not the
     // client's: UNREADABLE_PAYLOAD, never MALFORMED, which the endpoint
@@ -76,6 +80,22 @@ pub(crate) fn verify(
         )
         .with_source(err)
     })
+}
+
+/// Signed content read as [`verify`] reads it, with no envelope around it:
+/// the attribute SET parsed once, the creation date the chain would be
+/// judged at taken from that parse as it is before the signature, and the
+/// payload decoded from it as it is after a signature passes. The payload
+/// fuzz target's way past a signature it cannot forge.
+#[cfg(feature = "test-seams")]
+pub(crate) fn read_signed_content(
+    content: &[u8],
+) -> (Option<i64>, Result<ReceiptPayload, Failure>) {
+    let attributes = parse_payload_attributes(content);
+    (
+        signed_creation_date(&attributes),
+        decode_signed_payload(attributes),
+    )
 }
 
 fn too_many_signer_infos(count: usize) -> Failure {
@@ -193,10 +213,15 @@ fn verify_envelope(
 /// The instant the chain is judged at: the receipt's first attribute 12
 /// when it is there and parses, otherwise the clock.
 fn chain_instant(attributes: &SignedAttributes, clock: &Clock<'_>) -> Result<i64, Failure> {
-    match attributes.as_deref().ok().and_then(creation_date) {
+    match signed_creation_date(attributes) {
         Some(millis) => Ok(millis),
         None => clock.now(),
     }
+}
+
+/// The receipt's first attribute 12, when the SET parsed and it decodes.
+fn signed_creation_date(attributes: &SignedAttributes) -> Option<i64> {
+    attributes.as_deref().ok().and_then(creation_date)
 }
 
 /// The embedded certificates, judged once for every `SignerInfo`: the ones

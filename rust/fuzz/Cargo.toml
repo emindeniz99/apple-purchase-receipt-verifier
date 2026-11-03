@@ -1,6 +1,8 @@
-# Fuzz targets for the three public verifiers, the endpoint and the C ABI. Not published — `..`'s `exclude` keeps this directory out of
-# the tarball — and run with `./run.sh <target> [seconds]`, which pairs each
-# target with the fixture directories that seed it. See README.md.
+# Fuzz targets for the three public verifiers, the endpoint, the C ABI and
+# the two payload decoders behind a signature. Not published — `..`'s
+# `exclude` keeps this directory out of the tarball — and run with
+# `./run.sh <target> [seconds]`, which pairs each target with the fixture
+# directories that seed it. See README.md.
 [package]
 name = "apple-purchase-receipt-verifier-fuzz"
 version = "0.0.0"
@@ -12,9 +14,17 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+# receipt-payload parses what `to_json` writes.
+serde_json = "1"
 
+# `test-seams` for the payload targets' hooks. Cargo turns a feature on for
+# every target in this package, so the others build with it too; it adds
+# only the `__internal` items they do not call and the adapter's key-use
+# and full-decode records, which store nothing unless a test is counting.
+# No verdict depends on it.
 [dependencies.apple-purchase-receipt-verifier]
 path = ".."
+features = ["test-seams"]
 
 # The `ffi` target: the C ABI's exports as Rust functions (its rlib), and
 # the surface and wire crates it is checked against.
@@ -58,6 +68,20 @@ bench = false
 [[bin]]
 name = "ffi"
 path = "fuzz_targets/ffi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "receipt-payload"
+path = "fuzz_targets/receipt-payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jws-payload"
+path = "fuzz_targets/jws-payload.rs"
 test = false
 doc = false
 bench = false

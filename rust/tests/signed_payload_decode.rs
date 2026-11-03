@@ -251,3 +251,36 @@ fn seeded_random_payloads_under_a_valid_signature_decode_or_refuse_cleanly() {
         "only {unreadable} payloads were unreadable"
     );
 }
+
+/// The two `test-seams` hooks the payload fuzz targets call
+/// (`rust/fuzz/fuzz_targets/receipt-payload.rs` and `jws-payload.rs`)
+/// answer what the verifier answers for the same signed bytes, so a target
+/// fuzzes the decoder the verifier runs and not a copy of it. A hook that
+/// drifted from the verifier would leave the fuzzer exploring code no
+/// caller reaches.
+#[test]
+fn the_payload_seams_answer_what_the_verifier_answers() {
+    use apple_purchase_receipt_verifier::__internal::{read_jws_payload, read_receipt_content};
+
+    let verified = common::verify_der(&common::receipt_verifier(), &common::receipt_der()).unwrap();
+    let (created, read) = read_receipt_content(&common::receipt_parts().content);
+    assert_eq!(read.unwrap(), verified);
+    assert!(verified.receipt_creation_date_ms.is_some());
+    assert_eq!(created, verified.receipt_creation_date_ms);
+
+    let jws = common::transaction_jws();
+    let verified = common::jws_verifier().verify_signed_data(&jws).unwrap();
+    let (_, payload, _) = common::split_jws(&jws);
+    let read = read_jws_payload(&common::decode_base64url(&payload)).unwrap();
+    assert_eq!(read, verified);
+
+    // What the verifier refuses after a passing signature, the hooks refuse
+    // the same way: unreadable, never blamed on the client.
+    let (created, read) = read_receipt_content(&[0x31, 0x01]);
+    assert_eq!(created, None);
+    assert_eq!(read.unwrap_err().reason(), Reason::UnreadablePayload);
+    for bytes in [b"[]".as_slice(), b"{} x", b"\xff"] {
+        let failure = read_jws_payload(bytes).unwrap_err();
+        assert_eq!(failure.reason(), Reason::UnreadablePayload, "{bytes:?}");
+    }
+}

@@ -200,6 +200,11 @@ pub(crate) fn verify(
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
+    signed_payload(payload)
+}
+
+/// The verdict on a payload whose signature passed.
+fn signed_payload(payload: Result<ReadPayload, Unreadable>) -> Result<JsonPayload, Failure> {
     match payload {
         Ok(read) => Ok(JsonPayload {
             json: read.json,
@@ -211,6 +216,15 @@ pub(crate) fn verify(
         )
         .with_source(err)),
     }
+}
+
+/// A decoded payload segment read as [`verify`] reads it, with no header,
+/// chain or signature around it: read once, as it is before the chain, and
+/// returned as it is after the signature passes. The payload fuzz target's
+/// way past a signature it cannot forge.
+#[cfg(feature = "test-seams")]
+pub(crate) fn read_signed_payload(bytes: &[u8]) -> Result<JsonPayload, Failure> {
+    signed_payload(read_payload(bytes))
 }
 
 /// The last `alg` string and the last `x5c` array of strings, as a map
