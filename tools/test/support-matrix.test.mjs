@@ -48,6 +48,8 @@ test('reads the OTP and Elixir lines from the elixir-ffi job only', () => {
     '            elixir: "1.18"',
     '          - otp: "28"',
     '            elixir: "1.20"',
+    '          # - otp: "29"',
+    '          #   elixir: "1.21"',
     '  other:',
     '    with:',
     '      otp: "99"',
