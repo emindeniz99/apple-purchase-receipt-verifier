@@ -13,7 +13,8 @@
 # identical. When the package lines differ, the version moved and the
 # interface may change freely. Needs wasm-tools on PATH. Exit status: 0 on
 # a pass, 1 on an interface change without a version change, 2 on a usage
-# error.
+# error or when wasm-tools is missing or cannot render a file: two empty
+# renderings would compare equal and let any change through.
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then
@@ -37,10 +38,28 @@ if [[ "$base_package" != "$head_package" ]]; then
   exit 0
 fi
 
+if ! command -v wasm-tools > /dev/null; then
+  echo "check-wit-version: wasm-tools is not on PATH" >&2
+  exit 2
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 render() { # wit file -> its rendering without doc lines
-  wasm-tools component wit "$1" | grep -v -E '^[[:space:]]*///' || true
+  if ! wasm-tools component wit "$1" > "$work/rendered"; then
+    echo "check-wit-version: wasm-tools could not render $1" >&2
+    exit 2
+  fi
+  if [[ ! -s "$work/rendered" ]]; then
+    echo "check-wit-version: wasm-tools rendered $1 as nothing" >&2
+    exit 2
+  fi
+  # grep's status 1 means every line was a doc line; 2 is an error.
+  local status=0
+  grep -v -E '^[[:space:]]*///' "$work/rendered" || status=$?
+  if [[ $status -gt 1 ]]; then
+    echo "check-wit-version: grep failed on the rendering of $1" >&2
+    exit 2
+  fi
 }
 render "$base" > "$work/base"
 render "$head" > "$work/head"
