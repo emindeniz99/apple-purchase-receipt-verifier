@@ -217,25 +217,57 @@ private func lengthAt(_ root: Any, _ pointer: String) throws -> Int? {
 /// Subset semantics: a pinned field must match, everything else the call
 /// returned is ignored. `null` in the vectors means "absent or unset".
 ///
-/// The `Bool` check runs before the `NSNumber` one, so a boolean is never
-/// accepted as a match for a number and vice versa — on Linux,
-/// `JSONSerialization` (swift-corelibs-foundation) hands `true`/`false`
-/// back as a genuine Swift `Bool`, not a boolean-flavoured `NSNumber` as
-/// Darwin's `CFBoolean` bridging would, so a plain `as? Bool` cast already
-/// tells the two apart without reaching for `CFGetTypeID`, which is not
-/// available outside an explicit `CoreFoundation` import. Integers compare
-/// by their exact digits (`download_id` can exceed 2^53, where `Double`
-/// starts rounding); anything else compares as a `Double`.
+/// A boolean only ever matches a boolean, and a number a number
+/// (``isJsonBool`` says which is which on both platforms). Numbers compare
+/// as ``sameNumber`` does, never through a rounded `Double`.
 private func fieldMatches(_ actual: Any?, _ expected: Any) -> Bool {
     if expected is NSNull { return actual == nil || actual is NSNull }
     guard let actual, !(actual is NSNull) else { return false }
     if let text = expected as? String { return (actual as? String) == text }
-    if let flag = expected as? Bool { return (actual as? Bool) == flag }
-    guard let expectedNumber = expected as? NSNumber, let actualNumber = actual as? NSNumber,
-        !(actual is Bool)
-    else { return false }
-    if let want = int64IfExact(expectedNumber), let got = int64IfExact(actualNumber) { return want == got }
-    return expectedNumber.doubleValue == actualNumber.doubleValue
+    if isJsonBool(expected) || isJsonBool(actual) {
+        return isJsonBool(expected) && isJsonBool(actual) && (expected as? Bool) == (actual as? Bool)
+    }
+    guard let expectedNumber = expected as? NSNumber, let actualNumber = actual as? NSNumber else { return false }
+    return sameNumber(actualNumber, expectedNumber)
+}
+
+/// Whether `value` is a JSON boolean. `parseJsonLastWins`, and
+/// `JSONSerialization` on Linux, hand one back as a Swift `Bool`.
+/// `JSONSerialization` on Darwin hands back a `CFBoolean`, and there an
+/// `NSNumber` 0 or 1 passes `as? Bool` and `is Bool` too, so only the
+/// CoreFoundation type ID tells a boolean from the number.
+func isJsonBool(_ value: Any) -> Bool {
+    if type(of: value) == Bool.self { return true }
+    #if canImport(Darwin)
+        if let number = value as? NSNumber { return CFGetTypeID(number) == CFBooleanGetTypeID() }
+    #endif
+    return false
+}
+
+/// Two JSON numbers by value, nothing rounded through a `Double`. Integers
+/// (signed or unsigned 64-bit) compare by their exact decimal digits, so
+/// 2^63 never passes for 2^63-1 (`download_id` is pinned there). Two
+/// floating-point values compare as `Double`s. An integer and a `Double`
+/// (a number with a fraction or an exponent, or an integer the parser did
+/// not hold exactly) are equal only within 2^53, where a `Double` holds
+/// every integer, so 1722945600000 still matches 1722945600000.0.
+func sameNumber(_ actual: NSNumber, _ expected: NSNumber) -> Bool {
+    let got = integerDigits(actual)
+    let want = integerDigits(expected)
+    if let got, let want { return got == want }
+    if got == nil && want == nil { return actual.doubleValue == expected.doubleValue }
+    guard let integer = Int64(got ?? want ?? ""), integer.magnitude <= 1 << 53 else { return false }
+    return actual.doubleValue == expected.doubleValue
+}
+
+/// The exact decimal digits of an integer `NSNumber`, or nil for a
+/// floating-point one. `c` and `C` are left out: Darwin reports a
+/// `CFBoolean` as `c`, and no parser here makes a char-sized integer.
+private func integerDigits(_ number: NSNumber) -> String? {
+    switch String(cString: number.objCType) {
+    case "s", "i", "l", "q", "S", "I", "L", "Q": return number.stringValue
+    default: return nil
+    }
 }
 
 /// Deep equality over parsed JSON: objects by key in any order, arrays
@@ -252,13 +284,6 @@ func sameJsonValue(_ actual: Any, _ expected: Any) -> Bool {
     }
     if expected is NSNull { return actual is NSNull }
     return fieldMatches(actual, expected)
-}
-
-private func int64IfExact(_ number: NSNumber) -> Int64? {
-    switch String(cString: number.objCType) {
-    case "q", "l", "i", "s": return number.int64Value
-    default: return nil
-    }
 }
 
 private func describeExpected(_ value: Any?) -> String {
@@ -296,6 +321,36 @@ final class ConformanceCasesTests: XCTestCase {
     func testVerifySignedDataCases() throws { try run(operation: "verifySignedData") }
     func testVerifyReceiptEndpointCases() throws { try run(operation: "verifyReceiptEndpoint") }
     func testDecodeBase64Cases() throws { try run(operation: "decodeBase64") }
+
+    /// The field comparison itself. `download_id` is pinned at 2^63-1 to
+    /// catch a value rounded through a `Double`, so a near miss must fail; a
+    /// JSON number must never match a JSON boolean, which on Darwin is an
+    /// `NSNumber` too.
+    func testFieldComparisonRoundsNothingAndKeepsBooleansApart() throws {
+        func parse(_ json: String) throws -> Any {
+            try XCTUnwrap((try JSONSerialization.jsonObject(with: Data("[\(json)]".utf8)) as? [Any])?.first)
+        }
+        let numbers: [(String, String, Bool)] = [
+            ("9223372036854775807", "9223372036854775807", true),
+            ("9223372036854775806", "9223372036854775807", false),
+            ("9223372036854775808", "9223372036854775807", false),
+            ("9007199254740993.0", "9007199254740993", false),
+            ("1722945600000.0", "1722945600000", true),
+        ]
+        for (got, want, same) in numbers {
+            let result = try sameJsonValue(parse(got), parse(want))
+            XCTAssertEqual(result, same, "\(got) against \(want)")
+        }
+        for (got, want) in [("1", "true"), ("true", "1"), ("0", "false"), ("false", "0")] {
+            let result = try sameJsonValue(parse(got), parse(want))
+            XCTAssertFalse(result, "\(got) against \(want)")
+        }
+        let bothTrue = try sameJsonValue(parse("true"), parse("true"))
+        XCTAssertTrue(bothTrue)
+        let lastWins = try XCTUnwrap(try parseJsonLastWins("[false, 0]") as? [Any])
+        XCTAssertTrue(isJsonBool(lastWins[0]))
+        XCTAssertFalse(isJsonBool(lastWins[1]))
+    }
 
     /// Pins that every operation in the file is claimed by a method above,
     /// so a new operation cannot slip in unrun.
