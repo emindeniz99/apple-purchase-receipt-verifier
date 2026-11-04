@@ -37,8 +37,8 @@ updates:
         patterns: ["*"]
   # Dependabot rewrites a package.json `overrides` entry only while it
   # updates that package, and version updates cover direct dependencies
-  # only, so the exact override pins (weval, minimatch; node/CI-NOTES.md
-  # says why each exists) are not moved by this entry.
+  # only, so the exact override pin of minimatch (node/CI-NOTES.md says
+  # why it exists) is not moved by this entry; toolchain-watch reports it.
   - package-ecosystem: npm
     directory: /node
     schedule:

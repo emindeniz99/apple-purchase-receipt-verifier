@@ -64,7 +64,6 @@
   },
   "types": "dist/index.d.ts",
   "overrides": {
-    "@bytecodealliance/weval": "0.5.1",
     "minimatch": "11.0.4"
   }
 }

@@ -43,7 +43,7 @@ test('reads every other pin from the files that hold it', () => {
   assert.deepEqual(Object.keys(others), [
     'cbindgen', 'spectral-cli', 'Gradle', 'rustup', 'symfony/process', 'schemathesis', 'zizmor', 'ty',
     'cargo-deny', 'cargo-fuzz', 'cargo-cyclonedx', 'Maven', 'build', 'setuptools', 'Spring Boot', 'bun',
-    'deno', 'workerd', '@bytecodealliance/weval', 'minimatch', 'sharp', 'uv', 'age', 'palantir-java-format',
+    'deno', 'workerd', 'minimatch', 'sharp', 'uv', 'age', 'palantir-java-format',
     'openssl-sys',
   ]);
   for (const version of Object.values(others)) assert.match(version, /^\d+(\.\d+)+$/);
