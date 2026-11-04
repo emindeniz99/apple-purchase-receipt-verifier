@@ -9,13 +9,17 @@
 //! envelope. Invariants beyond "the host does not crash":
 //!
 //! - `init` with Apple's roots answers `{"ok":true,"max_input_bytes":...}`;
-//! - a verify call with `env` 0 or 1 never traps, and answers UTF-8 JSON of
-//!   its shape (`{"verified":...` or, at the endpoint, `{"status":...`);
-//! - `env` above 1 always traps, and the next call on a fresh instance
-//!   verifies again (a trapped instance is discarded, as every host does).
-//!   `env` is the WIT `environment` enum's discriminant; wit-bindgen's lift
-//!   traps on one above 1 only because `[profile.wasm.package.aprv-abi]`
-//!   in rust/Cargo.toml turns debug assertions on (DECISIONS.md R46).
+//! - a verify call whose `env` has a low byte of 0 or 1 never traps, and
+//!   answers UTF-8 JSON of its shape (`{"verified":...` or, at the
+//!   endpoint, `{"status":...`);
+//! - an endpoint call whose `env` has any other low byte always traps, and
+//!   the next call on a fresh instance verifies again (a trapped instance
+//!   is discarded, as every host does). `env` is the WIT `environment`
+//!   enum's discriminant, which the canonical ABI lifts from the low 8 bits
+//!   of the `i32`, so 256 is production and 257 sandbox. wit-bindgen's lift
+//!   traps on a low byte above 1 only because
+//!   `[profile.wasm.package.aprv-abi]` in rust/Cargo.toml turns debug
+//!   assertions on (DECISIONS.md R46).
 //!
 //! Coverage comes from the host side only: the guest runs as Cranelift's
 //! code, which libFuzzer does not instrument. The OpenSSL-instrumented
@@ -199,6 +203,8 @@ fuzz_target!(|data: &[u8]| {
     } else {
         raw_env
     };
+    // The lift reads the discriminant's low byte only (DECISIONS.md R46).
+    let bad_env = (env & 0xff) > 1;
     let now_ms = i64::from_le_bytes(data[5..13].try_into().unwrap());
     let wrapped;
     let input = if data[0] & 0x40 != 0 && op != 1 {
@@ -220,7 +226,7 @@ fuzz_target!(|data: &[u8]| {
     match g.call(op, env, now_ms, input) {
         Ok(answer) => {
             assert!(
-                op != 2 || env <= 1,
+                op != 2 || !bad_env,
                 "env {env} answered instead of trapping: {answer}"
             );
             let shape = if op == 2 {
@@ -233,7 +239,7 @@ fuzz_target!(|data: &[u8]| {
         Err(error) => {
             let trap = error.downcast_ref::<Trap>().copied();
             assert!(
-                op == 2 && env > 1 && trap == Some(Trap::UnreachableCodeReached),
+                op == 2 && bad_env && trap == Some(Trap::UnreachableCodeReached),
                 "a trap for op {op}, env {env}, now-ms {now_ms}, {} input bytes: {error:?}",
                 input.len()
             );
