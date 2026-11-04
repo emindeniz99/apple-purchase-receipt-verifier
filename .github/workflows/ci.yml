@@ -560,7 +560,7 @@ jobs:
           - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:8a8e1becc4af37b754fa36eb75e26340e3e4d421542b7c4fdc6bced966abd6bf" } # python3.12-alpine, uv 0.13.6
           - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:63b8fa4be2338728034164eb6c067a363fdbb3234fa79b64c83545317b7feec1" } # python3.13-alpine, uv 0.13.6
           - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a069b57ec30ef94da43700a7332b162a13adb0b8a1cfba4e0b62c1a9727153c4" } # python3.14-alpine, uv 0.13.6
-          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:f008ab85c84befffaaa8cbde7eb2b749331769df4e18be766269d0c4904deb40" } # python3.15-alpine, uv 0.13.7
+          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:4de1eb2baffd7a44903a53b6cb112b2538232d56287bc37d18b66ae1f17108d4" } # python3.15-alpine, uv 0.13.6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
