@@ -371,15 +371,11 @@ release's and fails the release-please run on a flip; read the flipped
 rows in its log and decide whether the change is intended (a reviewed
 behavior change with its shared cases) or a bug.
 
-The pin changes only when the calls do. The one planned change: the pin
-still names the old full archive (module, rows and calls), and the calls
-alone are enough. To move to a calls-only archive:
-
-1. Run `corpus-calls.yml` from `main`. It checks the pinned archive,
-   repacks its calls, publishes `corpus-calls-<sha256 prefix>` as a
-   prerelease, and prints the new pin in its summary.
-2. Open a PR that replaces `fixtures/corpus.json` with that pin, then
-   dispatch nightly on main once it is merged.
+The pin changes only when the calls do. The move from the old full
+archive (module, rows and calls) to the calls-only archive is done: since
+3953ee48 (2026-11-02) `fixtures/corpus.json` pins
+`corpus-calls-d7f3230c`. Running `corpus-calls.yml` again repacks the same
+calls into the same bytes, so it has nothing left to do.
 
 ## Fuzz findings, OSS-Fuzz and Scorecard: three owner actions
 
