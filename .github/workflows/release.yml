@@ -125,7 +125,7 @@ jobs:
   ci-passed:
     name: wait for ci on this commit
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 125
     steps:
       # A branch dispatch either completes a named tag or is a dry run; a
       # bare one would tag go/<branch> and push an image named <branch>.
@@ -184,18 +184,24 @@ jobs:
             while IFS= read -r f; do echo "::warning::  $f"; done <<<"$changed"
           fi
           echo "completing $TAG from $GITHUB_SHA"
+      # Up to 120 minutes. A main run takes 15-40 minutes when runners are
+      # free, but it shares the account's concurrent-job limit with every
+      # pull request and every other main commit, and main runs of 60 and
+      # 92 minutes were seen on 2026-11-04. A poll that gives up first
+      # refuses a tag whose ci is still running; waiting longer costs one
+      # idle runner.
       - name: poll the ci workflow run for this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 80); do
+          for attempt in $(seq 1 240); do
             state=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
               --json status,conclusion --jq '.[0] | "\(.status)/\(.conclusion)"' 2>/dev/null || echo "none/")
             case "$state" in
               completed/success) echo "ci passed on $GITHUB_SHA"; exit 0 ;;
               completed/*) echo "::error::ci concluded '${state#completed/}' on $GITHUB_SHA; not publishing"; exit 1 ;;
-              *) echo "ci is $state on $GITHUB_SHA (attempt $attempt of 80); waiting 30s"; sleep 30 ;;
+              *) echo "ci is $state on $GITHUB_SHA (attempt $attempt of 240); waiting 30s"; sleep 30 ;;
             esac
           done
           echo "::error::ci never completed on $GITHUB_SHA; not publishing"
