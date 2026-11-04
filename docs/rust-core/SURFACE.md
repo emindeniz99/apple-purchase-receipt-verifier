@@ -233,7 +233,7 @@ DECISIONS.md R34, amended 2026-10-02; R42).
 | `verifyReceipt(base64)` | `verify_receipt(&[u8], now_ms)` | `verify-receipt(now-ms, receipt-base64: list<u8>)` |
 | `verifySignedData(jws)` | `verify_signed_data(&[u8], now_ms)` | `verify-signed-data(now-ms, jws: list<u8>)` |
 | `verifyReceiptEndpoint(env, body)` | `verify_receipt_endpoint(Environment, &[u8], now_ms)` | `verify-receipt-endpoint(env: environment, now-ms, request-json: list<u8>)` |
-| `Environment` (2) | the core's `Environment` (2), re-exported | `enum environment { production, sandbox }`, discriminants 0 and 1 to a hand-rolled host; any other discriminant traps (DECISIONS.md R46) |
+| `Environment` (2) | the core's `Environment` (2), re-exported | `enum environment { production, sandbox }`, discriminants 0 and 1 to a hand-rolled host; the module reads the low 8 bits, so any other low byte traps and 256 is production (DECISIONS.md R46) |
 | `ReceiptPayload.environment()`, `JsonPayload.environment()` | the core's `ReceiptPayload::environment()` and `JsonPayload::environment()` | `"environment":"Production"`, `"Sandbox"` or `null` beside `"payload"` |
 | `Reason` (8) | the core's `Reason` (8), re-exported, with `as_str()` | `"reason":"<TOKEN>"` |
 | `Failure` (reason, message, cause) | the core's `Failure`, re-exported: `reason()`, `message()`, and a `source()` no boundary carries | `{"verified":false,"reason":...,"message":...}` |

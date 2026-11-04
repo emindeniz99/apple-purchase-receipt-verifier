@@ -16,11 +16,15 @@
 //!   the end of linear memory.
 //!
 //! One more trap is wit-bindgen's, not this file's: an `environment`
-//! discriminant other than 0 (`production`) or 1 (`sandbox`). The generated
-//! lift checks it only with debug assertions on, which `rust/Cargo.toml`
-//! turns on in `[profile.wasm.package.aprv-abi]`; the check panics, and the
-//! panic ends in `unreachable` (below). Without that setting the lift would
-//! `transmute` the value and answer for the wrong environment
+//! discriminant the enum does not have. The generated lift reads only the
+//! low 8 bits of the core `i32` (`as u8`), as the canonical ABI lifts a
+//! discriminant: a low byte of 0 is `production`, 1 is `sandbox`, and any
+//! other low byte traps. So 256 answers as production and 257 as sandbox;
+//! every wrapper passes only 0 or 1. The lift checks the byte only with
+//! debug assertions on, which `rust/Cargo.toml` turns on in
+//! `[profile.wasm.package.aprv-abi]`; the check panics, and the panic ends
+//! in `unreachable` (below). Without that setting the lift would
+//! `transmute` the byte and answer for the wrong environment
 //! (DECISIONS.md R46).
 //!
 //! The module is built with `panic = "abort"`, so a panic anywhere below

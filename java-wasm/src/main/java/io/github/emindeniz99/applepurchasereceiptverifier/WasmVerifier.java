@@ -91,8 +91,8 @@ final class WasmVerifier implements Verifier {
     public String verifyReceiptEndpoint(Environment environment, @Nullable String requestJson) {
         Objects.requireNonNull(environment, "environment");
         // The WIT's env is the enum `environment`, lowered as its discriminant:
-        // 0 production, 1 sandbox, and a trap for anything else.
-        // Environment keeps it on 0 or 1.
+        // the module reads its low 8 bits, 0 production and 1 sandbox, and
+        // traps on any other low byte. Environment keeps it on 0 or 1.
         int env = environment == Environment.PRODUCTION ? 0 : 1;
         try {
             long now = clock.millis();

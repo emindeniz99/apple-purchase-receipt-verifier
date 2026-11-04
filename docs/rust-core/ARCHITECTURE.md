@@ -280,7 +280,9 @@ older module and is a module failure.
   `rust/Cargo.toml` turns them on for `aprv-abi` alone
   (`[profile.wasm.package.aprv-abi]`), so 2, 255 and 2^32-1 trap on every
   host, and every hand-rolled host's env-trap test guards the setting
-  ([enum lift][enumlift]). The wrapper's own `Environment` type still
+  ([enum lift][enumlift]). The lift reads only the low 8 bits of the
+  `i32`, as the canonical ABI lifts a discriminant: 256 answers as
+  production and 257 as sandbox, and any other low byte but 0 or 1 traps. The wrapper's own `Environment` type still
   keeps a caller on the two cases.
 - **`now-ms` is an `s64` argument** on every verify call (§6), the core's
   own instant type, so every value reaches the core. Every wrapper refuses
@@ -892,7 +894,7 @@ workspace ([CMS everywhere §1][cms]).
 | The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |
 | `aprv.wasm` takes no unmeasured path | Every change runs the corpus through a host whose import object traps on anything unexpected, with the module's own WASI stubs trapping; any trap or any row that differs from native fails |
 | One `aprv.wasm` everywhere | The release builds it once; every package's copy (npm, Go, Swift, PyPI, RubyGems, NuGet, the Endive input, the server's `.cwasm` input) is checked against its published SHA-256; the committed Go and Swift copies are rebuilt in CI and diffed |
-| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap on a hand-rolled host, through the checked lift of R46; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
+| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap on a hand-rolled host, through the checked lift of R46, and 256, whose low byte is 0, answers as production; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
 | The wire shapes match their schemas | Every corpus answer and every `init` configuration and answer validates against the JSON Schema 2020-12 files in `rust/bindings/wire/schema/`, from the core, the C ABI and `aprv.wasm` |
 | The server's HTTP contract is its OpenAPI document | Spectral lints `rust/server/openapi.yaml`; Schemathesis runs it against the server in the `aprv-server` job; non-result errors are RFC 9457 |
 | Same verdicts everywhere | Every host runs every `fixtures/cases.json` case as one test each; the `-wasm` artifact runs them once per engine; the main Java artifact runs them too (SURFACE.md §6) |
