@@ -10,7 +10,7 @@
   supported Boot line on Java 17, 21 and 25.
 
   The BOM is imported rather than used as a parent so the Boot line is a
-  property: -Dspring-boot.version=4.1.1. It is deliberately NOT a module of
+  property: -Dspring-boot.version=4.1.2. It is deliberately NOT a module of
   ../../pom.xml, so the BOM governs versions the way it does in a real
   application. Install the library first
   (mvn -f ../../pom.xml install -DskipTests), then run

@@ -471,7 +471,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        boot: ["pom", "4.1.1"]
+        boot: ["pom", "4.1.2"]
         jdk: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2766,7 +2766,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [jvm-interop, boot-pom, boot-4.1.1]
+        consumer: [jvm-interop, boot-pom, boot-4.1.2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
