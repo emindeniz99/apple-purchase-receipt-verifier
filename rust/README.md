@@ -541,10 +541,14 @@ The `endpoint` feature is gone: the endpoint is always there, and
 
 ## Vendoring
 
-To build the crate from a copy rather than as a git dependency, copy `src/`,
-`certs/`, `Cargo.toml` and `Cargo.lock`. The three root certificates are
-compiled in with `include_bytes!("../certs/...")` from `src/roots.rs`, so
-`certs/` must sit next to `src/`. Nothing is read at run time.
+To build the crate from a copy rather than as a git dependency, copy the
+whole `rust/` directory except `target/`. `Cargo.toml` needs more than
+`src/`: it takes `aprv-openssl` from `openssl/` by path, patches
+`openssl-sys` from `vendor/`, and names `bindings/` and `ffi/` as
+workspace members, so a copy without any of them does not build. The three
+root certificates are compiled in with `include_bytes!("../certs/...")`
+from `src/roots.rs`, so `certs/` must sit next to `src/`. Nothing is read
+at run time.
 
 **Rotating or adding a root** touches, together:
 
