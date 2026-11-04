@@ -319,7 +319,9 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 - `support-matrix.yml`: weekly (Monday) and on demand, runs
   `tools/support-matrix.mjs --check`, writes the vendor statuses to the
   job summary, and fails when a line SUPPORT-MATRIX.md lists as tested,
-  and not as a floor or kept, is past its end of life.
+  and not as a floor or kept, is past its end of life. It warns, without
+  failing, when a supported line is newer than the newest one tested,
+  Erlang/OTP and Elixir included (from `elixir-ffi`'s matrix).
 - `apple-pki-watch.yml`: daily and on demand, runs
   `tools/apple-pki-watch.mjs` against `tools/apple-pki-watch.json` and,
   on a change, opens or comments on one issue; a network failure fails
@@ -377,6 +379,36 @@ job fails if the action opened any other branch, and
 `release-branch-server` and `refresh-wasm-copies` fail unless the branch
 still points at the commit `release-branch-wasm` built.
 
+## Pins held on purpose, and what reopens them
+
+None of these is a version toolchain-watch can compare with a registry,
+so each one names the event that should send someone back to it.
+
+- **clang-18 in `ruby-fuzz`.** The job installs `clang-18` and
+  `libclang-rt-18-dev` from Ubuntu's archive and builds ruzzy with them,
+  since ruzzy compiles against clang's libFuzzer and sanitizer runtimes.
+  Ubuntu 24.04, today's `ubuntu-latest`, carries those packages.
+  Revisit when `ubuntu-latest` moves to a newer Ubuntu: the packages may
+  be gone, and the job then needs the clang that release ships, or the
+  runner pinned to `ubuntu-24.04`.
+- **`macos-15-intel`.** GitHub's last Intel macOS image. `release.yml`
+  builds the `x86_64-apple-darwin` `aprv` binary on it, and a push to
+  main runs `python` on it. Revisit when GitHub announces its retirement:
+  the binary can be cross-built from an arm64 runner (the target ships
+  with rustup, and the macOS SDK builds both), but nothing then runs it
+  on real Intel hardware, so the release notes or SUPPORT-MATRIX.md would
+  have to say the x86_64 macOS binary is built and not tested.
+- **workerd `compatibilityDate` and `compatibility_date`.** workerd
+  chooses its behaviour by this date, not by its own version, so the
+  dates in `node/runtime-smoke/workerd.capnp` and
+  `node/bench/memory-workerd.mjs` (2026-08-01) and in
+  `node/examples/cloudflare-worker/wrangler.toml` (2026-09-22) are
+  behaviour pins. Moving the workerd version, which toolchain-watch
+  reports, changes nothing they select. Move a date on purpose, as its
+  own change, after reading the compatibility flags that turn on between
+  the old date and the new one; workerd refuses a date newer than the
+  release that runs it.
+
 ## Owner-side and open
 
 - Repository variable: `APRV_PUBLISH_CRATES` (OD-03). The corpus
@@ -390,8 +422,6 @@ still points at the commit `release-branch-wasm` built.
   `../licenses/wasm` and a test), written up in `java-wasm/CI-NOTES.md`,
   "Release". `tools/check-licence-copies.mjs` needs no Java entry, since
   the pom reads the source in place.
-- The macOS x86_64 runner label is `macos-15-intel`; check that GitHub
-  still offers it before the first 0.8.0 tag.
 - Branch protection (or the ruleset) on `main` should require the one
   status check `ci-ok` from GitHub Actions and drop every other `ci.yml`
   check from the required list. An agent cannot change that setting.
