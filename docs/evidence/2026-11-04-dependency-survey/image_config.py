@@ -16,8 +16,11 @@ for arg in sys.argv[1:]:
     assert r.headers["Docker-Content-Digest"] == dg, (r.headers["Docker-Content-Digest"], dg)
     idx = json.load(r)
     plats = [f'{m["platform"]["os"]}/{m["platform"]["architecture"]}' for m in idx.get("manifests", []) if "platform" in m]
-    sub = [m for m in idx["manifests"] if m.get("platform", {}).get("architecture") == "amd64" and m["platform"]["os"] == "linux"][0]
-    man = json.load(get(f"https://{reg}/v2/{repo}/manifests/{sub['digest']}", tok=tok))
+    if "manifests" in idx:
+        sub = [m for m in idx["manifests"] if m.get("platform", {}).get("architecture") == "amd64" and m["platform"]["os"] == "linux"][0]
+        man = json.load(get(f"https://{reg}/v2/{repo}/manifests/{sub['digest']}", tok=tok))
+    else:
+        man = idx
     cfg = json.load(get(f"https://{reg}/v2/{repo}/blobs/{man['config']['digest']}", acc="*/*", tok=tok))
     c = cfg.get("config", {})
     env = [e for e in c.get("Env", []) if any(k in e for k in ("JAVA", "VERSION", "UV"))]

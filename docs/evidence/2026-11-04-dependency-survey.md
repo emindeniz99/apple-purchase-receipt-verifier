@@ -6,7 +6,7 @@ It decides what the next maintenance pass takes and whether Dependabot needs a c
 
 ## Method
 
-This survey read `main` at `b092a605` (2026-11-04).
+This survey read `main` at `b092a605` (2026-11-04). The helpers ran on Python 3.11.17 and git 2.43.0.
 
 1. `parse.py` from [the 2026-10-31 survey](./2026-10-31-dependency-survey/) read 1,216 locked or pinned versions:
 
