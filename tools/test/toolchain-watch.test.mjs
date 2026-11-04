@@ -68,6 +68,17 @@ test('reads the pins whose shape a regex could misread', () => {
   // Spring Boot: the first entry may be a Boot line or not.
   assert.equal(readPin('        boot: ["4.0.8", "4.1.1"]\n', pin('Spring Boot')), '4.1.1');
   assert.equal(readPin('        boot: ["pom", "4.1.1"]\n', pin('Spring Boot')), '4.1.1');
+  // ...and java-wasm-consumers' boot-<version> leg must name the same one.
+  const boot = (javaBoot, consumer) =>
+    `        boot: ["pom", "${javaBoot}"]\n` +
+    `          -Dspring-boot.version=$BOOT\n` +
+    `        consumer: [jvm-interop, boot-pom${consumer}]\n` +
+    '            if [ "$CONSUMER" != boot-pom ]; then boot=("-Dspring-boot.version=${CONSUMER#boot-}"); fi\n' +
+    '            mvn -B -f java/samples/spring-boot-smoke/pom.xml test\n';
+  assert.equal(readPin(boot('4.1.1', ', boot-4.1.1'), pin('Spring Boot')), '4.1.1');
+  assert.throws(() => readPin(boot('4.1.2', ', boot-4.1.1'), pin('Spring Boot')), /pins Spring Boot at 4\.1\.2 and 4\.1\.1/);
+  // A consumer matrix that lost its Boot version is not a quiet pass.
+  assert.throws(() => readPin(boot('4.1.1', ''), pin('Spring Boot')), /runs Spring Boot 2 times and names its version 1 times/);
   // openssl-sys: the package's own version, not a dependency's.
   const manifest = '[package]\nname = "openssl-sys"\nversion = "0.9.117"\n\n[dependencies.libc]\nversion = "0.2"\n';
   assert.equal(readPin(manifest, pin('openssl-sys')), '0.9.117');
