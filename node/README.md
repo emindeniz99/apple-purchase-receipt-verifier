@@ -440,7 +440,7 @@ npm test               # build (jco transpile, tsc), then the node:test suite
 npm run lint           # oxlint
 npm run format:check   # prettier --check
 npm run test:runtimes  # Node, Bun, Deno, workerd, @edge-runtime/vm
-npm run runtime:browser -- chromium firefox webkit   # needs playwright
+npm run runtime:browser -- chromium firefox webkit   # after npx playwright install
 ```
 
 `npm run build` transpiles `wasm/aprv.component.wasm`, which is not in git:

@@ -5,14 +5,25 @@
 // rusage; workerd run locally does not enforce the 128 MB isolate limit.
 //
 //   npm run build && node bench/memory-workerd.mjs [workerd-spec]
+//
+// The default workerd is the one the runtime smoke pins, read from
+// package.json's runtime:workerd script, so the two never drift apart.
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostileReceipts } from './memory.mjs';
 
-const spec = process.argv[2] ?? 'workerd@1.20260903.1';
+function pinnedWorkerd() {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const pinned = /\bworkerd@\S+/.exec(pkg.scripts?.['runtime:workerd'] ?? '');
+  if (!pinned)
+    throw new Error('package.json: the runtime:workerd script names no workerd@<version>');
+  return pinned[0];
+}
+
+const spec = process.argv[2] ?? pinnedWorkerd();
 const dist = fileURLToPath(new URL('../dist', import.meta.url));
 const DIST_MODULES = ['index', 'config', 'engine', 'environment', 'errors', 'payload', 'verifier'];
 

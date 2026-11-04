@@ -409,8 +409,9 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
 
-  # The browsers the README claims, through Playwright at a pinned version
-  # (installed for this job only, never a dependency of the package).
+  # The browsers the README claims, through Playwright: a devDependency in
+  # node/package.json, so Dependabot moves its pin, and never a dependency
+  # of the published package.
   node-browsers:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
@@ -427,14 +428,13 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      # Playwright is pinned by exact version and installed with
-      # --ignore-scripts; its browsers come from its own pinned build list.
-      - name: Chromium, Firefox and WebKit # zizmor: ignore[adhoc-packages]
+      # Playwright comes from the lock with everything else, scripts off;
+      # its browsers come from that version's own pinned build list.
+      - name: Chromium, Firefox and WebKit
         working-directory: node
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
-          npm i --no-save --ignore-scripts playwright@1.63.0
           npx --no-install playwright install --with-deps chromium firefox webkit
           npm run build
           npm run runtime:browser -- chromium firefox webkit
