@@ -10,14 +10,14 @@ chain instant, the bounds, the reasons and their order) and holds
 It knows nothing about JSON, the C ABI or Wasm. Its surface is plain Rust
 values: DER in, certificates, facts and booleans out.
 
-It is not a general-purpose OpenSSL binding. It is published only because
-the core depends on it, at the core's version, and its API serves the core
-alone; use the core. It is also not free of policy: the path validation
-(`src/path.rs`) trusts an anchor by fiat, narrows the untrusted
-certificates to those that sign the path, runs once per candidate anchor
-and picks which run's problems to report, and groups `X509_V_ERR_*` codes
-into the kinds the core turns into reasons. A security review covers it
-together with the core.
+It is not a general-purpose OpenSSL binding. It exists as a crate of its
+own only because the core depends on it; it is versioned with the core,
+unpublished like it, and its API serves the core alone; use the core. It
+is also not free of policy: the path validation (`src/path.rs`) trusts an
+anchor by fiat, narrows the untrusted certificates to those that sign the
+path, runs once per candidate anchor and picks which run's problems to
+report, and groups `X509_V_ERR_*` codes into the kinds the core turns
+into reasons. A security review covers it together with the core.
 
 | Item | What it does |
 |---|---|
@@ -166,9 +166,10 @@ to openssl-src as `--openssldir`, so the compiled-in OPENSSLDIR is a
 directory that does not exist. Cargo reads that file only when invoked
 inside `rust/`; from elsewhere, set the variable yourself.
 
-A patch applies only inside the workspace that declares it: **a crates.io
-user of the library gets openssl-src 300.x**, which `build.rs` refuses,
-until openssl-sys widens its requirement. Such a user builds with
+A patch applies only inside the workspace that declares it: **a user of
+the library outside this workspace (a git dependency today) gets
+openssl-src 300.x**, which `build.rs` refuses, until openssl-sys widens
+its requirement. Such a user builds with
 `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL 4 installation>`.
 
 **Prebuilt (`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<prefix> OPENSSL_STATIC=1`).**

@@ -6,8 +6,19 @@ Replaces the deprecated `verifyReceipt` endpoint by validating StoreKit 2
 signed JWS payloads and legacy PKCS#7 app receipts against pinned Apple root
 certificates.
 
+The crate is not on crates.io: it waits until `openssl-sys` accepts
+OpenSSL 4 ([BOOTSTRAP.md](../BOOTSTRAP.md)). Depend on a release tag of
+this repository instead, and link an OpenSSL 4 you built, since the
+workspace's patched `openssl-sys` does not reach a dependent
+([openssl/README.md](openssl/README.md)):
+
+```toml
+[dependencies]
+apple-purchase-receipt-verifier = { git = "https://github.com/emindeniz99/apple-purchase-receipt-verifier", tag = "vX.Y.Z" }
+```
+
 ```bash
-cargo add apple-purchase-receipt-verifier
+OPENSSL_NO_VENDOR=1 OPENSSL_DIR=/path/to/openssl-4 cargo build
 ```
 
 ```rust
@@ -39,8 +50,8 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
 - **Rust 1.85.0**, declared as `rust-version` and proven by CI: the whole
   suite, conformance included, runs on a real 1.85.0 toolchain against
   `Cargo.lock`, which is committed and resolved for that floor. Edition 2021.
-- **Four direct dependencies**: `aprv-openssl` (`openssl/`, published
-  beside this crate), `base64` for `receipt-data` and `x5c` entries,
+- **Four direct dependencies**: `aprv-openssl` (`openssl/`, versioned
+  with this crate), `base64` for `receipt-data` and `x5c` entries,
   `jiff` for the calendar and the US Pacific time of the `_pst` dates
   (one zone, `America/Los_Angeles`, compiled in; no time-zone file is
   read at run time), and `serde_json`, which reads the JWS header and
@@ -57,7 +68,7 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   built (docs/rust-core/DECISIONS.md R40).
 - **OpenSSL 4.0 or later.** By default the adapter builds OpenSSL 4.0.3
   from source (openssl-src). That needs this repository's workspace patch
-  of openssl-sys; a crates.io build of this crate links a prebuilt
+  of openssl-sys; a build of this crate as a dependency links a prebuilt
   OpenSSL 4 instead (`OPENSSL_NO_VENDOR=1 OPENSSL_DIR=...`). See
   [`openssl/README.md`](openssl/README.md).
 - **No `no_std`, no async.** Nothing here does I/O, every entry point is
@@ -530,7 +541,7 @@ The `endpoint` feature is gone: the endpoint is always there, and
 
 ## Vendoring
 
-To build the crate from a copy rather than from crates.io, copy `src/`,
+To build the crate from a copy rather than as a git dependency, copy `src/`,
 `certs/`, `Cargo.toml` and `Cargo.lock`. The three root certificates are
 compiled in with `include_bytes!("../certs/...")` from `src/roots.rs`, so
 `certs/` must sit next to `src/`. Nothing is read at run time.
