@@ -165,14 +165,16 @@ and by Java's throwaway test PKI (`java/src/test/.../TestPki.java`).
 ### Fuzzing
 
 The parsers are the core's and OpenSSL's, so the fuzz targets that matter
-reach them: `rust/fuzz/` holds five `cargo fuzz` targets over the core's
-three operations, the receipt path and the C ABI, and a sixth,
-`abi-call`, over the module's canonical ABI in Wasmtime
-([`rust/fuzz/README.md`](./rust/fuzz/README.md)). `rust-fuzz` runs them
-for a fixed budget on every change; the nightly `rust-fuzz-openssl` job
-runs them over an OpenSSL built with AddressSanitizer and coverage
-instrumentation, so libFuzzer follows edges inside OpenSSL's CMS, X.509
-and ASN.1 code. `java-fuzz` fuzzes the Java implementation with Jazzer.
+reach them: `rust/fuzz/` holds seven `cargo fuzz` targets, five over the
+verifiers a consumer calls (the C ABI among them) and two over the
+payload decoders, and `rust/fuzz/abi/`, a package of its own, holds an
+eighth, `abi-call`, over the module's canonical ABI in Wasmtime
+([`rust/fuzz/README.md`](./rust/fuzz/README.md)). `rust-fuzz` runs the
+seven for a fixed budget on every Rust change; the nightly
+`rust-fuzz-openssl` job runs them over an OpenSSL built with
+AddressSanitizer and coverage instrumentation, so libFuzzer follows
+edges inside OpenSSL's CMS, X.509 and ASN.1 code. `abi-call` needs a
+built module and no CI job runs it; run it by hand with `run.sh`. `java-fuzz` fuzzes the Java implementation with Jazzer.
 The wrappers' own fuzz jobs (`go-fuzz`, `python-fuzz`, `ruby-fuzz`,
 `swift-fuzz`, `dotnet-fuzz`, `php-fuzz`) drive the public API through the
 module, which exercises each wrapper's own boundary: lowering, lifting,
@@ -281,11 +283,19 @@ Wasmtime .NET, WasmKit, jco, Endive, the server's `wasmtime`) changes how
 it runs. Either passes the full cross-host run before it merges
 (docs/rust-core/DECISIONS.md R14). Dependabot moves the Rust compiler
 (`rust/rust-toolchain.toml`) and the Dockerfile bases. It cannot read
-`tools/wasm-toolchain.sh`, a version in a workflow's `run:` or `with:`
-(cbindgen, spectral-cli, Gradle), the reproduce image's rustup, or a
-workflow's container images, so `toolchain-watch.yml` compares those pins
-with upstream every week and opens an issue when one is behind; move the
-version and its checksum or digest together.
+`tools/wasm-toolchain.sh`, a version in a workflow's `run:`, `with:` or
+matrix (uv, zizmor, ty, cargo-fuzz, cargo-deny and the other tools a step
+installs, the newest symfony/process and Spring Boot legs, the release's
+Maven, build and setuptools), `install-age.sh`, the poms'
+palantir-java-format, the bun, deno and workerd the node runtime scripts
+run, npm `overrides` of transitive packages, the reproduce image's rustup,
+or a workflow's container images. `toolchain-watch.yml` compares those
+pins with upstream every week and opens an issue when one is behind; the
+header of `tools/toolchain-watch.mjs` lists each pin and where it is read.
+Move the version and its checksum or digest together. A pin held in
+several files must agree across them, and uv, zizmor, ty, cargo-fuzz,
+cargo-deny and build name their version at every use: toolchain-watch
+fails on either.
 
 Every ecosystem that has a lockfile commits it, and CI installs from it
 strictly, so a bump reaches CI only as a committed change to a lockfile
@@ -318,7 +328,7 @@ format.
 the Java implementation, and every package answers it: one
 language-neutral case per semantic fact, each naming a registered fixture,
 the `Config` to build the verifier from, and either the payload fields the
-call must return or the reason it must fail with. 432 cases today. Each
+call must return or the reason it must fail with (451 cases on 2026-11-04). Each
 package reads the file through a thin adapter that knows nothing about
 any individual case — `rust/tests/conformance.rs`,
 `java/src/test/.../ConformanceCasesTest.java`,

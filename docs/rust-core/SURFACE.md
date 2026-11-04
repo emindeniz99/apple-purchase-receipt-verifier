@@ -185,15 +185,15 @@ DECISIONS.md R34, amended 2026-10-02; R42).
   four operations: `verifyReceipt`, `verifySignedData`,
   `verifyReceiptEndpoint` and `decodeBase64`.
 - A case's `config.trustedRoots` is either the defaults or registered
-  trust-anchor fixtures; its `config.now`, when present, is the instant
-  the `Config` clock answers. A Wasm host expresses both through the
+  trust-anchor fixtures; its top-level `clock.now`, when present, is the
+  instant the `Config` clock answers. A Wasm host expresses both through the
   public API: the roots go into `Config` and so into `init`, and the
   clock becomes `now-ms`. The ABI v1 spike's test-only operations (op +
   256, anchors and a pinned clock in the envelope) are therefore not part
   of the ABI ([ABI v1][abi], open questions; [canonical ABI][cabi]).
 - A `oneOf` case lists the outcomes a port may give, at the endpoint the
   `/status` values; `INTERNAL_ERROR` is never among them, and no exception
-  or panic may escape. 42 cases carry
+  or panic may escape. 59 cases (on 2026-11-04) carry
   `maxMillis` 2,000, measured after one warm-up call of the same case.
 - `decodeBase64` cases call the `receipt-data` and `x5c` decoders
   directly. In the core they run as today. Through a host, a
@@ -269,13 +269,18 @@ fails when:
    alone;
 2. the surface's graph contains anything outside the core's, or
    `serde`/`serde_json`;
-3. a boundary crate (`aprv-abi`, `rust/ffi`) reaches the core except
-   through the surface and the wire;
+3. a boundary crate (`aprv-abi`, `rust/ffi`) depends on the core, its
+   adapter or OpenSSL directly, instead of through the surface and the
+   wire;
 4. `unsafe` appears outside `aprv-openssl`, `aprv-abi`, `rust/ffi` and
    `aprv-server`, or a crate that must carry `#![forbid(unsafe_code)]`
    lacks it;
 5. the core has a module named `asn1`, `x509`, `cms`, `chain` or
-   `crypto`, or an ASN.1, X.509 or signature crate in its graph (R21).
+   `crypto`, or an ASN.1, X.509 or signature crate in its graph (R21);
+6. `ASN1_get_object`, OpenSSL's TLV header decoder, appears in the
+   core's code, or in the adapter's outside its header walk
+   (`rust/openssl/src/walk.rs`, which decodes no value; `src/sys.rs` may
+   only declare it).
 
 cargo-deny adds a second guard on rule 1. The C ABI keeps its
 `catch_unwind` source test and gains `deny(improper_ctypes,

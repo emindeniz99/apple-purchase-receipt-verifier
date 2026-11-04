@@ -3,8 +3,9 @@
 # the line tables of SUPPORT-MATRIX.md, writes what it found to the job
 # summary, and fails when a tested line that is not a floor or marked kept
 # is past its end of life, so the owner hears about it from a red run
-# rather than from a stale table. It reads public data only and needs no
-# secret.
+# rather than from a stale table. A supported line newer than the newest
+# one CI tests is a warning in the summary, not a failure. It reads public
+# data only and needs no secret.
 #
 # Scheduled runs happen on the default branch only.
 name: support-matrix
@@ -40,8 +41,9 @@ jobs:
             echo '## Support matrix'
             echo
             echo '```text'
-            grep -v '^::error::' "$RUNNER_TEMP/support-matrix.txt"
+            grep -v -e '^::error::' -e '^::warning::' "$RUNNER_TEMP/support-matrix.txt"
             echo '```'
             grep '^::error::' "$RUNNER_TEMP/support-matrix.txt" | sed 's/^::error::/- **Past EOL:** /' || true
+            grep '^::warning::' "$RUNNER_TEMP/support-matrix.txt" | sed 's/^::warning::/- **Newer line not tested:** /' || true
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Install;
 
 /**
- * `aprv install`: puts the `aprv` binary for this platform where
+ * `aprv-install`: puts the `aprv` binary for this platform where
  * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport}
  * looks for it (docs/rust-core/DECISIONS.md R29).
  *
@@ -89,10 +89,18 @@ final class Installer
         }
         $asset = self::assetName($target);
         $pinned = $sums['assets'][$asset] ?? null;
-        if ($pinned === null || $sums['tag'] === null) {
+        if ($sums['tag'] === null) {
             throw new InstallException(
-                "SHA256SUMS pins no SHA-256 for {$asset}: this checkout has no release binaries. "
+                'SHA256SUMS pins nothing: this checkout has no release binaries. '
                 . 'Use HttpTransport with an aprv server, or install a released version of the package.',
+                InstallException::UNAVAILABLE,
+            );
+        }
+        if ($pinned === null) {
+            throw new InstallException(
+                "SHA256SUMS pins no SHA-256 for {$asset}: no binary is pinned for this platform, only the Linux ones. "
+                . 'Run an aprv server (aprv serve, or the Docker image) and pass '
+                . 'HttpTransport(\'http://host:8080\', $token) to Verifier::create().',
                 InstallException::UNAVAILABLE,
             );
         }

@@ -25,13 +25,15 @@ package; a wrong hash installs nothing. Nothing downloads at request time.
 | Platform | Binary |
 |---|---|
 | Linux x86-64, arm64 (static, glibc and musl) | `aprv-x86_64-unknown-linux-musl`, `aprv-aarch64-unknown-linux-musl` |
-| macOS Intel, Apple silicon | `aprv-x86_64-apple-darwin`, `aprv-aarch64-apple-darwin` |
-| Windows x64, arm64 | `aprv-x86_64-pc-windows-msvc.exe`, `aprv-aarch64-pc-windows-msvc.exe` |
 
-Anywhere else, or where you would rather not run a process per call, run the
-same binary as a server (`aprv serve`, or the Docker image) and pass a
-`Transport\HttpTransport` (see "Two ways to reach aprv"). The installer says so
-on an unsupported platform.
+`SHA256SUMS` pins only these two. The release also publishes macOS and
+Windows binaries, but they are not reproducible bit for bit and the release
+rebuilds them after the pins are written, so no hash in the package can
+match them and the installer installs nothing there
+([CI-NOTES.md](CI-NOTES.md)). On macOS, on Windows, anywhere else, or where
+you would rather not run a process per call, run `aprv` as a server
+(`aprv serve`, or the Docker image) and pass a `Transport\HttpTransport`
+(see "What runs per call"). The installer says so on those platforms.
 
 `aprv-install` writes to `php/bin/` inside the package directory, which
 `composer install` and `composer update` replace: run it again after either,

@@ -12,9 +12,12 @@ every Monday (and on demand), writes its output to the job summary, and
 fails when a line in the tables below is past its vendor's end of life.
 It reads the tables themselves: a row whose text says `floor` or `kept`
 stays a leg past EOL on purpose (rules 1 and 2) and is not checked, so a
-failed run means a row to drop, or to mark kept with its reason. Rust and
-Swift are not checked: CI tests Rust's current stable, and endoflife.date
-does not track Swift.
+failed run means a row to drop, or to mark kept with its reason. It also
+warns, without failing, when the vendor supports a line newer than the
+newest one a table lists (rule 3), and does the same for Erlang/OTP and
+Elixir against the `elixir-ffi` job's matrix. Rust and Swift are not
+checked: CI tests Rust's current stable, and endoflife.date does not
+track Swift.
 
 ## The rule
 
@@ -99,14 +102,15 @@ run built (`rust-wasm`), never one from an earlier run.
 | 3.12 | security | 2028-10-31 | `python`, `python-musl` |
 | 3.13 | active | 2029-10-31 | `python`, `python-musl`, `python-tools`, `python-fuzz` |
 | 3.14 | active | 2030-10-31 | `python`, `python-musl` |
+| 3.15 | active | 2031-10-31 | `python`, `python-musl` |
 
 `python` runs every line on the six runner images wasmtime-py ships wheels
 for (Linux x86_64 and arm64, macOS arm64 and x86_64, Windows x86_64 and
 arm64), and again with a warm compile cache; `python-musl` runs them in
 Alpine images on x86_64 and arm64. That grid is a push to main's, which
 every release is cut from; a pull request runs every line on Linux x86_64,
-and 3.11 and 3.14 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
-(`windows-wrappers`). Python 3.15 ships in October 2026.
+and 3.11 and 3.15 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
+(`windows-wrappers`).
 
 ### Java
 
@@ -297,8 +301,10 @@ classifier jars, found by `ServerSource.maven()`:
 Both run on any Linux kernel of their architecture, glibc or musl, with no
 loader. The x86_64 jar size is the one lane E built around the 0.7 core's
 component; the aarch64 jar has not been built outside CI. macOS and Windows
-binaries are GitHub Release assets that `ServerSource.github()` downloads
-against a SHA-256 pinned in the jar.
+binaries are GitHub Release assets, but the jar pins only the two Linux
+hashes, so `ServerSource.github()` fails on those platforms; there a caller
+passes `ServerSource.download()` the asset's URL and its SHA-256 from the
+release's `SHA256SUMS`, or uses `executable()` or `url()` (ROADMAP.md).
 
 ## What changes against 0.7.0
 

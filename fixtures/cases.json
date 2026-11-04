@@ -6007,7 +6007,7 @@
     {
       "id": "endpoint/ids-echo-apples-keys",
       "legacyId": "endpoint/ids-echo-apples-keys",
-      "description": "The verifyReceipt-compatible endpoint echoes the four decoded attributes under Apple's own keys and in Apple's own JSON types. Attribute 1 appears TWICE, as adam_id and as app_item_id, because Apple's response reference defines adam_id as \"See app_item_id\" and both carry the same value. The three app-level ids are JSON numbers, unlike the in-app integers, which Apple renders as strings; download_id is 2^53+1, so a port serialising through a double answers 9007199254740992 and fails. Attribute 1713 becomes is_trial_period, the string \"true\" or \"false\", exactly as 1719 becomes is_in_intro_offer_period. This case pins no clock, so request_date* is left unasserted.",
+      "description": "The verifyReceipt-compatible endpoint echoes the four decoded attributes under Apple's own keys and in Apple's own JSON types. Attribute 1 appears TWICE, as adam_id and as app_item_id, because Apple's response reference defines adam_id as \"See app_item_id\" and both carry the same value. The three app-level ids are JSON numbers, unlike the in-app integers, which Apple renders as strings; download_id is 2^63-1, so a port serialising through a double answers 9223372036854775808 and fails. Attribute 1713 becomes is_trial_period, the string \"true\" or \"false\", exactly as 1719 becomes is_in_intro_offer_period. This case pins no clock, so request_date* is left unasserted.",
       "operation": "verifyReceiptEndpoint",
       "input": {
         "fixture": "receipt-ids"

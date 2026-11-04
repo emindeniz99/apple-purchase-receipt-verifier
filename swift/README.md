@@ -41,11 +41,6 @@ runs it on WasmKit, a WebAssembly interpreter written in Swift. Nothing is
 compiled to machine code at run time, so no JIT entitlement is needed on
 iOS.
 
-**Building from a checkout of this branch:** `aprv.wasm` is not committed
-until the release module lands; copy the module whose SHA-256
-`aprv.wasm.sha256` names into `Sources/ApplePurchaseReceiptVerifier/Resources/`
-first, or the build stops with a missing-resource error.
-
 The Swift code holds no parser, no cryptography and no trust decision: it
 reads the clock, copies the input into the module, and turns the module's
 JSON answer into the types below. A hostile receipt meets the module inside
@@ -330,7 +325,7 @@ path, the same pair on the JWS `x5c` chain).
 | Endpoint request body, UTF-8 bytes | 3,145,728 |
 | JWS, UTF-8 bytes | 262,144 |
 | Certificates embedded in a receipt | 10 |
-| Chain length (below the anchor) | 6 |
+| Chain length (below the anchor) | no bound of its own: at most the 10 certificates a receipt embeds; a JWS `x5c` holds exactly 3 |
 | SignerInfos in a receipt | 4 |
 | ASN.1 nesting depth (CMS envelope, signed content) | 32 |
 

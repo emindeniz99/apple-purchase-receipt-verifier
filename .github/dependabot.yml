@@ -37,8 +37,8 @@ updates:
         patterns: ["*"]
   # Dependabot rewrites a package.json `overrides` entry only while it
   # updates that package, and version updates cover direct dependencies
-  # only, so the exact override pins (weval, minimatch; node/CI-NOTES.md
-  # says why each exists) are not moved by this entry.
+  # only, so the exact override pin of minimatch (node/CI-NOTES.md says
+  # why it exists) is not moved by this entry; toolchain-watch reports it.
   - package-ecosystem: npm
     directory: /node
     schedule:
@@ -282,7 +282,11 @@ updates:
     cooldown:
       default-days: 7
   # The server image's two bases (rust slim for the build, distroless
-  # static for the runtime) are pinned by digest.
+  # static for the runtime) are pinned by digest. The cooldown dates only
+  # Docker Hub images: for distroless, on gcr.io, Dependabot opens the PR
+  # at once with "Cooldown could not be applied". ci.yml's image-age job
+  # covers every other registry, and fails until the digest is seven days
+  # old.
   - package-ecosystem: docker
     directory: /rust/server
     schedule:
