@@ -1315,15 +1315,16 @@ jobs:
   # Lint and types on one modern Ruby, deliberately outside the matrix:
   # RuboCop and Steep raise their own Ruby floors faster than this library
   # does, and a tool that cannot run on 3.1 must not be able to fail the 3.1
-  # leg. Their gemfile is the only one in the port with dependencies.
+  # leg. They have their own bundle, ruby/gemfiles/tools/Gemfile, named so
+  # that Dependabot's bundler ecosystem finds it.
   ruby-tools:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BUNDLE_GEMFILE: gemfiles/tools.gemfile
-      # Frozen: install exactly gemfiles/tools.gemfile.lock or fail. Without
+      BUNDLE_GEMFILE: gemfiles/tools/Gemfile
+      # Frozen: install exactly gemfiles/tools/Gemfile.lock or fail. Without
       # it bundler resolves rubocop, rbs and steep afresh on every push and
       # the seven-day dependabot cooldown protects nothing here.
       BUNDLE_FROZEN: "true"
@@ -1788,8 +1789,8 @@ jobs:
   # It is not part of the `ruby` matrix because it cannot be: ruzzy is a
   # native extension that needs clang and libFuzzer's sanitizer runtimes, and
   # the whole point of that matrix is that the library installs nothing. Its
-  # dependency lives in ruby/gemfiles/fuzz.gemfile for the same reason the
-  # linters live in tools.gemfile — a tool that needs clang must not be able
+  # dependency lives in ruby/gemfiles/fuzz/Gemfile for the same reason the
+  # linters live in gemfiles/tools/ — a tool that needs clang must not be able
   # to fail the Ruby 3.1 leg.
   #
   # clang is pinned to 18 with its matching libclang-rt: ruzzy links
@@ -1802,8 +1803,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz.gemfile
-      # gemfiles/fuzz.gemfile.lock is committed; frozen makes the install use
+      BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz/Gemfile
+      # gemfiles/fuzz/Gemfile.lock is committed; frozen makes the install use
       # it rather than resolve ruzzy again. bundler-cache stays false below
       # because the install needs the clang environment set on that step.
       BUNDLE_FROZEN: "true"

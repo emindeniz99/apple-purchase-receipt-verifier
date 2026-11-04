@@ -182,19 +182,26 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-  # ruby/Gemfile, not ruby/gemfiles/tools.gemfile: dependabot's bundler
-  # ecosystem only discovers a manifest named Gemfile or gems.rb, so the lint
-  # and type toolchain (rubocop, steep, rbs) and the fuzzer (ruzzy) are bumped
-  # by hand until those files are renamed, even though both now have committed
-  # locks. The library's one runtime dependency is wasmtime, which tracks
-  # Wasmtime majors: a bump that raises its floor changes the runtime under
-  # the module, like the Python and .NET runtime bumps.
+  # Three bundles, each with a committed lock: the test bundle (ruby/), the
+  # lint and type toolchain (rubocop, rbs, steep) and the fuzzer (ruzzy).
+  # The bundler ecosystem only discovers a manifest named Gemfile or gems.rb,
+  # so the last two live in directories of their own under ruby/gemfiles/.
+  # The library's one runtime dependency is wasmtime, which tracks Wasmtime
+  # majors: a bump that raises its floor changes the runtime under the
+  # module, like the Python and .NET runtime bumps. All three bundles name
+  # it, and group-by moves it in all three locks in one pull request.
   - package-ecosystem: bundler
-    directory: /ruby
+    directories:
+      - /ruby
+      - /ruby/gemfiles/tools
+      - /ruby/gemfiles/fuzz
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      gems:
+        group-by: dependency-name
   # The MSRV floor is a claim this repository tests (the rust job's 1.85.0
   # leg), so a bump that raises it is a deliberate decision and not a
   # dependabot merge. When one of these needs a newer Rust, raise
