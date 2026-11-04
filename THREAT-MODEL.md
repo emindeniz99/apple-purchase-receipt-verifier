@@ -785,7 +785,7 @@ the signature, and has not been re-measured.
 
 | Host | Memory | CPU and time |
 |---|---|---|
-| `aprv-server` | 256 MiB of linear memory and one instance per store; a larger grow traps; at most four request bodies per worker received or queued at once, each cut to the 3 MiB cap | 10 s of guest time per call by default (epoch interruption); a semaphore of one worker per CPU, held until the guest call ends; a body must arrive within 30 s of admission or gets 408; the 3 MiB body cap, answered with 413; at most 512 connections open (`--max-connections`), and each must send a complete request head within 30 s of accept or of its last response (`--header-timeout-ms`) or is closed |
+| `aprv-server` | 256 MiB of linear memory and one instance per store; a larger grow traps; at most four request bodies per worker received or queued at once, each cut to the 3 MiB cap | 10 s of guest time per call by default (epoch interruption); a semaphore of one worker per CPU, held until the guest call ends; a body must arrive within 30 s of admission or gets 408; the 3 MiB body cap, answered with 413; at most 512 connections open by default (`--max-connections`); a connection is closed when it has sent no complete request head 30 s by default (`--header-timeout-ms`) after accept or after its last response, or when a response write has sent nothing for that long |
 | Go, Python, Ruby, .NET | 256 MiB of linear memory per instance; an instance past it traps and is discarded (.NET also drops an instance that grew past 64 MiB) | no guest time limit |
 | Swift | no per-instance limit in WasmKit's public API; an instance whose memory grew past 64 MiB is dropped | no guest time limit |
 | Node | the engine's limit for a 32-bit memory; workerd's 128 MB isolate | the platform's own CPU limits |
@@ -823,12 +823,20 @@ the core's bounds are what keep every call short (§3.7). Only
 - **Connections are bounded before the token is read.** The token is a
   header, so it protects nothing until a request head has arrived. A peer
   without it can still open connections; the server accepts at most
-  `--max-connections` (512) at once and closes any that has not sent a
-  complete head within `--header-timeout-ms` (30 s) of accept or of its
-  last response. Such a peer can still hold the server at its cap, and
-  leave new clients waiting in the listen backlog, for as long as it keeps
-  reconnecting; it cannot run the process out of descriptors or hold one
-  connection open past the deadline.
+  `--max-connections` (512 by default) at once and closes any that has
+  not sent a complete head within `--header-timeout-ms` (30 s by default)
+  of accept or of its last response, or whose response write has sent
+  nothing for that long. The head deadline restarts after every response,
+  and any request gets one: `GET /healthz` needs no token, and a 401 is a
+  response too. So a peer that sends a request before each deadline keeps
+  its connection, and its place under the cap, without reconnecting, and
+  enough such peers hold the server at its cap and leave new clients
+  waiting in the listen backlog. The cap keeps the process within its
+  descriptor limit (`ulimit -n`) only while that limit leaves room for
+  the cap plus the listener, stdio and the other descriptors the process
+  has open. Below that, accept fails with EMFILE, which the server reports
+  on stderr and retries every second, and the cap is never reached; the
+  server does not raise its own limit.
 - **Plain HTTP.** The server speaks HTTP without TLS. It is meant for
   loopback, a sidecar or a private network; TLS termination belongs to the
   deployment.
