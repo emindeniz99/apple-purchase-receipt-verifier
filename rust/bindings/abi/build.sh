@@ -88,6 +88,14 @@ TARGET_DIR="${CARGO_TARGET_DIR:-$RUST/target}"
 IFACE='aprv:verifier/verify@0.2.0#'
 mkdir -p "$TARGET_DIR"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+# Cargo tags a target directory it creates; one made here first would go
+# untagged, and rust/ffi/tests/exported_symbols.rs finds the target root
+# by that tag. Write cargo's own tag when it is missing.
+[[ -e "$TARGET_DIR/CACHEDIR.TAG" ]] || printf '%s\n' \
+  'Signature: 8a477f597d28d172789f06886806bc55' \
+  '# This file is a cache directory tag created by cargo.' \
+  '# For information about cache directory tags see https://bford.info/cachedir/' \
+  > "$TARGET_DIR/CACHEDIR.TAG"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aprv-abi-build.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 

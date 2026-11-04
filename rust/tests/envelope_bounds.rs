@@ -423,7 +423,7 @@ const TINY_ENTRIES: usize = (2_359_296 - 8_000) / 2;
 
 #[test]
 fn a_million_tiny_set_entries_are_refused_by_the_node_budget_first() {
-    // Round-2 review F1: the shallow decode keeps the certificates, crls
+    // The shallow decode keeps the certificates, crls
     // and signerInfos sets as SET OF ANY, so OpenSSL allocated a value per
     // entry, 1.17 million of them (0.6 to 0.95 s and about 114 MB), before
     // the member bounds refused the count. The walk now runs first, so the
@@ -516,7 +516,7 @@ fn a_tiny_entry_flood_costs_what_junk_of_its_size_costs() {
 
 #[test]
 fn what_openssl_refuses_on_its_own_is_refused_in_the_envelope_at_every_depth() {
-    // Round-2 review F3: an unsigned attribute value OpenSSL's ANY decoder
+    // An unsigned attribute value OpenSSL's ANY decoder
     // refuses (a short UTCTime or GeneralizedTime, a constructed INTEGER,
     // NULL or OID, a string of seven constructed levels) was MALFORMED
     // directly and verified inside one SEQUENCE, which OpenSSL keeps whole.
@@ -565,7 +565,7 @@ fn rechunked_value(levels: usize) -> Vec<u8> {
 
 #[test]
 fn the_full_decode_counter_survives_a_panic_inside_it() {
-    // Round-2 review N3: a panic in the counted body left the thread's
+    // A panic in the counted body left the thread's
     // counter replaced, so an enclosing count lost what it had counted.
     let verifier = common::receipt_verifier();
     let receipt = common::receipt_der();
@@ -592,7 +592,7 @@ fn nested_indefinite(identifier: u8, levels: usize) -> Vec<u8> {
 
 #[test]
 fn indefinite_lengths_meet_the_same_bounds_and_must_end() {
-    // Round-2 review N4: the walk follows indefinite lengths to their
+    // The walk follows indefinite lengths to their
     // end-of-contents under the same depth and node bounds; nothing pinned
     // it. The unsigned value starts at depth 9 (see the depth test above).
     for (levels, refused) in [(24, false), (25, true), (3_000, true)] {
@@ -640,7 +640,7 @@ fn indefinite_lengths_meet_the_same_bounds_and_must_end() {
 
 #[test]
 fn a_length_one_octet_past_its_container_is_refused() {
-    // Round-2 review N4: a value whose length runs one octet past the value
+    // A value whose length runs one octet past the value
     // around it, here an OCTET STRING of two octets declared as three
     // inside its SET, is refused before any decode.
     let mut attribute = der_seq(&[der_oid("1.2.3.4"), der_set(&[vec![0x04, 0x02, 0xaa, 0xbb]])]);
@@ -668,7 +668,7 @@ fn signature_in_two_chunks(certificate: &[u8]) -> Vec<u8> {
 
 #[test]
 fn chunks_inside_a_constructed_string_are_joined_not_judged() {
-    // Round-3 review F2: the walk judged each primitive chunk of a
+    // The walk judged each primitive chunk of a
     // constructed string as a value of its own. OpenSSL's `asn1_collect`
     // joins chunk contents whatever their tags, and the walk already hands
     // the whole string to OpenSSL. So a certificate whose signature
