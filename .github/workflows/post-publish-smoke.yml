@@ -430,7 +430,7 @@ jobs:
     timeout-minutes: 45
     # The manifest's floor, in the same digest-pinned image as the CI swift
     # job.
-    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
     steps:
       # The release tag resolve checked, fetched by name in a step rather
       # than handed to actions/checkout (.github/CI-NOTES.md, "Why the

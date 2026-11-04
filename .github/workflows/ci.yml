@@ -242,12 +242,12 @@ jobs:
         include:
           - jre: "17 (Debian OpenJDK 17.0.18, deprecated tag)"
             image: gcr.io/distroless/java17-debian12@sha256:06484c2a9dcc9070aeafbc0fe752cb9f73bc0cea5c311f6a516e9010061998ad # java17-debian12:nonroot
-          - jre: "17 (Temurin 17.0.20.1)"
-            image: gcr.io/distroless/java17-debian13@sha256:6457ce026c1733d9693b65a4dbb45459d71ec1f5e48676f9d3877c99c63c35cc # java17-debian13:nonroot
-          - jre: "21 (Temurin 21.0.12.1)"
-            image: gcr.io/distroless/java21-debian13@sha256:0a1f5a75661918de9c0813f287f651c3bf2d6dd752eada5f084eb0c1f14ced9e # java21-debian13:nonroot
-          - jre: "25 (Temurin 25.0.4.1)"
-            image: gcr.io/distroless/java25-debian13@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629 # java25-debian13:nonroot
+          - jre: "17 (Temurin 17.0.21)"
+            image: gcr.io/distroless/java17-debian13@sha256:abc0642bb27fcd039f49d16b6ba3f1b77a282708de55de0bb49b2f6b78cc8e7d # java17-debian13:nonroot
+          - jre: "21 (Temurin 21.0.13)"
+            image: gcr.io/distroless/java21-debian13@sha256:a2aeb5a7a714cfe928b31fdf67b2d23f503ea6b9612705af062de22e0c50ba77 # java21-debian13:nonroot
+          - jre: "25 (Temurin 25.0.5)"
+            image: gcr.io/distroless/java25-debian13@sha256:5d3177252775d4b01603470fe21c015393019089904f68724bd37242e4bc6e6d # java25-debian13:nonroot
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -536,10 +536,10 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm]
         python: ["3.11", "3.12", "3.13", "3.14"]
         include:
-          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:97c6d480e7b214e5d7e8bf6db85a101078554de11cd6e677451a6174486a52a9" } # python3.11-alpine
-          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:262abc719041a446c354092e6b7730c9066de499089e16ef4edcb1a2e5d7b8b9" } # python3.12-alpine
-          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:8265a34ae4034f7f6d3f4146f97cf7ec8de6de803b0698f560df63b9a8dadd38" } # python3.13-alpine
-          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:ea7c8f721b5042fb12f6eb051b63469edfeb61c7c00551dbe67d71f182810c66" } # python3.14-alpine
+          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:58f67f392d490af90763f17b57a31245e3f26fb12ac9b6322c7af20507f15336" } # python3.11-alpine, uv 0.13.6
+          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:8a8e1becc4af37b754fa36eb75e26340e3e4d421542b7c4fdc6bced966abd6bf" } # python3.12-alpine, uv 0.13.6
+          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:63b8fa4be2338728034164eb6c067a363fdbb3234fa79b64c83545317b7feec1" } # python3.13-alpine, uv 0.13.6
+          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a069b57ec30ef94da43700a7332b162a13adb0b8a1cfba4e0b62c1a9727153c4" } # python3.14-alpine, uv 0.13.6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -587,9 +587,9 @@ jobs:
         # retagging); dependabot bumps the digests, the comments name the tags.
         include:
           - swift: "6.3"
-            image: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+            image: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
           - swift: "6.4"
-            image: swift:6.4@sha256:bb6e5d5f2a97bc07cf8022c1a3e062f8164b8fd078698327ce2ab097e02a91dc
+            image: swift:6.4@sha256:82152e9f18ee21fc997fd4580b93a14097e465cb10d7a7eee3f2dc85364dd135 # 6.4.1; the tag moved to 6.4.2 on 2026-10-30
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -678,7 +678,7 @@ jobs:
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1937,7 +1937,7 @@ jobs:
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -3139,7 +3139,7 @@ jobs:
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -3580,7 +3580,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # The post-publish leg's image: the manifest's 6.3 floor.
-    container: swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54
+    container: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
