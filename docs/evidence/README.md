@@ -48,6 +48,13 @@ person from trying them again.
 - Production receipts. Only the sandbox fixtures under `fixtures/` and
   receipts a spike generates from its own test PKI.
 
+Compiled Python (`.pyc`) embeds the absolute path it was compiled from.
+Two early commits, c24f9ce5 and 7babef88, carry `.pyc` files with such a
+local path, and that is accepted: every tag from `go/v0.4.0` to
+`go/v0.11.0` contains them, and a `go/v*` tag must never move (AGENTS.md),
+so history is not rewritten. The `conformance` job in CI now fails on any
+tracked `.pyc`, `.pyo` or `__pycache__/` file.
+
 Check the folder before committing:
 
 ```sh
