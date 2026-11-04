@@ -49,18 +49,20 @@ does not track Swift.
 | Java, main artifact | Java 8 | Java 8 | unchanged; the independent implementation |
 | Java, `-wasm` artifact | Java 8; the Endive engine needs Java 11 | new | Endive 1.1.0 needs Java 11; on Java 8 the default engine is `aprv-server` |
 | Node | 20 | 20 | unchanged |
-| Python | 3.11 | 3.10 | platformdirs 4.13 needs 3.11 (owner, 2026-10-31; DECISIONS.md R30) |
+| Python | 3.10 | 3.10 | unchanged; wasmtime-py `>=49` |
 | Go | 1.25 | 1.22 | wazero v1.12.0 needs Go 1.25 |
 | Ruby | 3.3 (3.4 on Windows arm64) | 3.3 | the `wasmtime` gem's prebuilt native gems |
 | Swift | Swift 6.3, macOS 15, iOS 18 | Swift 6.1, macOS 13 | WasmKit 0.4.1 declares tools 6.3 and those platforms |
 | .NET | netstandard2.0, tested on .NET 8 and later | netstandard2.0, net8.0 | the `Wasmtime` package |
 | PHP | 8.2, 64-bit | 8.2 | unchanged |
-| Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the pinned 1.99.0 |
-| `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` 49.0.2 |
+| Rust crate and C ABI | Rust 1.85.0 | 1.85.0 | the workspace's `rust-version`; `aprv.wasm` itself is built with the toolchain `rust/rust-toolchain.toml` pins |
+| `aprv-server` | none for its users | new | a binary; its build pins `wasmtime` in `rust/server/Cargo.toml` |
 
 Go's floor moved from 1.22 to 1.25, because wazero 1.12 needs it (owner,
 2026-09-30; docs/rust-core/DECISIONS.md R30). Every other floor in the
-table stays.
+table stays. Since then one floor has moved: Python's, from 3.10 to 3.11
+in 0.13.0, because platformdirs 4.13 needs 3.11 (owner, 2026-10-31;
+DECISIONS.md R30).
 
 ## Snapshot, 2026-09-29
 
@@ -191,7 +193,7 @@ Rust supports the current stable only.
 | Line | Status | CI |
 |---|---|---|
 | 1.85.0 | floor (`rust-version`) | `rust` |
-| 1.99.0 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
+| 1.99.1 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
 | stable | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly), `smoke-crates` (held with crates.io) |
 | beta | next stable | `rust` |
 

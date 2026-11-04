@@ -42,7 +42,7 @@ the Wasm-first basis** (R22). The decisions it rests on are in
      ┌───────────┬──────────┬──────┼───────────┬───────────┬──────────────┐
      ▼           ▼          ▼      ▼           ▼           ▼              ▼
   Endive      V8 / JSC /  wazero  wasmtime-  WasmKit    wasmtime gem,  aprv-server
-  (build-     SpiderMonkey (Go)   py         (Swift)    Wasmtime .NET  (Wasmtime 49,
+  (build-     SpiderMonkey (Go)   py         (Swift)    Wasmtime .NET  (Wasmtime 50,
   time, JVM   (npm)               (Python)              (Ruby, .NET)   own process)
   bytecode)                                                            ├ Java 8 (-wasm)
   Java 11+                                                             ├ PHP (CLI/URL)
@@ -654,7 +654,7 @@ aarch64).
 
 ### 7.7 aprv-server
 
-One Rust binary, `aprv`, built on axum and tokio with Wasmtime 49
+One Rust binary, `aprv`, built on axum and tokio with Wasmtime 50
 **runtime-only** plus `component-model`: Cranelift, Winch, the cache and
 every other optional feature are off. The release precompiles the
 component to a Cranelift `.ccwasm` for an **explicit baseline target**
