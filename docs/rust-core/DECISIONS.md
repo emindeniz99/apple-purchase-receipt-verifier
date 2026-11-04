@@ -23,7 +23,9 @@ client change, and amended R41 for .NET's `Config`; on 2026-10-04 the
 owner amended R41 for Go's, Swift's and Node's `Config`, and R23 for the
 form of `init`'s configuration (Q30); on 2026-10-06 the owner's
 decision Q70 added R44, and the owner added R45 (Q71); on 2026-11-02
-the owner added R46 (ABI 0.2.0), which amends R23 and R24.
+the owner added R46 (ABI 0.2.0), which amends R23 and R24; on
+2026-11-04 R23 and R31 were amended to record `aprv-server`'s pool
+default (OD-15).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -1384,7 +1386,8 @@ instance model, Q49 option d). Supersedes the ABI v1 export list of the
 2026-09-28 record. Amended 2026-09-30: the WIT package version moves from
 `1.0.0` to `0.1.0` (R36); done on 2026-10-01, and the export names below
 carry it. Amended 2026-10-04: one form for the built-in roots in `init`'s
-configuration (Q30, below).
+configuration (Q30, below). Amended 2026-11-04: `aprv-server`'s default
+lifecycle is the pool (below).
 
 **The ABI.** `aprv.wasm` exports its four operations through the
 canonical ABI, the Component Model's calling convention, from one WIT
@@ -1485,6 +1488,25 @@ of a call, the server's default flips to `--lifecycle pool`.
   refusal is a second line behind it. `fixtures/cases.json` does not
   change. The WIT does not change, so the ABI version stays;
   `init-config.schema.json` states the refusal (`minItems: 1`).
+
+**Amended 2026-11-04: `aprv-server` pools by default.**
+
+- **Decision:** the instance model's 10% rule was met and applied.
+  Phase 1 measured `init` at 2.3 to 3.7 ms and a fresh instance at 1.45
+  to 4 times a pooled call (docs/evidence/2026-09-29-init-cost.md), and
+  OD-15 (STATUS.md, 2026-09-29) made `--lifecycle pool` the default,
+  which `aprv serve` has shipped since. This record, R31,
+  ARCHITECTURE.md and both threat models still described the fresh
+  default until this amendment.
+- **What the default isolates:** the pool keeps at most one instance per
+  worker and serves one request at a time on each; an instance that
+  trapped or broke the interface is destroyed. An instance that answered
+  normally serves later requests, so a hostile input that took control
+  of an instance without trapping carries its state into the requests
+  that instance serves next, as in the in-process pools.
+- **Per-request isolation:** `aprv serve --lifecycle fresh` gives every
+  request a new store, instance and `init`, so nothing from one input
+  reaches the next request.
 
 **Options rejected** (table at the end): ABI v1's `aprv_call` with
 operation numbers and result handles; `now_ms` as an 8-byte prefix; one
@@ -1735,7 +1757,10 @@ install-failure and post-publish smoke jobs move to 3.11.
   (the runtime in `ManuallyDrop`), which removes a 55 ms libunwind
   teardown.
 - **Lifecycle:** a fresh instance per request, with `--lifecycle pool` as
-  the flag R23's `init` measurement may make the default.
+  the flag R23's `init` measurement may make the default. Amended
+  2026-11-04: the measurement made it the default (OD-15), and
+  `--lifecycle fresh` keeps the per-request instance (R23, amended
+  2026-11-04).
 - **Surface:** managed mode, the CLI (`aprv verify-receipt |
   verify-signed-data | verify-receipt-endpoint <env>`, stdin to stdout,
   exit codes 0, 3 and 70, about 12 ms per process), HTTP; binds `127.0.0.1`
