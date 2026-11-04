@@ -8,9 +8,14 @@ version: 2
 updates:
   # `/` covers .github/workflows (and a root action.yml, which this
   # repository has none of); .github/actions/* holds the composite actions
-  # the workflows call (place-module), with pins of their own. group-by
-  # keeps one pull request per action, so a pin moves in the workflows and
-  # in the composite actions together.
+  # the workflows call (place-module), with pins of their own. One group
+  # takes every action update in both directories, so a week's actions
+  # arrive as one pull request and a pin moves in the workflows and in the
+  # composite actions together. It was one pull request per action
+  # (group-by: dependency-name) until five of those, open from 2026-10-17
+  # to 2026-10-31, filled the default open-pull-requests-limit of 5 and the
+  # 10-24 and 10-31 runs opened none (docs/evidence/
+  # 2026-11-04-dependency-survey.md).
   - package-ecosystem: github-actions
     directories:
       - /
@@ -21,7 +26,7 @@ updates:
       default-days: 7
     groups:
       actions:
-        group-by: dependency-name
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /node
     schedule:
