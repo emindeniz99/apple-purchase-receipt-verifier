@@ -69,6 +69,24 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         Assert.Equal(CaseList.Count, ids.Count);
     }
 
+    /// <summary>
+    /// The case pinning download_id at 2^63-1 is there to catch a value
+    /// rounded through a double, so the field comparison must round nothing
+    /// itself: a near miss is a mismatch, another spelling of the value is not.
+    /// </summary>
+    [Theory]
+    [InlineData(9223372036854775807L, "9223372036854775807", true)]
+    [InlineData(9223372036854775807L, "9223372036854775806", false)]
+    [InlineData(9223372036854775807L, "9223372036854775808", false)]
+    [InlineData(9007199254740993L, "9007199254740993.0", false)]
+    [InlineData(9007199254740993L, "9007199254740992", false)]
+    [InlineData(1722945600000L, "1722945600000.0", true)]
+    [InlineData(1L, "\"1\"", false)]
+    public void FieldIntegersCompareWithoutRounding(long expected, string actualJson, bool same)
+    {
+        Assert.Equal(same, SameInteger(expected, TestJson.Parse(actualJson)));
+    }
+
     [Theory]
     [MemberData(nameof(CaseIds))]
     public void Case(string id)
@@ -329,10 +347,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
                 Assert.True(actual is bool b && b == flag, $"{id}: {path}: expected {flag}, got {Render(actual)}");
                 return;
             case long number:
-                double actualNumber = actual switch { long l => l, double d => d, _ => double.NaN };
-                Assert.True(
-                    !double.IsNaN(actualNumber) && actualNumber == number,
-                    $"{id}: {path}: expected {number}, got {Render(actual)}");
+                Assert.True(SameInteger(number, actual), $"{id}: {path}: expected {number}, got {Render(actual)}");
                 return;
             case double number:
                 double actualD = actual switch { long l => l, double d => d, _ => double.NaN };
@@ -343,6 +358,25 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
             default:
                 throw new InvalidOperationException($"harness error: unsupported expected value type for \"{path}\"");
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="actual"/> is the integer <paramref name="expected"/>,
+    /// with nothing rounded through a double. A long compares as a long. A
+    /// double (any number <see cref="TestJson"/> did not read as a long, an
+    /// integer past 2^63 included) matches only within 2^53, where a double
+    /// holds every integer, so 2^63 never passes for 2^63-1 while
+    /// 1722945600000.0 still matches 1722945600000.
+    /// </summary>
+    private static bool SameInteger(long expected, object? actual)
+    {
+        const long exact = 1L << 53;
+        return actual switch
+        {
+            long l => l == expected,
+            double d => expected >= -exact && expected <= exact && d >= -exact && d <= exact && d == expected,
+            _ => false,
+        };
     }
 
     private static string Render(object? value) => value switch
