@@ -149,23 +149,36 @@ final class ServerConnection {
         return conn;
     }
 
-    /** Keeps {@code conn} for a later call, unless {@code maxIdle} are kept already. */
+    /**
+     * Keeps {@code conn} for a later call, unless {@code maxIdle} are kept already. A
+     * {@link #close()} that ran after the caller's check of {@code closed} may have drained
+     * {@code idle} before {@code conn} arrived, so {@code closed} is read again once it is in:
+     * either that read sees it set and drains here, or the drain in {@code close()} comes after
+     * the add and takes {@code conn}. Both ways it is closed.
+     */
     private boolean keepIdle(HttpConn conn) {
         if (idleCount.incrementAndGet() <= maxIdle) {
             idle.add(conn);
+            if (closed) {
+                closeIdle();
+            }
             return true;
         }
         idleCount.decrementAndGet();
         return false;
     }
 
-    /** Closes the pooled connections and stops the child, if this connection owns one. */
-    void close() {
-        closed = true;
+    private void closeIdle() {
         HttpConn conn;
         while ((conn = takeIdle()) != null) {
             conn.close();
         }
+    }
+
+    /** Closes the pooled connections and stops the child, if this connection owns one. */
+    void close() {
+        closed = true;
+        closeIdle();
         if (process != null) {
             process.stop();
         }
