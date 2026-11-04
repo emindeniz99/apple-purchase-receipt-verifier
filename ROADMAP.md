@@ -45,7 +45,8 @@ are in docs/rust-core/DECISIONS.md where they are architectural.
    and Go and are bytes elsewhere; Java's `Environment.value()` is
    public (2026-10-14); the WIT package version moved to
    `aprv:verifier@0.1.0` in one pull request across every binding on
-   2026-10-01 (R36).
+   2026-10-01 (R36), and to `aprv:verifier@0.2.0` on 2026-11-02 (R46:
+   the environment as an enum, `now-ms` as an `s64`).
    - Decided 2026-10-01 (DECISIONS.md R41): internals that leaked are
      hidden (Rust's top-level `decode_receipt_data`; Go's `String()`
      methods that repeated `ToJSON()`/`JSON()`; Swift's

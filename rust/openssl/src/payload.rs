@@ -76,12 +76,13 @@ fn walk_error(err: WalkError) -> PayloadError {
     }
 }
 
-// Invariant: any value this does not refuse is a primitive OCTET STRING, a
-// constructed one whose chunks are all OCTET STRINGs, or refused later in
-// `attribute_set`, by the template decode or by `attribute`.
 /// Whether every attribute's `value`, when it is a constructed
-/// `OCTET STRING`, has only `OCTET STRING` chunks. A SET entry or a field of another shape is left to the template
-/// decode to refuse.
+/// `OCTET STRING`, has only `OCTET STRING` chunks. A SET entry or a field
+/// of another shape is left to the template decode to refuse.
+///
+/// So any value this does not refuse is a primitive `OCTET STRING`, a
+/// constructed one whose chunks are all `OCTET STRING`s, or refused later
+/// in `attribute_set`, by the template decode or by `attribute`.
 fn values_are_octet_strings(set: &[u8]) -> Result<(), ChunkError> {
     let Some(entries) = walk::children(set) else {
         return Ok(());
