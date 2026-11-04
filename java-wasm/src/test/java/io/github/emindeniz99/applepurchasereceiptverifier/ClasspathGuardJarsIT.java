@@ -34,9 +34,9 @@ import org.junit.jupiter.api.Test;
  * jar exists here with the same signature.
  *
  * <p>Runs in the {@code classpath-guard} profile after {@code package}
- * (failsafe), and needs the main artifact's jar built first:
- * {@code mvn -f java package -DskipTests}, then
- * {@code mvn -f java-wasm verify -Pclasspath-guard}.</p>
+ * (failsafe), and needs the main artifact's jar built first and
+ * BouncyCastle's version from {@code java/pom.xml}:
+ * {@code java-wasm/scripts/classpath-guard.sh} does both.</p>
  */
 class ClasspathGuardJarsIT {
 
