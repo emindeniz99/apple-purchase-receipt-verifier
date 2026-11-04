@@ -48,7 +48,7 @@ function toBytes(root: RootInput): Uint8Array {
 
 function normalizeRoots(roots: readonly RootInput[]): readonly Uint8Array[] {
   if (!Array.isArray(roots) || roots.length === 0) {
-    throw new TypeError('trustedRoots must be a non-empty array');
+    throw new TypeError('roots must be a non-empty array');
   }
   return Object.freeze(roots.map(toBytes));
 }

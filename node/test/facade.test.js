@@ -35,7 +35,10 @@ test('a null config, or one with no roots, is a TypeError from createVerifier', 
     assert.throws(() => web.createVerifier(bad), TypeError);
   }
   assert.throws(() => node.createVerifier({ roots: [], clock: Date.now }), TypeError);
-  assert.throws(() => node.createConfig({ roots: [] }), TypeError);
+  assert.throws(
+    () => node.createConfig({ roots: [] }),
+    (err) => err instanceof TypeError && err.message === 'roots must be a non-empty array',
+  );
   await assert.rejects(web.createConfig({ roots: [] }), TypeError);
 });
 
