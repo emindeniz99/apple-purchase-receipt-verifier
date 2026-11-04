@@ -584,7 +584,8 @@ jobs:
       fail-fast: false
       matrix:
         # Digest-pinned (mutable tags are the container flavor of action
-        # retagging); dependabot bumps the digests, the comments name the tags.
+        # retagging). No dependabot ecosystem moves a workflow's images;
+        # toolchain-watch.yml reports a tag that names a new digest.
         include:
           - swift: "6.3"
             image: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866

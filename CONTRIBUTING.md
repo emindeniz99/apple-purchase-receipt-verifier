@@ -281,9 +281,11 @@ Wasmtime .NET, WasmKit, jco, Endive, the server's `wasmtime`) changes how
 it runs. Either passes the full cross-host run before it merges
 (docs/rust-core/DECISIONS.md R14). Dependabot moves the Rust compiler
 (`rust/rust-toolchain.toml`) and the Dockerfile bases. It cannot read
-`tools/wasm-toolchain.sh`, so `toolchain-watch.yml` compares that file's
-four pins with upstream every week and opens an issue when one is behind;
-move the version and its SHA-256 together.
+`tools/wasm-toolchain.sh`, a version in a workflow's `run:` or `with:`
+(cbindgen, spectral-cli, Gradle), the reproduce image's rustup, or a
+workflow's container images, so `toolchain-watch.yml` compares those pins
+with upstream every week and opens an issue when one is behind; move the
+version and its checksum or digest together.
 
 Every ecosystem that has a lockfile commits it, and CI installs from it
 strictly, so a bump reaches CI only as a committed change to a lockfile
