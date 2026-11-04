@@ -264,6 +264,18 @@ jobs:
         working-directory: java
         run: |
           set -euo pipefail
+          # Dependabot bumps junit.version in pom.xml; JUNIT_PLATFORM and its
+          # hash below move by hand. Fail here, by name, when they disagree,
+          # rather than run a console launcher of another JUnit release.
+          jupiter=$(mvn -q help:evaluate -Dexpression=junit.version -DforceStdout)
+          case "$jupiter" in
+            5.*) expected="1.${jupiter#5.}" ;;
+            *) echo "::error::junit.version $jupiter is not a JUnit 5 release; JUNIT_PLATFORM's 5.x.y -> 1.x.y rule no longer holds"; exit 1 ;;
+          esac
+          if [ "$expected" != "$JUNIT_PLATFORM" ]; then
+            echo "::error::java/pom.xml has junit-jupiter $jupiter, so JUNIT_PLATFORM must be $expected (with its SHA-256), not $JUNIT_PLATFORM"
+            exit 1
+          fi
           mvn -B -DskipTests test-compile
           # runtime scope, not test: the console launcher jar already carries
           # the platform and the Jupiter engine, and a second copy of them on
@@ -277,7 +289,8 @@ jobs:
           echo "${JUNIT_CONSOLE_SHA256}  target/junit-console.jar" | sha256sum -c -
         env:
           # The junit-platform version that ships inside the junit-jupiter in
-          # pom.xml (jupiter 5.14.4 -> platform 1.14.4). Bump both together.
+          # pom.xml (jupiter 5.14.4 -> platform 1.14.4). The step fails when
+          # the two disagree; move this pair when Dependabot moves the pom.
           JUNIT_PLATFORM: "1.14.4"
           JUNIT_CONSOLE_SHA256: "7c6968cbcaf4301c729f202b23b7d736c5d88be625fc7d27ad5d746146a8bc28"
       # Read-only mount: nothing the suite runs writes into the checkout, and a
