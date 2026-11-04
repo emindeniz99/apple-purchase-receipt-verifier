@@ -19,7 +19,7 @@ cd python
 
 # python/uv.lock is committed and every leg installs from it, so no push
 # resolves a version range. uv forks the resolution on the interpreter and
-# records a version per marker, so one file covers 3.11 through 3.14
+# records a version per marker, so one file covers 3.11 through 3.15
 # without pinning the whole matrix to what the floor can take. `uv sync`
 # installs the project editable, which keeps this a test of the SOURCE TREE
 # rather than of a built wheel. A sync for another line replaces .venv.

@@ -8,7 +8,8 @@ Nothing here is published to Hex, and the example has no Hex dependencies at
 all. `mix compile` fetches nothing.
 
 It needs **Elixir 1.18 on OTP 27** or newer, which is what `mix.exs` claims
-and what CI's floor leg runs; the other leg runs a current pair.
+and what CI's floor leg runs; the other two legs run Elixir 1.20 on OTP 28
+and on OTP 29, the newest.
 
 ## Why there is C in an Elixir directory
 

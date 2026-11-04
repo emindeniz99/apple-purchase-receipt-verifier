@@ -102,14 +102,15 @@ run built (`rust-wasm`), never one from an earlier run.
 | 3.12 | security | 2028-10-31 | `python`, `python-musl` |
 | 3.13 | active | 2029-10-31 | `python`, `python-musl`, `python-tools`, `python-fuzz` |
 | 3.14 | active | 2030-10-31 | `python`, `python-musl` |
+| 3.15 | active | 2031-10-31 | `python`, `python-musl` |
 
 `python` runs every line on the six runner images wasmtime-py ships wheels
 for (Linux x86_64 and arm64, macOS arm64 and x86_64, Windows x86_64 and
 arm64), and again with a warm compile cache; `python-musl` runs them in
 Alpine images on x86_64 and arm64. That grid is a push to main's, which
 every release is cut from; a pull request runs every line on Linux x86_64,
-and 3.11 and 3.14 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
-(`windows-wrappers`). Python 3.15 ships in October 2026.
+and 3.11 and 3.15 on Linux arm64, macOS arm64 (`macos-wrappers`) and Windows x86_64
+(`windows-wrappers`).
 
 ### Java
 
