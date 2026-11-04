@@ -156,6 +156,8 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
       '          - { image: "ghcr.io/astral-sh/uv:python3.12-alpine@' + D('c') + '" } # python3.12-alpine, uv 0.13.6',
       '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
       'ziglang==0.17.0 --hash=sha256:' + 'd'.repeat(64),
+      // buildx's driver image, as a `--driver-opt image=` value.
+      '            --driver-opt image=moby/buildkit:buildx-stable-1@' + D('f'),
     ].join('\n') },
     { file: 'b.yml', text: '            swift:6.3@' + D('a') + ' \\\n' },
   ]);
@@ -163,6 +165,7 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
     { name: 'swift', tag: '6.3', digest: D('a'), files: ['a.yml', 'b.yml'] },
     { name: 'gcr.io/distroless/java21-debian13', tag: 'nonroot', digest: D('b'), files: ['a.yml'] },
     { name: 'ghcr.io/astral-sh/uv', tag: 'python3.12-alpine', digest: D('c'), files: ['a.yml'] },
+    { name: 'moby/buildkit', tag: 'buildx-stable-1', digest: D('f'), files: ['a.yml'] },
   ]);
   // A digest with no tag anywhere cannot be compared, and must not be
   // skipped quietly.
@@ -170,9 +173,9 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
   assert.throws(() => readImages([{ file: 'c.yml', text: 'image: gcr.io/distroless/static@' + D('e') + ' # other:nonroot' }]), /names no tag/);
 });
 
-test('the workflows pin the swift, distroless, uv, mono and temurin images by digest', () => {
+test('the workflows pin the swift, distroless, uv, mono, temurin and buildkit images by digest', () => {
   const names = new Set(images.map((i) => i.name));
-  for (const name of ['swift', 'gcr.io/distroless/java21-debian13', 'ghcr.io/astral-sh/uv', 'mono', 'eclipse-temurin']) {
+  for (const name of ['swift', 'gcr.io/distroless/java21-debian13', 'ghcr.io/astral-sh/uv', 'mono', 'eclipse-temurin', 'moby/buildkit']) {
     assert.ok(names.has(name), `no digest-pinned ${name} found`);
   }
 });

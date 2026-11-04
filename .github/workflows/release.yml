@@ -906,7 +906,11 @@ jobs:
           mkdir -p "$ctx"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" "$ctx/aprv-arm64"
-          docker buildx create --use --name aprv
+          # The builder's BuildKit image by digest, not the moving tag: this
+          # job pushes and attests the image it builds. v0.34.1, pushed
+          # 2026-10-20; tools/toolchain-watch.mjs reports when the tag moves.
+          docker buildx create --use --name aprv \
+            --driver-opt image=moby/buildkit:buildx-stable-1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
           ann=()
           for kv in "source=https://github.com/$GITHUB_REPOSITORY" "revision=$GITHUB_SHA" "version=$version" \
                     "licenses=MIT" "description=aprv-server: Apple receipt and JWS verification over HTTP, running aprv.wasm"; do
