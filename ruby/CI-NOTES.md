@@ -6,8 +6,8 @@ Every job keeps its current name. Job names below are the ones in
 
 The gem now has one runtime dependency, `wasmtime` (>= 50.0.0). Every job
 that loads the library needs it, so none of them can run without installing
-the bundle any more. `ruby/Gemfile.lock`, `gemfiles/tools.gemfile.lock` and
-`gemfiles/fuzz.gemfile.lock` are committed with `wasmtime` in them, prebuilt
+the bundle any more. `ruby/Gemfile.lock`, `gemfiles/tools/Gemfile.lock` and
+`gemfiles/fuzz/Gemfile.lock` are committed with `wasmtime` in them, prebuilt
 platform gems included, so `BUNDLE_FROZEN=true` works on every runner below.
 No job needs a Rust toolchain: the prebuilt native gem is picked.
 
@@ -64,7 +64,7 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 ### `ruby-tools` (lint, types)
 
 - No change to the commands: `rubocop`, `rake rbs`, `steep check` all pass
-  with the new `sig/`. `gemfiles/tools.gemfile` now lists `wasmtime`, so the
+  with the new `sig/`. `gemfiles/tools/Gemfile` now lists `wasmtime`, so the
   existing `ruby -Ilib -e 'load "bench/bench.rb"'` step still loads the
   library under that bundle.
 
@@ -72,7 +72,7 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 
 - Now four targets, not six (`parse_der` and `parse_cms` went with the readers
   they fuzzed). `./run.sh all 60` needs no change; the comment above the job
-  that says six should say four. `gemfiles/fuzz.gemfile` lists `wasmtime`.
+  that says six should say four. `gemfiles/fuzz/Gemfile` lists `wasmtime`.
 - Ran here under ruzzy 0.8.0 with clang 18, 12 to 20 s per target, no finding.
 
 ### `smoke-rubygems` and `post-publish-smoke.yml`

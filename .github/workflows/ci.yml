@@ -264,6 +264,18 @@ jobs:
         working-directory: java
         run: |
           set -euo pipefail
+          # Dependabot bumps junit.version in pom.xml; JUNIT_PLATFORM and its
+          # hash below move by hand. Fail here, by name, when they disagree,
+          # rather than run a console launcher of another JUnit release.
+          jupiter=$(mvn -q help:evaluate -Dexpression=junit.version -DforceStdout)
+          case "$jupiter" in
+            5.*) expected="1.${jupiter#5.}" ;;
+            *) echo "::error::junit.version $jupiter is not a JUnit 5 release; JUNIT_PLATFORM's 5.x.y -> 1.x.y rule no longer holds"; exit 1 ;;
+          esac
+          if [ "$expected" != "$JUNIT_PLATFORM" ]; then
+            echo "::error::java/pom.xml has junit-jupiter $jupiter, so JUNIT_PLATFORM must be $expected (with its SHA-256), not $JUNIT_PLATFORM"
+            exit 1
+          fi
           mvn -B -DskipTests test-compile
           # runtime scope, not test: the console launcher jar already carries
           # the platform and the Jupiter engine, and a second copy of them on
@@ -277,7 +289,8 @@ jobs:
           echo "${JUNIT_CONSOLE_SHA256}  target/junit-console.jar" | sha256sum -c -
         env:
           # The junit-platform version that ships inside the junit-jupiter in
-          # pom.xml (jupiter 5.14.4 -> platform 1.14.4). Bump both together.
+          # pom.xml (jupiter 5.14.4 -> platform 1.14.4). The step fails when
+          # the two disagree; move this pair when Dependabot moves the pom.
           JUNIT_PLATFORM: "1.14.4"
           JUNIT_CONSOLE_SHA256: "7c6968cbcaf4301c729f202b23b7d736c5d88be625fc7d27ad5d746146a8bc28"
       # Read-only mount: nothing the suite runs writes into the checkout, and a
@@ -409,8 +422,9 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
 
-  # The browsers the README claims, through Playwright at a pinned version
-  # (installed for this job only, never a dependency of the package).
+  # The browsers the README claims, through Playwright: a devDependency in
+  # node/package.json, so Dependabot moves its pin, and never a dependency
+  # of the published package.
   node-browsers:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.node == 'true'
@@ -427,14 +441,13 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      # Playwright is pinned by exact version and installed with
-      # --ignore-scripts; its browsers come from its own pinned build list.
-      - name: Chromium, Firefox and WebKit # zizmor: ignore[adhoc-packages]
+      # Playwright comes from the lock with everything else, scripts off;
+      # its browsers come from that version's own pinned build list.
+      - name: Chromium, Firefox and WebKit
         working-directory: node
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
-          npm i --no-save --ignore-scripts playwright@1.63.0
           npx --no-install playwright install --with-deps chromium firefox webkit
           npm run build
           npm run runtime:browser -- chromium firefox webkit
@@ -446,6 +459,9 @@ jobs:
   # leg per supported Boot line (endoflife.date/spring-boot: 4.0 until
   # 2026-12-31, 4.1 until 2027-07-31) on every Java LTS Boot 4 accepts;
   # the Boot line is a Maven property, so a new line is one entry here.
+  # "pom" is the oldest line at the patch the sample's pom pins, which
+  # Dependabot moves; a newer line is named here by its patch and passed
+  # as -Dspring-boot.version.
   # Deliberately a separate Maven project, not a module of java/pom.xml,
   # so the BOM governs versions the way it does in a real application.
   java-spring-boot:
@@ -455,7 +471,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        boot: ["4.0.8", "4.1.1"]
+        boot: ["pom", "4.1.1"]
         jdk: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -469,9 +485,12 @@ jobs:
       - run: mvn -B install -DskipTests
         working-directory: java
       - run: |
+          set -euo pipefail
           version=$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)
+          boot=()
+          if [ "$BOOT" != pom ]; then boot=("-Dspring-boot.version=$BOOT"); fi
           mvn -B -f samples/spring-boot-smoke/pom.xml test \
-            -Dverifier.version="$version" -Dspring-boot.version="$BOOT"
+            -Dverifier.version="$version" "${boot[@]}"
         working-directory: java
         env:
           BOOT: ${{ matrix.boot }}
@@ -1315,15 +1334,16 @@ jobs:
   # Lint and types on one modern Ruby, deliberately outside the matrix:
   # RuboCop and Steep raise their own Ruby floors faster than this library
   # does, and a tool that cannot run on 3.1 must not be able to fail the 3.1
-  # leg. Their gemfile is the only one in the port with dependencies.
+  # leg. They have their own bundle, ruby/gemfiles/tools/Gemfile, named so
+  # that Dependabot's bundler ecosystem finds it.
   ruby-tools:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.ruby == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BUNDLE_GEMFILE: gemfiles/tools.gemfile
-      # Frozen: install exactly gemfiles/tools.gemfile.lock or fail. Without
+      BUNDLE_GEMFILE: gemfiles/tools/Gemfile
+      # Frozen: install exactly gemfiles/tools/Gemfile.lock or fail. Without
       # it bundler resolves rubocop, rbs and steep afresh on every push and
       # the seven-day dependabot cooldown protects nothing here.
       BUNDLE_FROZEN: "true"
@@ -1788,8 +1808,8 @@ jobs:
   # It is not part of the `ruby` matrix because it cannot be: ruzzy is a
   # native extension that needs clang and libFuzzer's sanitizer runtimes, and
   # the whole point of that matrix is that the library installs nothing. Its
-  # dependency lives in ruby/gemfiles/fuzz.gemfile for the same reason the
-  # linters live in tools.gemfile — a tool that needs clang must not be able
+  # dependency lives in ruby/gemfiles/fuzz/Gemfile for the same reason the
+  # linters live in gemfiles/tools/ — a tool that needs clang must not be able
   # to fail the Ruby 3.1 leg.
   #
   # clang is pinned to 18 with its matching libclang-rt: ruzzy links
@@ -1802,8 +1822,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz.gemfile
-      # gemfiles/fuzz.gemfile.lock is committed; frozen makes the install use
+      BUNDLE_GEMFILE: ${{ github.workspace }}/ruby/gemfiles/fuzz/Gemfile
+      # gemfiles/fuzz/Gemfile.lock is committed; frozen makes the install use
       # it rather than resolve ruzzy again. bundler-cache stays false below
       # because the install needs the clang environment set on that step.
       BUNDLE_FROZEN: "true"
@@ -2728,8 +2748,9 @@ jobs:
 
   # The JVM consumers again, on the -wasm artifact (Endive, since both need
   # Java 17 or later): jvm-interop's Kotlin and Scala tests and the Spring
-  # Boot smoke on both Boot lines take the artifact as
-  # -Dverifier.artifactId. Waits for java-wasm/pom.xml.
+  # Boot smoke on both Boot lines (boot-pom is the pom's own, as in
+  # java-spring-boot) take the artifact as -Dverifier.artifactId. Waits
+  # for java-wasm/pom.xml.
   java-wasm-consumers:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.java == 'true'
@@ -2738,7 +2759,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [jvm-interop, boot-4.0.8, boot-4.1.1]
+        consumer: [jvm-interop, boot-pom, boot-4.1.1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2762,8 +2783,10 @@ jobs:
             mvn -B -f jvm-interop test -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
           else
             version=$(mvn -q -f java help:evaluate -Dexpression=project.version -DforceStdout)
+            boot=()
+            if [ "$CONSUMER" != boot-pom ]; then boot=("-Dspring-boot.version=${CONSUMER#boot-}"); fi
             mvn -B -f java/samples/spring-boot-smoke/pom.xml test -Dverifier.version="$version" \
-              -Dspring-boot.version="${CONSUMER#boot-}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
+              "${boot[@]}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
           fi
 
   # The -wasm artifact's create must refuse the main jar on its classpath,

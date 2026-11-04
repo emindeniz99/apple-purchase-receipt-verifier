@@ -7,8 +7,8 @@
 //   node runtime-smoke/browser.mjs [--repeat N] [chromium|firefox|webkit ...]
 //
 // Each browser loads the page N times (default 1), each time in a fresh
-// page. Needs the playwright package and its browsers (npx playwright
-// install).
+// page. Needs Playwright's browsers (npx playwright install); playwright
+// itself is a devDependency.
 //
 // When a page fails, the runner prints what is needed to reproduce it: the
 // error's name and message (WebKit's `stack` carries neither) and its

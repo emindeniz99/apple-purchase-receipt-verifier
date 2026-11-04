@@ -24,7 +24,9 @@
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- The oldest supported Boot line; CI overrides this per matrix leg. -->
+    <!-- The oldest supported Boot line. CI runs it as it stands (the
+         "pom" leg), so Dependabot's patch bumps reach CI, and passes
+         -Dspring-boot.version for each newer line. -->
     <spring-boot.version>4.0.9</spring-boot.version>
     <!-- Overridden by CI from ../../pom.xml; see the comment above. -->
     <verifier.version>0.0.0-set-me</verifier.version>

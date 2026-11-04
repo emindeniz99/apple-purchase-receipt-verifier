@@ -15,7 +15,7 @@ sudo apt-get install -y clang libclang-rt-18-dev      # libFuzzer + sanitizer ru
 MAKE="make --environment-overrides V=1" \
   CC=/usr/bin/clang CXX=/usr/bin/clang++ \
   LDSHARED="/usr/bin/clang -shared" LDSHAREDXX="/usr/bin/clang++ -shared" \
-  gem install ruzzy                                    # or: bundle install with gemfiles/fuzz.gemfile
+  gem install ruzzy                                    # or: bundle install with gemfiles/fuzz/Gemfile
 
 ./run.sh all              # every target, 60 s each
 ./run.sh verify_receipt 600    # one target, ten minutes
@@ -112,6 +112,6 @@ ruzzy is AGPL-3.0-only; this project is MIT. It is a development tool run out
 of process against the harness in this directory, and neither ruzzy nor
 anything under `ruby/fuzz/` is distributed with the gem — the gemspec ships
 `lib/`, `sig/`, `licenses/`, `README.md` and `LICENSE` and nothing else. Its
-dependency lives in `../gemfiles/fuzz.gemfile`, out of both the gemspec and
+dependency lives in `../gemfiles/fuzz/Gemfile`, out of both the gemspec and
 the test Gemfile, so a tool that needs clang can never fail the Ruby 3.3
 matrix leg.

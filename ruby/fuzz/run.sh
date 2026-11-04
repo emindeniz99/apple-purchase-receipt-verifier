@@ -11,7 +11,7 @@
 # under ../test/, where it runs on every Ruby in the matrix rather than only
 # where a libFuzzer-capable clang is around.
 #
-# Set BUNDLE_GEMFILE (to ../gemfiles/fuzz.gemfile) to run under Bundler;
+# Set BUNDLE_GEMFILE (to ../gemfiles/fuzz/Gemfile) to run under Bundler;
 # otherwise ruzzy is taken from the ambient gem path.
 set -euo pipefail
 
