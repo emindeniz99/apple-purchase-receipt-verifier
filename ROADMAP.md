@@ -388,12 +388,6 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
   that the netstandard2.0 asset loads outside CoreCLR, not that it runs in an
   IL2CPP player. Until something exercises a real player build, the README
   must not claim Unity support.
-- **`ruby/gemfiles/*.gemfile` are invisible to dependabot**: the lint and
-  type toolchain (`tools.gemfile`) and the fuzzer (`fuzz.gemfile`) now have
-  committed locks and CI installs them frozen, but dependabot's bundler
-  ecosystem only discovers a manifest named `Gemfile` or `gems.rb`, which is
-  why `.github/dependabot.yml` points at `/ruby`. Until those two files are
-  renamed, rubocop, rbs, steep and ruzzy are bumped by hand.
 ## Java, after 0.7 (from the 2026-09-24 reviews)
 
 Found by the pre-0.6.0 vendor, readability and production reviews of the
@@ -578,9 +572,10 @@ Things that cost a round trip once and should not cost another.
 - The uv Dependabot job pins one version per package across every Python
   in the lock, so it fails as soon as a package drops the oldest split.
   Fixed for good by dropping 3.9; if it recurs, the floor is the fix.
-- Dependabot's bundler ecosystem only discovers `Gemfile`/`gems.rb`;
-  `ruby/gemfiles/*.gemfile` are refreshed by hand (`bundle update` with
-  `BUNDLE_GEMFILE`, then rubocop, rbs and steep).
+- Dependabot's bundler ecosystem only discovers `Gemfile`/`gems.rb`, so the
+  lint and fuzz bundles live at `ruby/gemfiles/tools/Gemfile` and
+  `ruby/gemfiles/fuzz/Gemfile`, each a directory of its own in
+  `.github/dependabot.yml`.
 - Dependabot's swift ecosystem checks the repository out as `repo`, so a
   path dependency needs `name:` or the product lookup fails (#85).
 - A plain `cargo update` ignores `rust-version`; use

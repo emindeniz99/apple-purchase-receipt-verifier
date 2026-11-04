@@ -743,8 +743,9 @@ ruby -Ilib bench/startup.rb            # require, compile, first call, per-call 
 `Gemfile` lists minitest, rake and wasmtime directly instead of calling
 `gemspec`. A `gemspec` line puts this library into `Gemfile.lock` as a path gem
 carrying its own version, and a release commit that bumps only `version.rb`
-would then break every frozen install. `Gemfile.lock` and the two files under
-`gemfiles/` are committed, and CI installs them with `BUNDLE_FROZEN=true`.
+would then break every frozen install. `Gemfile.lock` and the locks of the
+two bundles under `gemfiles/` (`tools/` and `fuzz/`) are committed, and CI
+installs them with `BUNDLE_FROZEN=true`.
 
 The tests, in the order they matter:
 
@@ -774,7 +775,7 @@ module, and the repository's `certs/` is their reviewable source.
 targets over the entry points a consumer calls, seeded from the shared
 fixtures and run by CI for a fixed budget on every push. `fuzz/README.md` lists
 them and the invariant each asserts beyond "nothing escapes". Its one
-dependency lives in `gemfiles/fuzz.gemfile`, out of the gemspec and out of the
+dependency lives in `gemfiles/fuzz/Gemfile`, out of the gemspec and out of the
 test Gemfile: ruzzy needs clang and a libFuzzer runtime, and a tool the library
 does not need must not be able to fail the Ruby 3.3 leg.
 

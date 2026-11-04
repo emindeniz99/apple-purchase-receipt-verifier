@@ -310,7 +310,7 @@ when you change a manifest:
 | tools | `tools/package-lock.json` | `npm install` in `tools/` |
 | python | `python/uv.lock` | `uv lock` |
 | php | `php/composer.lock` | `composer update` (resolves at the 8.2 floor, see below) |
-| ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/*.lock` | `bundle lock` with the matching `BUNDLE_GEMFILE` |
+| ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/tools/Gemfile.lock`, `ruby/gemfiles/fuzz/Gemfile.lock` | `bundle lock` in `ruby/`, with `BUNDLE_GEMFILE` set to the bundle's `Gemfile` for the two under `gemfiles/` |
 | dotnet | `dotnet/**/packages.lock.json` | `dotnet restore --force-evaluate` under the newest SDK line `ci.yml` installs (10.0.x); an older band asks for a different implicit ILLink version and fails locked mode |
 | swift | `Package.resolved`, `swift/bench/Package.resolved`, `swift/fuzz/Package.resolved` | `swift package update` |
 | go | `go/go.sum`, `go/tools/go.sum` | `go get` then `go mod tidy` in the module's directory |
