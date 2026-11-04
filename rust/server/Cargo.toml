@@ -21,7 +21,10 @@ name = "aprv-server"
 version = "0.0.0"
 publish = false
 edition = "2021"
-rust-version = "1.85.0"
+# The highest rust-version among the crates Cargo.lock resolves: wasmtime
+# 50.0.1 and its sub-crates declare 1.97.0. Not the core's 1.85.0 floor,
+# and not tested: CI builds the server only with rust/rust-toolchain.toml.
+rust-version = "1.97.0"
 description = "aprv-server: HTTP server and one-shot CLI hosting aprv.wasm through Wasmtime."
 license = "MIT"
 
