@@ -165,14 +165,16 @@ and by Java's throwaway test PKI (`java/src/test/.../TestPki.java`).
 ### Fuzzing
 
 The parsers are the core's and OpenSSL's, so the fuzz targets that matter
-reach them: `rust/fuzz/` holds five `cargo fuzz` targets over the core's
-three operations, the receipt path and the C ABI, and a sixth,
-`abi-call`, over the module's canonical ABI in Wasmtime
-([`rust/fuzz/README.md`](./rust/fuzz/README.md)). `rust-fuzz` runs them
-for a fixed budget on every change; the nightly `rust-fuzz-openssl` job
-runs them over an OpenSSL built with AddressSanitizer and coverage
-instrumentation, so libFuzzer follows edges inside OpenSSL's CMS, X.509
-and ASN.1 code. `java-fuzz` fuzzes the Java implementation with Jazzer.
+reach them: `rust/fuzz/` holds seven `cargo fuzz` targets, five over the
+verifiers a consumer calls (the C ABI among them) and two over the
+payload decoders, and `rust/fuzz/abi/`, a package of its own, holds an
+eighth, `abi-call`, over the module's canonical ABI in Wasmtime
+([`rust/fuzz/README.md`](./rust/fuzz/README.md)). `rust-fuzz` runs the
+seven for a fixed budget on every Rust change; the nightly
+`rust-fuzz-openssl` job runs them over an OpenSSL built with
+AddressSanitizer and coverage instrumentation, so libFuzzer follows
+edges inside OpenSSL's CMS, X.509 and ASN.1 code. `abi-call` needs a
+built module and no CI job runs it; run it by hand with `run.sh`. `java-fuzz` fuzzes the Java implementation with Jazzer.
 The wrappers' own fuzz jobs (`go-fuzz`, `python-fuzz`, `ruby-fuzz`,
 `swift-fuzz`, `dotnet-fuzz`, `php-fuzz`) drive the public API through the
 module, which exercises each wrapper's own boundary: lowering, lifting,
