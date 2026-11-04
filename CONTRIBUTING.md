@@ -108,8 +108,8 @@ go -C go test ./...
 # Swift (6.3+; the manifest lives at the repository root)
 swift test -c release -Xswiftc -enable-testing --force-resolved-versions
 
-# .NET (SDK 8.0+)
-dotnet test -c Release dotnet/tests/ApplePurchaseReceiptVerifier.Tests
+# .NET (SDK 8.0+; from dotnet/, whose global.json selects the test runner)
+(cd dotnet && dotnet test -c Release)
 
 # PHP (8.2+; the suite runs against a real aprv binary)
 (cd php && composer install && APRV_BIN="$APRV_BIN" vendor/bin/phpunit)
