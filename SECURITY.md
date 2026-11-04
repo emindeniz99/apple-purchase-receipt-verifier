@@ -74,10 +74,28 @@ toolchain. Four rules:
   path, so its credentials live on the `maven-central` GitHub environment,
   reachable from that one job only.
 
-Every workflow pins actions to a commit SHA, checks out with
-`persist-credentials: false`, and runs with a read-only `GITHUB_TOKEN`
-except where a publish job asks for `id-token: write`; `zizmor` checks that
-on every push.
+Every workflow pins actions to a commit SHA and gives `GITHUB_TOKEN`
+`contents: read` or nothing at the top; a job that writes asks for that
+permission in its own `permissions:` block. `zizmor` checks the pins, the
+permissions and the checkouts on every push. The jobs that write:
+
+- `release.yml`: `id-token: write` for OIDC publishing and build
+  provenance, with `attestations: write` where it attests;
+  `contents: write` for the release assets and the `go/vX.Y.Z` tag;
+  `packages: write` for the GHCR image; `actions: write` to dispatch the
+  post-publish smoke run.
+- `release-please.yml`: `contents`, `pull-requests` and `actions: write`
+  to maintain the release PR, push to the release branch and dispatch
+  `release.yml`, and `contents: write` in the job that commits the
+  refreshed module copies and pins. Those two jobs push, so their
+  release-branch checkouts keep the token (`persist-credentials: true`);
+  every other checkout sets `persist-credentials: false`.
+- `corpus-calls.yml`: `contents: write` to publish the corpus calls as a
+  prerelease (run by hand, from `main` only).
+- `nightly.yml`, `toolchain-watch.yml` and `apple-pki-watch.yml`:
+  `issues: write` to open or comment on their report issue.
+- `codeql.yml` and `scorecard.yml`: `security-events: write` to upload
+  results, and for Scorecard `id-token: write` to publish them.
 
 ## What counts
 

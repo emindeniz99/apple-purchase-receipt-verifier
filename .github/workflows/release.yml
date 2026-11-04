@@ -125,22 +125,27 @@ jobs:
   ci-passed:
     name: wait for ci on this commit
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 125
     steps:
-      # A branch dispatch either completes a named tag or is a dry run; a
-      # bare one would tag go/<branch> and push an image named <branch>.
-      - name: the dispatch names a tag this tree carries, or is a dry run
-        if: github.event_name == 'workflow_dispatch'
+      # Every run names the vX.Y.Z tag it publishes -- the pushed tag, the
+      # tag a dispatch runs at, or a branch dispatch's `tag` input -- and
+      # version.txt at this commit must be that version: tag-go-module and
+      # publish-image key on the tag name and skip once it exists, so a tag
+      # pushed by hand on the wrong tree would otherwise be permanent. A
+      # branch dispatch either completes a named tag or is a dry run; a bare
+      # one would tag go/<branch> and push an image named <branch>.
+      - name: the run names a tag this tree carries, or is a dry run
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
-          if [ -z "$TAG" ]; then
+          if [ -z "$INPUT_TAG" ]; then
             if [ "$REF_TYPE" = "tag" ]; then
               # Another tag (go/vX.Y.Z, corpus-*) names no release.
               if ! [[ "$REF_NAME" =~ $semver ]]; then
@@ -150,10 +155,10 @@ jobs:
             elif [ "$DRY_RUN" != "true" ]; then
               echo "::error::a dispatch from a branch must name the tag it completes (tag=vX.Y.Z) or be a dry run (dry_run=true)"
               exit 1
+            else
+              exit 0
             fi
-            exit 0
-          fi
-          if ! [[ "$TAG" =~ $semver ]]; then
+          elif ! [[ "$TAG" =~ $semver ]]; then
             echo "::error::tag '$TAG' is not vX.Y.Z"
             exit 1
           fi
@@ -170,6 +175,11 @@ jobs:
             echo "::error::version.txt at $GITHUB_SHA is $version, not ${TAG#v}; a completion publishes the tree's own version only"
             exit 1
           fi
+          # A run at the tag itself has nothing to complete or compare.
+          if [ -z "$INPUT_TAG" ]; then
+            echo "publishing $TAG from $GITHUB_SHA"
+            exit 0
+          fi
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::tag $TAG does not exist; a completion finishes a release that release-please already tagged"
             exit 1
@@ -184,18 +194,24 @@ jobs:
             while IFS= read -r f; do echo "::warning::  $f"; done <<<"$changed"
           fi
           echo "completing $TAG from $GITHUB_SHA"
+      # Up to 120 minutes. A main run takes 15-40 minutes when runners are
+      # free, but it shares the account's concurrent-job limit with every
+      # pull request and every other main commit, and main runs of 60 and
+      # 92 minutes were seen on 2026-11-04. A poll that gives up first
+      # refuses a tag whose ci is still running; waiting longer costs one
+      # idle runner.
       - name: poll the ci workflow run for this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 80); do
+          for attempt in $(seq 1 240); do
             state=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
               --json status,conclusion --jq '.[0] | "\(.status)/\(.conclusion)"' 2>/dev/null || echo "none/")
             case "$state" in
               completed/success) echo "ci passed on $GITHUB_SHA"; exit 0 ;;
               completed/*) echo "::error::ci concluded '${state#completed/}' on $GITHUB_SHA; not publishing"; exit 1 ;;
-              *) echo "ci is $state on $GITHUB_SHA (attempt $attempt of 80); waiting 30s"; sleep 30 ;;
+              *) echo "ci is $state on $GITHUB_SHA (attempt $attempt of 240); waiting 30s"; sleep 30 ;;
             esac
           done
           echo "::error::ci never completed on $GITHUB_SHA; not publishing"
@@ -890,7 +906,11 @@ jobs:
           mkdir -p "$ctx"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" "$ctx/aprv-arm64"
-          docker buildx create --use --name aprv
+          # The builder's BuildKit image by digest, not the moving tag: this
+          # job pushes and attests the image it builds. v0.34.1, pushed
+          # 2026-10-20; tools/toolchain-watch.mjs reports when the tag moves.
+          docker buildx create --use --name aprv \
+            --driver-opt image=moby/buildkit:buildx-stable-1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
           ann=()
           for kv in "source=https://github.com/$GITHUB_REPOSITORY" "revision=$GITHUB_SHA" "version=$version" \
                     "licenses=MIT" "description=aprv-server: Apple receipt and JWS verification over HTTP, running aprv.wasm"; do

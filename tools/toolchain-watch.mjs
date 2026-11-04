@@ -123,8 +123,14 @@ export const OTHER_PINS = [
   // The PIP_CONSTRAINT that build's isolated environment installs under.
   { name: 'setuptools', file: RELEASE, pattern: /setuptools==(\d+(?:\.\d+)*)/g },
   // The newest entry of java-spring-boot's matrix, whether the first names
-  // a Boot version or not.
-  { name: 'Spring Boot', file: CI, pattern: /\bboot: \["[^"]+", "([^"]+)"\]/g },
+  // a Boot version or not, and the boot-<version> leg of
+  // java-wasm-consumers' `consumer:` matrix. Each matrix must name one.
+  {
+    name: 'Spring Boot',
+    file: CI,
+    pattern: /(?:\bboot: \["[^"]+", "|\bboot-)(\d+(?:\.\d+)+)(?="\]|[\s,\]])/g,
+    every: /\bboot: \[|\bconsumer: \[[^\]\n]*\bboot-/g,
+  },
   // Run through npx by the runtime:* scripts, not installed as
   // devDependencies: as those they would bring native binaries and a
   // postinstall to every npm ci.

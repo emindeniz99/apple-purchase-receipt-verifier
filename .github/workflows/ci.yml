@@ -17,10 +17,16 @@ permissions:
 # evidence. Every commit on main is a release candidate -- release.yml's
 # ci-passed gate polls for a completed run on the exact tagged SHA -- so a
 # main commit whose run was cancelled has no record that its tree ever
-# passed. That is not hypothetical: run 132 was cancelled by a docs commit
-# pushed 43 seconds after it, and runs 123 and 125 went the same way.
+# passed, and the tag that names it cannot publish. A group per ref does not
+# prevent that even with cancel-in-progress off: a group holds one running
+# and one pending run, and a newer pending run cancels the older one before
+# it starts (six main runs cancelled with no jobs on 2026-11-04, the last
+# push of a burst the only one to run). A run that does survive waits for
+# the one in progress, which can outlast the gate's poll. So each main
+# commit gets a group of its own, keyed by SHA, and runs at once; other
+# refs keep one group per ref and cancel the run a newer push supersedes.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
