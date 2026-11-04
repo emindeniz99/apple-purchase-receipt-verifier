@@ -56,6 +56,17 @@ pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 /// signed years ago under a since-expired chain still verify at its own
 /// creation date.
 ///
+/// **An anchor's validity times must be in the form RFC 5280 section
+/// 4.1.2.5 sets**: a UTCTime `YYMMDDHHMMSSZ` or a GeneralizedTime
+/// `YYYYMMDDHHMMSSZ`, with no fraction of a second and no `+hhmm` offset.
+/// The window itself is not judged, but OpenSSL reads both times of every
+/// certificate on the path, the anchor included, and a time in another
+/// form is an error it reports for that field, which is not waived. An
+/// anchor so encoded is still accepted when the configuration is built,
+/// because the certificate decodes, and then every receipt and JWS whose
+/// chain ends at it is refused. Apple's three roots are in the RFC 5280
+/// form.
+///
 /// **An anchor must be a root above the WWDR intermediate**, as Apple's
 /// three are. The intermediate must sit below the anchor: the receipt's
 /// marker check looks for it there, and a JWS path is always leaf,
