@@ -268,9 +268,9 @@ function upstream({ releases, moved = {}, fail, githubDown = false }) {
   };
   return async (url, init = {}) => {
     if (fail && url.includes(fail)) return { ok: false, status: 500 };
-    let m = /hub\.docker\.com\/v2\/repositories\/(.+)\/tags\/(.+)$/.exec(url);
+    let m = /hub\.docker\.com\/v2\/namespaces\/([^/]+)\/repositories\/([^/]+)\/tags\/(.+)$/.exec(url);
     if (m) {
-      const { digest, date } = now(m[1].replace(/^library\//, ''), m[2]);
+      const { digest, date } = now(m[1] === 'library' ? m[2] : `${m[1]}/${m[2]}`, m[3]);
       return respond({ digest, tag_last_pushed: date });
     }
     m = /gcr\.io\/v2\/(.+)\/tags\/list$/.exec(url);

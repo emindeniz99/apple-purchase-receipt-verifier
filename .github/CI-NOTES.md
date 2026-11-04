@@ -83,6 +83,25 @@ Its first step fails when a job in `ci.yml` is missing from its `needs:`.
 | shared suites | `.github/scripts/rust-ffi-suite.sh`, `aprv-server-suite.sh` and `python-suite.sh` hold the commands of `rust-ffi`, `aprv-server` and `python`, so the per-OS jobs and the two combined jobs run the same commands. The Linux-only steps (the 1.85.0 floor, the generated header, the aarch64 static binary) stay steps of their own job. Go, Ruby and .NET are one or two commands each and stay inline in both places; change them together | nothing |
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
 | always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |
+| images | `image-age`, on a pull request that changes a Dockerfile, a workflow or a composite action (`changes` sets `images` from `tools/image-age-check.mjs`'s pathspecs) | nothing |
+
+`image-age` holds a new container image digest for the same seven days
+Dependabot's cooldown waits. That cooldown can date only Docker Hub
+images: for gcr.io (distroless in `rust/server/Dockerfile`) and every
+other registry, Dependabot opens the PR at once with "Cooldown could not
+be applied", and a digest moved by hand never had a cooldown.
+`tools/image-age-check.mjs` reads the digest-pinned images at the PR's
+base and merge commit and dates each digest the PR adds: gcr.io by the
+digest's `timeUploadedMs`, Docker Hub by `tag_last_pushed` when the PR's
+tag still names the digest, else by the earliest tag in the tags list that
+names it. It never uses the image config's `created`, which distroless
+sets to 1970. A digest under seven days old fails the job, and so
+`ci-ok`, with the time it clears; re-run the failed jobs after that time.
+ghcr.io gives no push time without a token, so a ghcr.io digest, or one
+no registry dates, is a warning to check by hand. A registry that does not
+answer fails the job too, as toolchain-watch does; a re-run settles it.
+The job runs for every author: a digest a person moves obeys the same
+rule.
 
 `go-checks`, `java-checks`, `dotnet-checks` and `php-checks` each hold
 what used to be two to four jobs of under a minute or two after about

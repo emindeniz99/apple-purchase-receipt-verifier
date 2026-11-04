@@ -68,9 +68,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const COOLDOWN_DAYS = 7;
-const DAY = 24 * 60 * 60 * 1000;
-const cutoff = (now) => now - COOLDOWN_DAYS * DAY;
+export const COOLDOWN_DAYS = 7;
+export const DAY = 24 * 60 * 60 * 1000;
+export const cutoff = (now) => now - COOLDOWN_DAYS * DAY;
 
 // The VERSION pins of tools/wasm-toolchain.sh, by name.
 export function readPins(text) {
@@ -263,7 +263,7 @@ export function imageBehind(pinned, current, now = Date.now()) {
   return Date.parse(current.date) <= cutoff(now) ? current : null;
 }
 
-async function request(url, { method = 'GET', headers = {} } = {}) {
+export async function request(url, { method = 'GET', headers = {} } = {}) {
   const token = process.env.GITHUB_TOKEN;
   const github = url.startsWith('https://api.github.com/');
   let response;
@@ -285,7 +285,7 @@ async function request(url, { method = 'GET', headers = {} } = {}) {
   return response;
 }
 
-const get = async (url, headers) => (await request(url, { headers })).json();
+export const get = async (url, headers) => (await request(url, { headers })).json();
 
 async function crate(name) {
   const body = await get(`https://crates.io/api/v1/crates/${name}/versions`);
@@ -398,19 +398,40 @@ const INDEX = [
   'application/vnd.docker.distribution.manifest.v2+json',
 ].join(',');
 
+// A Docker Hub repository (`library/debian`) in the API path Dependabot's
+// cooldown reads.
+export function hubRepository(repo) {
+  const [namespace, ...name] = repo.split('/');
+  return `https://hub.docker.com/v2/namespaces/${namespace}/repositories/${name.join('/')}`;
+}
+
+// A Docker Hub tag: its `digest` (the index), `tag_last_pushed`, and
+// `images[]`, each platform's `digest` and `last_pushed`.
+export const hubTag = (repo, tag) => get(`${hubRepository(repo)}/tags/${tag}`);
+
+// When Docker Hub says a tag was last pushed.
+export const hubPushed = (t) => t.tag_last_pushed ?? t.last_updated;
+
+// Every digest a gcr.io repository holds, tagged or not, each with its
+// `tag` list and `timeUploadedMs`. The registry sets the upload time;
+// `timeCreatedMs` comes from the image and is 0 for distroless.
+export const gcrManifests = async (repo) => (await get(`https://gcr.io/v2/${repo}/tags/list`)).manifest;
+
+export const gcrUploaded = (m) => new Date(Number(m.timeUploadedMs)).toISOString();
+
 // The digest a tag names now, and when it was pushed (null if unknown).
 async function currentDigest({ name, tag }) {
   const { registry, repo } = registryOf(name);
   if (registry === 'docker.io') {
-    const t = await get(`https://hub.docker.com/v2/repositories/${repo}/tags/${tag}`);
+    const t = await hubTag(repo, tag);
     if (!t.digest) throw new Error(`hub.docker.com: ${name}:${tag} has no digest`);
-    return { digest: t.digest, date: t.tag_last_pushed ?? t.last_updated };
+    return { digest: t.digest, date: hubPushed(t) };
   }
   if (registry === 'gcr.io') {
-    const { manifest } = await get(`https://gcr.io/v2/${repo}/tags/list`);
+    const manifest = await gcrManifests(repo);
     const hit = Object.entries(manifest).find(([, m]) => (m.tag ?? []).includes(tag));
     if (!hit) throw new Error(`gcr.io: ${name} has no tag ${tag}`);
-    return { digest: hit[0], date: new Date(Number(hit[1].timeUploadedMs)).toISOString() };
+    return { digest: hit[0], date: gcrUploaded(hit[1]) };
   }
   if (registry === 'ghcr.io') {
     const { token } = await get(`https://ghcr.io/token?scope=repository:${repo}:pull`);

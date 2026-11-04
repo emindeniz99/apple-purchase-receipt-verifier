@@ -56,6 +56,8 @@ jobs:
       # The Linux x86_64 static aprv binary: the server's own jobs, PHP
       # (its only transport) and the Java -wasm artifact's server engine.
       server-bin: ${{ steps.areas.outputs.server-bin }}
+      # A pull request that changes a file image-age reads.
+      images: ${{ steps.areas.outputs.images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,14 +70,19 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          images=false
           if [ "$EVENT" = pull_request ]; then
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             .github/scripts/changed-areas.sh "$BASE_SHA" HEAD > "$RUNNER_TEMP/areas"
+            # tools/image-age-check.mjs's PATHSPECS; its test holds the two
+            # lists equal.
+            git diff --quiet "$BASE_SHA" HEAD -- ':(glob)**/Dockerfile' ':(glob).github/workflows/*.yml' ':(glob).github/workflows/*.yaml' ':(glob).github/actions/*/action.yml' || images=true
           else
             .github/scripts/changed-areas.sh all > "$RUNNER_TEMP/areas"
           fi
           {
             cat "$RUNNER_TEMP/areas"
+            echo "images=$images"
             if grep -q '=true$' "$RUNNER_TEMP/areas"; then echo "module=true"; else echo "module=false"; fi
             if grep -qE '^(server|php|java)=true$' "$RUNNER_TEMP/areas"; then echo "server-bin=true"; else echo "server-bin=false"; fi
           } >> "$GITHUB_OUTPUT"
@@ -2386,6 +2393,37 @@ jobs:
       - run: node --test tools/test/check-one-implementation.test.mjs
       - run: node tools/check-one-implementation.mjs --enforce all
 
+  # A digest a pull request brings in waits seven days, like every release
+  # Dependabot proposes. Dependabot's cooldown dates only Docker Hub images:
+  # for any other registry (gcr.io's distroless in rust/server/Dockerfile)
+  # it opens the PR at once with "Cooldown could not be applied", and a
+  # digest moved by hand has no cooldown at all. tools/image-age-check.mjs
+  # dates every digest the PR adds to a Dockerfile, a workflow or a
+  # composite action from its registry and fails while one is younger than
+  # seven days, so ci-ok holds the merge; re-run the failed jobs after the
+  # time it prints. An age it cannot read (ghcr.io) is a warning. It runs
+  # for every author, Dependabot or not, and needs no token.
+  image-age:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      # HEAD is the PR's merge commit, so base..HEAD is what the PR changes.
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node tools/image-age-check.mjs "$BASE_SHA" HEAD
+
   # The Linux x86_64 static aprv binary, built as the release builds it
   # (rust/server/scripts/build-static.sh, the component rust-wasm built from
   # this tree embedded) and uploaded as `aprv-server-x86_64-unknown-linux-musl`
@@ -3775,7 +3813,7 @@ jobs:
        rust-lint, rust-ffi, elixir-ffi, rust-fuzz, dotnet-fuzz,
        php-fuzz, ruby-fuzz, python-fuzz, swift-fuzz, java-fuzz,
        rust-supply-chain, rust-wasm, rust-wasm-checks, rust-wasm-abi,
-       wasm-copies, one-implementation, aprv-server-linux,
+       wasm-copies, one-implementation, image-age, aprv-server-linux,
        aprv-server, aprv-server-contract, aprv-server-image,
        java-wasm-endive, java-wasm-runtime-8, java-wasm-consumers,
        java-classpath-guard, php, php-lowest, php-symfony-process-8,
