@@ -1070,7 +1070,7 @@ jobs:
         working-directory: python
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade build
+          python3 -m pip install build==1.6.1
           python3 tools/build_dist.py --out dist
           python3 tools/build_dist.py --check dist
 

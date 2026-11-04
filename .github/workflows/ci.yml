@@ -512,6 +512,7 @@ jobs:
       # python-build-standalone, including the 3.11 floor.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: "0.13.6"
           python-version: ${{ matrix.python }}
       # uv sync from the committed lock, the suite, and the suite again with
       # the compile cache warm; the script says why each one is there.
@@ -1183,6 +1184,8 @@ jobs:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.13.6"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         run: .github/scripts/python-suite.sh 3.11
@@ -1272,6 +1275,8 @@ jobs:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.13.6"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
@@ -1615,7 +1620,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install nightly --profile minimal
-      - run: cargo install cargo-fuzz --locked
+      - run: cargo install cargo-fuzz --locked --version 0.13.2
       # rust/fuzz/Cargo.lock is committed and cargo builds from it. cargo-fuzz
       # takes no --locked of its own, so this is a pin rather than a gate: a
       # manifest change makes cargo rewrite the lockfile here instead of
@@ -1886,6 +1891,7 @@ jobs:
           host: python
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: "0.13.6"
           python-version: "3.13"
       - name: the fuzzer's environment and the generated seed
         run: ./run.sh build
@@ -2064,7 +2070,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - run: cargo install cargo-deny --locked
+      - run: cargo install cargo-deny --locked --version 0.20.2
       # The whole workspace, the C ABI (ffi/) and the bindings included. The
       # two packages outside it with lockfiles of their own, rust/server and
       # rust/bindings/abi/tests, are not audited here: both link Wasmtime,
@@ -2545,6 +2551,7 @@ jobs:
           path: ${{ runner.temp }}/server
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: "0.13.6"
           enable-cache: false
       - name: Schemathesis against a started server, without and with a token
         run: |
@@ -3008,11 +3015,14 @@ jobs:
           persist-credentials: false
       # uvx runs zizmor from an ephemeral environment and brings its own
       # interpreter with it, so this job needs no setup-python and no
-      # install step. Version deliberately unpinned, as it was under pip:
-      # a new zizmor audit that fires on these workflows is a finding we
-      # want to see, not one to defer behind a pin.
+      # install step. Pinned, so a zizmor release cannot turn an unrelated
+      # pull request red; toolchain-watch reports each newer release once
+      # it is seven days old, and moving the pin is when a new audit runs
+      # over these workflows.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - run: uvx zizmor .github/workflows/ .github/actions/
+        with:
+          version: "0.13.6"
+      - run: uvx zizmor@1.31.1 .github/workflows/ .github/actions/
 
   # Lint and formatting for the Node port. Separate from the `node` job
   # because it is version-independent: oxlint and prettier read their own
@@ -3081,6 +3091,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: "0.13.6"
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
       # reviewed versions rather than whatever resolved this morning. The
@@ -3121,7 +3132,7 @@ jobs:
       # built; --python names it explicitly, because under continue-on-error
       # a mis-resolved environment would look like findings rather than like
       # the misconfiguration it is.
-      - run: uvx ty check --python .venv apple_purchase_receipt_verifier
+      - run: uvx ty@0.0.94 check --python .venv apple_purchase_receipt_verifier
         working-directory: python
         continue-on-error: true
 
