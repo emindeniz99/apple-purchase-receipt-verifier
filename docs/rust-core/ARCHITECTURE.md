@@ -541,10 +541,8 @@ the hand-written ABI code of the final round
   wazero 1.12.0: 238.5 g5 and 77.0 JWS per second steady, the corpus in
   23 s, first result 1,279 ms including runtime and compile
   ([canonical ABI final][cabifinal]).
-- The floor stays as today (R30) if the wazero release we need builds on
-  it; wazero 1.12.0 fetched a Go 1.25 toolchain in the spikes
-  ([rust-core spikes, Method][spikes]). Phase 4 checks, and raises the
-  floor to wazero's requirement if it must.
+- The floor is Go 1.25 (R30): wazero 1.12.0 requires it, and fetched a
+  Go 1.25 toolchain in the spikes ([rust-core spikes, Method][spikes]).
 - An opt-in `-tags aprv_native` build over the C ABI stays possible on
   request (R6). It is class E, the user's choice, and nothing is built for
   it until someone asks.
@@ -618,8 +616,9 @@ the hand-written ABI code of the final round
   thinnest margin of any host.
 - `aprv.wasm` ships as a package resource. SwiftPM builds from git, so
   the file is committed and CI checks its hash like Go's.
-- iOS: declared by WasmKit and expected to work without JIT entitlements;
-  not built. Linux and macOS are the tested targets.
+- iOS: declared by WasmKit and needs no JIT entitlement. CI compiles the
+  package for iOS 18 (`swift-ios`) but runs no tests there; Linux and
+  macOS are the tested targets.
 
 ### 7.6 Ruby and .NET: Wasmtime bindings
 
@@ -747,7 +746,7 @@ calls the binding.
   one-shot path brings the musl CLI's exit to 15.2 ms on 4 CPUs
   ([static musl §3][musl]). macOS is expected to show the same delay.
 - **macOS and Windows** binaries ship on GitHub Releases for x86_64 and
-  arm64; they have not been built yet (MIGRATION.md, Phase 2).
+  arm64, built by `release.yml`'s `build-server` job (first on v0.12.0).
 - **Docker.** A multi-stage build: the first stage checks the module's
   SHA-256, precompiles and builds the binary; the second is a distroless,
   non-root image pinned by digest, entrypoint `aprv serve`. Inside the
@@ -755,8 +754,11 @@ calls the binding.
   set, so a published port reaches nothing by accident. Published to GHCR
   and, once the owner creates the namespace and token, Docker Hub, with
   the `org.opencontainers.image.*` labels (source, revision, version,
-  licenses, description) and a CycloneDX SBOM attached (R34). The image
-  has not been built yet ([aprv-server §8][server]).
+  licenses, description) and a CycloneDX SBOM attached (R34).
+  `release.yml`'s `publish-image` job builds the image on every release
+  from the Dockerfile's `prebuilt` stage, which copies the release's own
+  static binaries instead of compiling them, and pushes it to GHCR
+  ([aprv-server §8][server]).
 - **Exotic CPUs** where Wasmtime has no compiler (ppc64le, loongarch64,
   32-bit): open. Pulley ran 4.6 JWS per second and Wasmi 2.0 12.5 on the
   same machine ([execution modes][modes]); nothing is decided.
@@ -834,7 +836,9 @@ Verifier v3 = Verifier.create(config,
   2026-10-04). A classifier cannot replace the main jar: it shares the
   artifact's POM and dependencies, which is why the two implementations
   have two artifactIds. macOS and Windows binaries come from GitHub
-  Releases.
+  Releases, but the jar pins only the two Linux hashes today, so
+  `github()` fails there and a caller uses `download()` with the hash
+  from the release's `SHA256SUMS` (ROADMAP.md).
 - `Config.runtimeProbe` stays in the API. What the `-wasm` artifact probes
   at `create` (the engine instantiating one instance and calling `init`)
   is fixed in Phase 3.
@@ -849,9 +853,11 @@ Verifier v3 = Verifier.create(config,
   ([aprv-server §7][server]).
 - Measured: 11.6 ms per g5 through the CLI and 3.56 ms over HTTP; a
   200-row slice of the corpus matched Node on both.
-- **`aprv install`**, a command the Composer package ships, downloads the
+- **`aprv-install`**, a command the Composer package ships, downloads the
   binary for this platform from GitHub Releases, checks it against the
   SHA-256 pinned in the package, and installs it where the façade looks.
+  The package pins only the two Linux binaries; macOS and Windows use a
+  server (php/CI-NOTES.md).
   Nothing downloads at request time.
 - Published from the root `composer.json` to Packagist once the owner
   submits the repository (BOOTSTRAP.md).
@@ -882,7 +888,7 @@ workspace ([CMS everywhere §1][cms]).
 
 - Each package README keeps install, a quick start and the 0.7 checklist,
   plus what is particular to its host: the Python compile and cache, the
-  Java engine choice and `noexec` directories, PHP's `aprv install`,
+  Java engine choice and `noexec` directories, PHP's `aprv-install`,
   workerd's static import.
 - Doc comments on `aprv-surface`, and on the core's types it re-exports,
   are the reference text; each wrapper's API docs are written

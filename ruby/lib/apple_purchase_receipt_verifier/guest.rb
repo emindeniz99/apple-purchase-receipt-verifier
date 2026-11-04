@@ -98,9 +98,11 @@ module ApplePurchaseReceiptVerifier
       raise TrapError, "the instance has trapped" if @broken
 
       function, post_return = @operations.fetch(name)
-      bytes = input.b
       max = @max_input_bytes
-      bytes = bytes.byteslice(0, max) || bytes if max && bytes.bytesize > max
+      # Cut before the binary copy, so an input of any length costs at most
+      # max bytes here.
+      kept = max && input.bytesize > max ? input.byteslice(0, max) || input : input
+      bytes = kept.b
       pointer = lower(bytes)
       retptr = function.call(*scalars, pointer, bytes.bytesize) & 0xFFFFFFFF
       out = lift(retptr)

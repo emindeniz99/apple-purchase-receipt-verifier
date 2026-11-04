@@ -131,7 +131,7 @@ with every source's reason, in order.
 | `url(uri, token)` | an `aprv serve` you run yourself (a sidecar or a container); this JVM starts nothing and needs no writable or executable directory |
 | `executable(path)` | starts the binary at `path` and supervises it; nothing is extracted |
 | `maven()` | extracts the binary for this platform from this artifact's `linux-x86_64` or `linux-aarch64` classifier jar on the classpath |
-| `github()` | downloads the binary for this platform from this project's GitHub Release over HTTPS |
+| `github()` | downloads the binary for this platform from this project's GitHub Release over HTTPS; Linux only, see below |
 | `download(url, sha256)` | downloads from your mirror and accepts only a file with that SHA-256 |
 
 The engine reaches a `url()` server directly, never through a proxy the
@@ -157,9 +157,18 @@ or by `Transfer-Encoding: chunked` alone, and refuses any other.
 Each classifier jar holds one static Linux binary at
 `io/github/emindeniz99/applepurchasereceiptverifier/server/aprv-<target>`
 (`x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`): about
-12 MB extracted, 4 MB as a jar. On macOS and Windows use `github()`, `download()`, `executable()`
-or `url()`. `github()` fetches the release asset `aprv-<target>` (`.exe`
-on Windows) of this version.
+12 MB extracted, 4 MB as a jar. `github()` fetches the release asset
+`aprv-<target>` of this version, and accepts it only with the SHA-256
+that this jar's `SHA256SUMS` pins.
+
+**On macOS and Windows, use `download()`, `executable()` or `url()`.**
+The jar pins only the two Linux binaries, so `maven()` and `github()`
+both fail there, and so does `Engine.server()` with no sources (the
+engine a Java 8 JVM gets by default), which tries only those two. The
+GitHub Release publishes the macOS and Windows binaries (`aprv-<target>`,
+`.exe` on Windows) and lists their SHA-256 in its `SHA256SUMS` asset:
+pass one binary's URL and hash to `download(url, sha256)`, or point
+`executable()` at a copy you installed.
 
 **The cache directory.** A binary from `maven()`, `github()` or
 `download()` is written to the cache directory as a temporary file,

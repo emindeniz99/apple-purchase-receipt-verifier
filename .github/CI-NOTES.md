@@ -71,18 +71,37 @@ Its first step fails when a job in `ci.yml` is missing from its `needs:`.
 | rust | `rust` (`--workspace`, target/ cached, 40 minutes, strace required, the 1.85.0 floor without `aprv-abi`, and a leg on an OpenSSL 4 built by `tools/openssl-native.sh`: OD-09), `rust-lint` (with `tools/check-layering.mjs`), `rust-ffi`, `elixir-ffi`, `rust-fuzz`, `rust-supply-chain` | nothing |
 | server | `aprv-server` (x86_64 gnu, aarch64 musl with its own static build, macOS, Windows: fmt, both clippy feature sets, tests with `--include-ignored`), `aprv-server-contract` (Spectral, two Schemathesis runs), `aprv-server-image` (buildx from source per architecture, and the `prebuilt` stage on amd64, each through `docker-smoke.sh`) | `aprv-wasm`; `aprv-server-linux` for the contract and the prebuilt image |
 | node | `node`, `node-runtimes` (node, bun, deno, workerd, edge), `node-browsers` (Playwright 1.56.1), `node-lint`, `smoke-npm` | `aprv-wasm` (the component) |
-| python | `python` (Python 3.11 to 3.14 on the six runner images wasmtime-py ships wheels for, a second warm-cache run; on a pull request every line on Linux x86_64 and 3.11 and 3.14 on Linux arm64, with macOS and Windows in the wrapper jobs), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
+| python | `python` (Python 3.11 to 3.15 on the six runner images wasmtime-py ships wheels for, a second warm-cache run; on a pull request every line on Linux x86_64 and 3.11 and 3.15 on Linux arm64, with macOS and Windows in the wrapper jobs), `python-musl` (digest-pinned `ghcr.io/astral-sh/uv` Alpine images, with `libgcc`), `python-fuzz`, `python-tools`, `smoke-pypi` | `aprv-wasm` |
 | go | `go`, `go-platforms`, `go-cross`, `go-checks` (`go-lint`, then `go-scratch`: a static corpus runner in an empty chroot), `go-race`, `go-fuzz`, `smoke-go` | `aprv-wasm` |
 | swift | `swift` (6.3 and 6.4 containers, debug build then release tests), `swift-crypto-floor` (the same on 6.3 with swift-crypto moved to the manifest's 3.0.0 floor), `swift-macos` and `swift-ios` (`macos-26`: the package needs Swift tools 6.3; on a pull request both run in `swift-apple`, through `.github/scripts/swift-apple.sh`), `swift-fuzz`, `swift-format`, `smoke-swiftpm` | `aprv-wasm` |
 | ruby | `ruby`, `ruby-gem`, `ruby-macos`, `ruby-tools`, `ruby-fuzz`, `smoke-rubygems` | `aprv-wasm` |
 | dotnet | `dotnet`, `dotnet-checks` (`dotnet-format`, `dotnet-mono`, `dotnet-trim`, `smoke-nuget`), `dotnet-fuzz` | `aprv-wasm` |
 | php | `php` (the suites, then the conformance cases, then HTTP on 8.4), `php-lowest`, `php-symfony-process-8` (PHP 8.4 with symfony/process moved alone to the 8.0.5 floor and to an exact, cooled-down newest 8.x; the lock pins 7.4), `php-checks` (`php-format`, then `php-static`), `php-fuzz` | `aprv-server-x86_64-unknown-linux-musl` |
 | java | `java`, `java-vendors` (`java-vendors.yml`, a reusable workflow: every HotSpot vendor setup-java ships on 8, 21 and 25; a pull request runs corretto 8 and graalvm 25, a push to main the whole matrix under `continue-on-error`, so a vendor's download outage cannot hold release.yml's ci-passed gate, and nightly.yml the whole matrix again, blocking), `java-runtime-8`, `java-jackson-floor` (the suite with `jackson.version` at the 2.16.1 floor), `java-distroless`, `java-spring-boot`, `java-fuzz`, `java-checks` (`java-format`, `java-hardened-policy`, `jvm-interop`, and `smoke-maven`: the pure-Java 0.7 artifact, which needs no module) | nothing |
-| macOS on pull requests | `macos-wrappers` (`macos-latest`) runs the macOS legs of `go-platforms`, `ruby-macos`, `dotnet`, `python` (3.11 and 3.14 only), `rust-ffi` and `aprv-server` in sequence in one job, each port's steps after the first under `!cancelled()` so one failure does not hide the rest; its `aprv-server` steps restore the same target cache key as `aprv-server`'s macOS leg. `swift-apple` (`macos-26`, which Swift's Xcode needs) runs `swift-macos`'s suite and then `swift-ios`'s build, the build under `!cancelled()`. A pull request that selects both therefore takes two macOS runners, `macos-wrappers` and `swift-apple`; a Swift-only one takes `swift-apple` alone, and one that selects neither takes none. It used to queue about 14 macOS jobs. A push to main runs every macOS leg in its own job, with `python` on both `macos-15` and `macos-15-intel` | `aprv-wasm` |
-| Windows on pull requests | `windows-wrappers` (`windows-latest`) runs the Windows legs of `go-platforms`, `dotnet` and `python` (3.11 and 3.14; `windows-11-arm` sits out) in sequence, the same way. `rust-ffi` and `aprv-server` keep their own Windows legs: `rust-ffi`'s is the longest job of a full run (about 10 minutes) and `aprv-server`'s runs 5 to 8 minutes on a cold target cache, so folding either would lengthen the critical path. A push to main runs every Windows leg in its own job | `aprv-wasm` |
+| macOS on pull requests | `macos-wrappers` (`macos-latest`) runs the macOS legs of `go-platforms`, `ruby-macos`, `dotnet`, `python` (3.11 and 3.15 only), `rust-ffi` and `aprv-server` in sequence in one job, each port's steps after the first under `!cancelled()` so one failure does not hide the rest; its `aprv-server` steps restore the same target cache key as `aprv-server`'s macOS leg. `swift-apple` (`macos-26`, which Swift's Xcode needs) runs `swift-macos`'s suite and then `swift-ios`'s build, the build under `!cancelled()`. A pull request that selects both therefore takes two macOS runners, `macos-wrappers` and `swift-apple`; a Swift-only one takes `swift-apple` alone, and one that selects neither takes none. It used to queue about 14 macOS jobs. A push to main runs every macOS leg in its own job, with `python` on both `macos-15` and `macos-15-intel` | `aprv-wasm` |
+| Windows on pull requests | `windows-wrappers` (`windows-latest`) runs the Windows legs of `go-platforms`, `dotnet` and `python` (3.11 and 3.15; `windows-11-arm` sits out) in sequence, the same way. `rust-ffi` and `aprv-server` keep their own Windows legs: `rust-ffi`'s is the longest job of a full run (about 10 minutes) and `aprv-server`'s runs 5 to 8 minutes on a cold target cache, so folding either would lengthen the critical path. A push to main runs every Windows leg in its own job | `aprv-wasm` |
 | shared suites | `.github/scripts/rust-ffi-suite.sh`, `aprv-server-suite.sh` and `python-suite.sh` hold the commands of `rust-ffi`, `aprv-server` and `python`, so the per-OS jobs and the two combined jobs run the same commands. The Linux-only steps (the 1.85.0 floor, the generated header, the aarch64 static binary) stay steps of their own job. Go, Ruby and .NET are one or two commands each and stay inline in both places; change them together | nothing |
 | java | `java-wasm-endive` (JDK 11 to 27), `java-wasm-runtime-8` (the server engine on a real Java 8, with a noexec check), `java-wasm-consumers` (jvm-interop and Spring Boot on the -wasm artifact), `java-classpath-guard` (`java-wasm/scripts/classpath-guard.sh`) | `aprv-wasm`; the server binary for the first two |
 | always | `one-implementation` (`--enforce all`, with the per-file allowlist OD-04 describes in `tools/check-one-implementation.mjs`), `conformance` (`tools/check-cert-copies.mjs`, which finds `rust/certs` alone since Phase 7, and `tools/check-licence-copies.mjs`), `zizmor` | nothing |
+| images | `image-age`, on a pull request that changes a Dockerfile, a workflow or a composite action (`changes` sets `images` from `tools/image-age-check.mjs`'s pathspecs) | nothing |
+
+`image-age` holds a new container image digest for the same seven days
+Dependabot's cooldown waits. That cooldown can date only Docker Hub
+images: for gcr.io (distroless in `rust/server/Dockerfile`) and every
+other registry, Dependabot opens the PR at once with "Cooldown could not
+be applied", and a digest moved by hand never had a cooldown.
+`tools/image-age-check.mjs` reads the digest-pinned images at the PR's
+base and merge commit and dates each digest the PR adds: gcr.io by the
+digest's `timeUploadedMs`, Docker Hub by `tag_last_pushed` when the PR's
+tag still names the digest, else by the earliest tag in the tags list that
+names it. It never uses the image config's `created`, which distroless
+sets to 1970. A digest under seven days old fails the job, and so
+`ci-ok`, with the time it clears; re-run the failed jobs after that time.
+ghcr.io gives no push time without a token, so a ghcr.io digest, or one
+no registry dates, is a warning to check by hand. A registry that does not
+answer fails the job too, as toolchain-watch does; a re-run settles it.
+The job runs for every author: a digest a person moves obeys the same
+rule.
 
 `go-checks`, `java-checks`, `dotnet-checks` and `php-checks` each hold
 what used to be two to four jobs of under a minute or two after about
@@ -319,7 +338,9 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 - `support-matrix.yml`: weekly (Monday) and on demand, runs
   `tools/support-matrix.mjs --check`, writes the vendor statuses to the
   job summary, and fails when a line SUPPORT-MATRIX.md lists as tested,
-  and not as a floor or kept, is past its end of life.
+  and not as a floor or kept, is past its end of life. It warns, without
+  failing, when a supported line is newer than the newest one tested,
+  Erlang/OTP and Elixir included (from `elixir-ffi`'s matrix).
 - `apple-pki-watch.yml`: daily and on demand, runs
   `tools/apple-pki-watch.mjs` against `tools/apple-pki-watch.json` and,
   on a change, opens or comments on one issue; a network failure fails
@@ -377,6 +398,36 @@ job fails if the action opened any other branch, and
 `release-branch-server` and `refresh-wasm-copies` fail unless the branch
 still points at the commit `release-branch-wasm` built.
 
+## Pins held on purpose, and what reopens them
+
+None of these is a version toolchain-watch can compare with a registry,
+so each one names the event that should send someone back to it.
+
+- **clang-18 in `ruby-fuzz`.** The job installs `clang-18` and
+  `libclang-rt-18-dev` from Ubuntu's archive and builds ruzzy with them,
+  since ruzzy compiles against clang's libFuzzer and sanitizer runtimes.
+  Ubuntu 24.04, today's `ubuntu-latest`, carries those packages.
+  Revisit when `ubuntu-latest` moves to a newer Ubuntu: the packages may
+  be gone, and the job then needs the clang that release ships, or the
+  runner pinned to `ubuntu-24.04`.
+- **`macos-15-intel`.** GitHub's last Intel macOS image. `release.yml`
+  builds the `x86_64-apple-darwin` `aprv` binary on it, and a push to
+  main runs `python` on it. Revisit when GitHub announces its retirement:
+  the binary can be cross-built from an arm64 runner (the target ships
+  with rustup, and the macOS SDK builds both), but nothing then runs it
+  on real Intel hardware, so the release notes or SUPPORT-MATRIX.md would
+  have to say the x86_64 macOS binary is built and not tested.
+- **workerd `compatibilityDate` and `compatibility_date`.** workerd
+  chooses its behaviour by this date, not by its own version, so the
+  dates in `node/runtime-smoke/workerd.capnp` and
+  `node/bench/memory-workerd.mjs` (2026-08-01) and in
+  `node/examples/cloudflare-worker/wrangler.toml` (2026-09-22) are
+  behaviour pins. Moving the workerd version, which toolchain-watch
+  reports, changes nothing they select. Move a date on purpose, as its
+  own change, after reading the compatibility flags that turn on between
+  the old date and the new one; workerd refuses a date newer than the
+  release that runs it.
+
 ## Owner-side and open
 
 - Repository variable: `APRV_PUBLISH_CRATES` (OD-03). The corpus
@@ -390,8 +441,6 @@ still points at the commit `release-branch-wasm` built.
   `../licenses/wasm` and a test), written up in `java-wasm/CI-NOTES.md`,
   "Release". `tools/check-licence-copies.mjs` needs no Java entry, since
   the pom reads the source in place.
-- The macOS x86_64 runner label is `macos-15-intel`; check that GitHub
-  still offers it before the first 0.8.0 tag.
 - Branch protection (or the ruleset) on `main` should require the one
   status check `ci-ok` from GitHub Actions and drop every other `ci.yml`
   check from the required list. An agent cannot change that setting.

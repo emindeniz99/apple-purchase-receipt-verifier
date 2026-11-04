@@ -1,11 +1,21 @@
 # Watches the pins dependabot cannot read: wasi-sdk, wasm-tools,
-# wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh; cbindgen,
-# spectral-cli and Gradle in ci.yml; rustup in tools/reproduce/Dockerfile;
-# and every image a workflow or composite action pins by digest.
+# wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh; the tool
+# versions written into workflow steps and matrices (cbindgen,
+# spectral-cli, Gradle, uv, zizmor, ty, cargo-fuzz, cargo-deny,
+# cargo-cyclonedx, schemathesis, symfony/process, Spring Boot, Maven,
+# build and setuptools); age in install-age.sh; palantir-java-format in
+# the poms; bun, deno, workerd and the npm overrides in the node
+# manifests; the vendored openssl-sys's upstream; rustup in
+# tools/reproduce/Dockerfile; and every image a workflow or composite
+# action pins by digest. The header of tools/toolchain-watch.mjs lists
+# each with its source.
 # tools/toolchain-watch.mjs compares each against upstream (a release or a
 # push counts once it is seven days old, as dependabot's cooldown does;
 # ghcr.io gives no push time, so a moved ghcr.io tag is reported at once);
-# when one is behind, this job opens an issue, or comments on the open one.
+# when one is behind, this job opens an issue, or comments on (and reopens)
+# the last one, but only when the set of pins behind has changed since that
+# issue last reported it: ty and uv release faster than the weekly run, so
+# a new upstream version of a pin already reported is not news.
 # It only reports: moving a pin changes a checksum or a digest, and for the
 # toolchain the module's bytes, so it is a reviewed commit. A pin the script
 # cannot find, or a network failure, fails the run and files nothing.
@@ -70,9 +80,12 @@ jobs:
         run: |
           set -euo pipefail
           body="$RUNNER_TEMP/issue.md"
-          # One comment per distinct finding: the same pin stays behind
-          # every week until someone moves it.
-          marker="<!-- toolchain-watch $(sha256sum "$RUNNER_TEMP/toolchain-watch.txt" | cut -c1-64) -->"
+          # One comment per distinct set of pins behind, keyed by each
+          # line's file and pin name with the versions, digests and dates
+          # cut off: the same pin stays behind every week until someone
+          # moves it, usually with a newer upstream each time.
+          keys=$(sed -E 's/ [^ ]+ -> .*$//' "$RUNNER_TEMP/toolchain-watch.txt" | LC_ALL=C sort -u)
+          marker="<!-- toolchain-watch pins $(printf '%s\n' "$keys" | sha256sum | cut -c1-64) -->"
           {
             echo "$marker"
             echo "tools/toolchain-watch.mjs found pins that Dependabot does not update behind upstream ($RUN_URL). Each line names the file, then pinned -> available."
@@ -81,14 +94,19 @@ jobs:
             echo
             echo 'Move each pin with its checksum or digest in one commit (CONTRIBUTING.md, "Adding or bumping a dependency by hand"), then close this issue.'
           } > "$body"
-          number=$(gh issue list --state open --limit 200 --json number,title \
-            --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)
+          # The newest issue with this title, open or closed: a closed one
+          # that already carries the marker stays closed.
+          latest=$(gh issue list --state all --limit 200 --json number,title,state \
+            --jq '[.[] | select(.title == env.TITLE)] | sort_by(.number) | last // empty | "\(.number) \(.state)"')
+          number="" state=""
+          if [ -n "$latest" ]; then read -r number state <<<"$latest"; fi
           if [ -n "$number" ]; then
             if gh issue view "$number" --json body,comments \
               --jq '[.body, .comments[].body] | join("\n")' | grep -qF -- "$marker"; then
               echo "already reported on #$number"
               exit 0
             fi
+            if [ "$state" = CLOSED ]; then gh issue reopen "$number"; fi
             gh issue comment "$number" --body-file "$body"
           else
             gh issue create --title "$TITLE" --body-file "$body"

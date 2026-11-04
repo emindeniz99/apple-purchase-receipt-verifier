@@ -64,7 +64,7 @@ T = TypeVar("T")
 
 class AbiMismatchError(RuntimeError):
     """The module is not one this package can run: it lacks an export of ABI
-    version 0.1.0, or imports anything but ``random-get``."""
+    version ``ABI_VERSION``, or imports anything but ``random-get``."""
 
 
 class Fault(Exception):
@@ -108,7 +108,7 @@ def _describe(
 
 
 def _check_abi(module: "wasmtime.Module") -> None:
-    """Refuses a module that is not ABI 0.1.0: any import but ``random-get``,
+    """Refuses a module that is not ABI ``ABI_VERSION``: any import but ``random-get``,
     or a missing export or one of the wrong shape."""
     imports = [(i.module, i.name) for i in module.imports]
     if imports != [(_HOST_MODULE, "random-get")]:

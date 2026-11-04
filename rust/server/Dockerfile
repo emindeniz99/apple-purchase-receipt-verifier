@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # aprv-server image: the static musl `aprv` binary with the release's
 # component precompiled and embedded, on distroless static, non-root.
 #
@@ -18,7 +17,9 @@
 #   docker run --rm -e APRV_LISTEN=0.0.0.0:8080 -e APRV_TOKEN=... \
 #     -p 127.0.0.1:8080:8080 aprv-server
 #
-# Both bases are pinned by digest (multi-arch index digests). The builder
+# Both bases are pinned by digest (multi-arch index digests). There is no
+# `# syntax=` line on purpose: BuildKit's built-in Dockerfile frontend reads
+# this file, so no frontend image is pulled by a moving tag. The builder
 # stage runs natively per platform (buildx with QEMU or native runners), so
 # the full build precompiles for the platform's own baseline target.
 

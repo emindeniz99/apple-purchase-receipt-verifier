@@ -37,6 +37,13 @@ class ConformanceTest < Minitest::Test
   # raw answers.
   RAW_POOL = Internals::InstancePool.new(Internals::Runtime.shared, "{}")
 
+  # Each base64 decoder of the decodeBase64 cases: the export that reads its
+  # text, and the reason the module gives when that decoder refuses it.
+  BASE64_DECODERS = {
+    "receipt-data" => %w[verify-receipt MALFORMED],
+    "x5c" => %w[verify-signed-data INVALID_CERTIFICATE]
+  }.freeze
+
   # Mutable on purpose: the coverage self-check below records what actually
   # ran, which is the point.
   EXECUTED = [] # rubocop:disable Style/MutableConstant
@@ -253,43 +260,55 @@ class ConformanceTest < Minitest::Test
   # --- decodeBase64 -----------------------------------------------------
 
   # The cases pin the two base64 rules (`receipt-data`, `x5c`) by calling
-  # each decoder directly. Through a host there is no decoder to call: the
-  # receipt-data rule runs inside the module's `verify-receipt`, so each text
-  # is handed to it and must land on its group's side of the rule
-  # (docs/rust-core/SURFACE.md, section 6). An accepted text decodes to bytes
-  # that are no receipt, so the module refuses it further on, never with the
-  # base64 refusal; a refused text carries the base64 refusal and the
-  # group's reason. The answer is read raw, since the facade would hide
-  # which stage refused.
-  #
-  # The x5c rule needs a JWS whose header carries the text, which the
-  # migration's Phase 1 builds for the runners; until then only the
-  # receipt-data decoder runs through the host here.
+  # each decoder directly. Through a host there is no decoder to call: both
+  # rules run inside the module, so each text is handed to the export that
+  # reads it and must land on its group's side of the rule
+  # (docs/rust-core/SURFACE.md, section 6). A receipt-data text is the
+  # receipt `verify-receipt` reads; an x5c text is every chain entry of a JWS
+  # header `verify-signed-data` reads, which the module decodes in order. An
+  # accepted text decodes to bytes that are no receipt and no certificate,
+  # so the module refuses it further on, never with the base64 refusal; a
+  # refused text carries the base64 refusal and the decoder's reason. The
+  # answer is read raw, since the facade would hide which stage refused.
   def run_decode_base64(kase)
     texts = kase["input"]["texts"]
     raise "harness error: #{kase["id"]}: no texts or no decoders" if texts.empty? || kase["decoders"].empty?
-    return unless kase["decoders"].include?("receipt-data")
 
     expected = kase["expected"]
-    texts.each_with_index do |text, index|
-      where = "#{kase["id"]}: receipt-data texts[#{index}] #{text.inspect}"
-      answer = raw_receipt_answer(text)
-      # The module words the empty text's refusal "receipt is empty" (it is
-      # refused before any decoding); every other text carries "base64".
-      refused = answer["verified"] == false && answer["message"].to_s.match?(/base64|\Areceipt is empty\z/)
-      if expected["status"] == "ok"
-        refute refused, "#{where}: refused by the base64 rule, want #{expected["bytesHex"]}"
-      else
-        assert refused, "#{where}: not refused by the base64 rule: #{answer.inspect}"
-        assert_equal expected["reason"], answer["reason"], "#{where}: reason"
+    kase["decoders"].each do |decoder|
+      export, refusal = BASE64_DECODERS.fetch(decoder) { raise "harness error: decoder #{decoder.inspect}" }
+      texts.each_with_index do |text, index|
+        where = "#{kase["id"]}: #{decoder} texts[#{index}] #{text.inspect}"
+        answer = raw_answer(export, decoder == "x5c" ? jws_with_x5c(text) : text)
+        # The module words the empty receipt's refusal "receipt is empty" (it
+        # is refused before any decoding); every other text carries "base64".
+        message = answer["message"].to_s
+        refused = answer["verified"] == false && message.match?(/base64|\Areceipt is empty\z/)
+        if expected["status"] == "ok"
+          refute refused, "#{where}: refused by the base64 rule, want #{expected["bytesHex"]}"
+        else
+          assert refused, "#{where}: not refused by the base64 rule: #{answer.inspect}"
+          assert_equal refusal, answer["reason"], "#{where}: reason"
+        end
       end
     end
   end
 
-  def raw_receipt_answer(text)
+  def raw_answer(export, input)
     RAW_POOL.with_guest do |guest|
-      JSON.parse(guest.call("verify-receipt", [Time.now.to_i * 1000], text))
+      JSON.parse(guest.call(export, [Time.now.to_i * 1000], input))
     end
+  end
+
+  def b64url(bytes)
+    [bytes].pack("m0").tr("+/", "-_").delete("=")
+  end
+
+  # A JWS whose header carries the text as each of its three x5c entries,
+  # and nothing wrong before them.
+  def jws_with_x5c(text)
+    header = JSON.generate({ "alg" => "ES256", "x5c" => [text, text, text] })
+    [b64url(header), b64url("{}"), b64url("\0" * 64)].join(".")
   end
 
   # --- JSON Pointer, with the [key=value] extension -----------------------

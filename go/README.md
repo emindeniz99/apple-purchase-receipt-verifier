@@ -30,7 +30,10 @@ fmt.Println(payload.JSON())
 Go 1.25 or newer, one dependency (wazero, whose only dependency is
 `golang.org/x/sys`), no cgo.
 
-`internal/wasm/aprv.wasm` is git-ignored until the real module is committed at integration: copy the file into place (it must match `aprv.wasm.sha256`), because `//go:embed` needs it present to build.
+`internal/wasm/aprv.wasm` is committed, so the Go module at a tag carries
+the module it embeds. Only the release tooling rewrites it and its pin
+`aprv.wasm.sha256`; a module copied in by hand fails that pin, and the
+package panics when it loads.
 
 The library answers one question: did Apple sign this? It checks the chain
 to a pinned root, Apple's marker OIDs and the signature, and hands back
@@ -63,9 +66,12 @@ fields it returns ([What to check after verification](#what-to-check-after-verif
   linear memory, and an instance that traps is discarded.
 - **Memory and start-up.** The first `NewVerifier` in a process compiles the
   module, about two seconds on a 4-core machine; later ones take tens of milliseconds. A
-  `Verifier` keeps a small pool of instances (one per goroutine that is
-  verifying at that moment, at least one kept), each a few MiB, and
-  releases them when it is garbage collected. There is nothing to close.
+  `Verifier` keeps its idle instances, each a few MiB, in a `sync.Pool`:
+  about one per goroutine that was verifying at the same moment. The
+  garbage collector empties a `sync.Pool` within two cycles, so after a
+  quiet spell the next call makes a new instance and runs `init` on it
+  before it verifies. The instances go when the `Verifier` is garbage
+  collected. There is nothing to close.
 - **No I/O, no goroutines started, no global state beyond the compiled
   module.** `*Verifier` is safe for concurrent use by
   multiple goroutines.

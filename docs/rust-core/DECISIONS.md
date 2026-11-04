@@ -1248,6 +1248,21 @@ cRLDistributionPoints, 2026-10-06; the core's panic mapping, 2026-11-01).
 
 ---
 
+- **A caller's anchor with a non-RFC-5280 validity time** (recorded
+  2026-11-04, not yet measured on the Java side). A custom trust anchor
+  whose `notBefore` or `notAfter` decodes but breaks RFC 5280's fixed
+  form (fractional seconds, a `+hhmm` offset) is accepted by the core at
+  `init`, and every receipt and JWS under it is then refused:
+  `INVALID_CERTIFICATE` on the receipt path, `UNTRUSTED_CHAIN` on the JWS
+  path. OpenSSL raises `ERROR_IN_CERT_NOT_BEFORE/AFTER_FIELD` for such a
+  time and `waived()` (`rust/openssl/src/path.rs`) does not waive it;
+  `TrustAnchor` (`rust/src/roots.rs`) documents the requirement. Java
+  takes any `X509Certificate` as an anchor and does not check its window,
+  so it probably verifies such chains. Apple's roots are unaffected and
+  the core fails closed; no shared case covers it yet. Settling it, by
+  refusing the anchor at `init` in both implementations with a case, is
+  one PR under the behaviour-change rule.
+
 ## R21. Security substrate: OpenSSL 4 with the CMS API
 
 **Status: accepted** (owner, 2026-09-26). The adapter's clock import went
@@ -1613,6 +1628,10 @@ each engine's runtime probe checks moved to its own `Verifier.create`.
   platforms in the jar would cost about 21.5 MB per release and allow 3 a
   month ([aprv-server §10][server]); two Linux classifiers stay well
   inside.
+- **As built (2026-11-04):** the release writes only the two Linux
+  hashes into the jar's `SHA256SUMS`, so `github()` has no pin for a
+  macOS or Windows asset and fails there. Pinning all six costs no jar
+  size, since the binaries stay on the release; it is a ROADMAP item.
 
 ---
 

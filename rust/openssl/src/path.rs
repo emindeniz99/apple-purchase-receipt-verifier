@@ -146,14 +146,16 @@ pub fn verify_path(
 /// a certificate of `untrusted`, each time with a store holding that anchor
 /// alone, and keeps the first path that passes.
 ///
-/// OpenSSL's issuer lookup takes the first store certificate whose subject
-/// name matches (and whose key identifier and `keyUsage` allow it), and
-/// does not try another when the signature then fails. With every anchor
-/// in one store, the order of the caller's list, or an anchor that merely
-/// carries an intermediate's name, would decide whether a path verifies. A
-/// store of one anchor leaves OpenSSL nothing to choose among anchors. The
-/// same lookup runs over `untrusted`, where it also takes the first match
-/// and never backtracks, so `untrusted` is first narrowed to the
+/// OpenSSL's issuer lookup considers the store certificates whose subject
+/// name matches and whose key identifier and key type fit (it does not
+/// look at `keyUsage`), takes the first of them valid at the verification
+/// time, else the one that expires last, and does not try another when the
+/// signature then fails. With every anchor in one store, the order of the
+/// caller's list, or an anchor that merely carries an intermediate's name,
+/// would decide whether a path verifies. A store of one anchor leaves
+/// OpenSSL nothing to choose among anchors. The same lookup runs over
+/// `untrusted`, where it picks the same way and never backtracks, so
+/// `untrusted` is first narrowed to the
 /// certificates that sign the target or one another up the path
 /// ([`linked_above`]): a same-named certificate that signed nothing on the
 /// path is never offered to OpenSSL, whatever its place. The candidates are
@@ -372,7 +374,11 @@ unsafe extern "C" fn record_problem(ok: c_int, ctx: *mut ffi::X509_STORE_CTX) ->
 /// validity window, CA flag and path length constraint are not judged,
 /// which OpenSSL does for a certificate in the store. No other problem is
 /// waived: OpenSSL 4.0, which `build.rs` requires, already counts the
-/// `notAfter` second as valid, as RFC 5280 section 4.1.2.5 does.
+/// `notAfter` second as valid, as RFC 5280 section 4.1.2.5 does. That
+/// includes `X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD` and its `notAfter`
+/// twin, which OpenSSL raises for a time not in RFC 5280's form (a fraction
+/// of a second, an offset): an anchor with such a time fails every path,
+/// as the core's `TrustAnchor` documents.
 fn waived(ctx: &X509StoreContextRef, error: X509VerifyResult) -> bool {
     let Some(current) = ctx.current_cert() else {
         return false;

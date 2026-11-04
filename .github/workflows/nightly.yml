@@ -74,7 +74,7 @@ jobs:
       - name: nightly Rust and cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
-          cargo install cargo-fuzz --locked
+          cargo install cargo-fuzz --locked --version 0.13.2
       # A compile error is not a finding: building here, before the quiet
       # step, keeps it readable. cargo fuzz run reuses this build (same
       # profile and sanitizer).
@@ -373,6 +373,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: matrix.host == 'python'
         with:
+          version: "0.13.6"
           python-version: "3.13"
           enable-cache: false
       - name: python

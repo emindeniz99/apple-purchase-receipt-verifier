@@ -1,4 +1,4 @@
-;; A test double for aprv.wasm: it speaks ABI 0.1.0 (the four exports, their
+;; A test double for aprv.wasm: it speaks ABI 0.2.0 (the four exports, their
 ;; cabi_post twins, cabi_realloc, the one random-get import) and answers from
 ;; what it is given, so the tests can drive the host code (pooling, the six
 ;; outcomes, trap recovery, clock and environment handling) without a real

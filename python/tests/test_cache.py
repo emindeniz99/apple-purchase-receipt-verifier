@@ -218,20 +218,30 @@ class RulesTest(Sandbox):
 
     @unittest.skipUnless(POSIX, "Windows takes the folder from the shell, not from HOME")
     def test_no_home_directory_turns_the_cache_off(self) -> None:
-        # A HOME that does not expand leaves no home directory, and
-        # platformdirs raises (4.12.0); the cache is then off, not an error.
+        # A HOME that does not expand leaves no home directory. platformdirs
+        # 4.12 and 4.13 raise; 4.14 falls back to the password database's
+        # home. Either way the cache is off, not an error and not elsewhere.
         self.assertIsNone(self.default({"HOME": "~nouser"}))
 
     @unittest.skipUnless(POSIX, "Windows takes the folder from the shell, not from HOME")
     def test_a_relative_home_turns_the_cache_off(self) -> None:
-        # platformdirs builds the path on a relative HOME as given, and a
-        # relative cache directory would sit under whatever the working
-        # directory is. Nothing may be created there.
+        # platformdirs before 4.14 builds the path on a relative HOME as
+        # given, under whatever the working directory is; 4.14 falls back to
+        # the password database's home. The cache is off on both, and nothing
+        # is created in the working directory.
         cwd = self.directory()
         self.addCleanup(os.chdir, os.getcwd())
         os.chdir(cwd)
         self.assertIsNone(self.default({"HOME": "relative"}))
         self.assertEqual([], list(cwd.iterdir()))
+
+    @unittest.skipUnless(POSIX, "XDG_CACHE_HOME is a Linux and macOS variable")
+    def test_an_absolute_xdg_cache_home_holds_the_default_whatever_home_says(self) -> None:
+        # The variable names the directory without HOME, so a relative HOME
+        # does not turn it off.
+        home = self.directory()
+        env = {"HOME": "relative", "XDG_CACHE_HOME": str(home / "xdg")}
+        self.assertEqual(str(home / "xdg" / APP / "wasmtime"), self.default(env))
 
     def test_any_failure_naming_the_directory_turns_the_cache_off(self) -> None:
         # Not only the RuntimeError above: on Windows a folder the shell
@@ -320,6 +330,16 @@ class EndToEndTest(Sandbox):
     def test_a_directory_others_can_write_still_verifies_and_holds_nothing(self) -> None:
         directory = self.directory()
         directory.chmod(0o777)
+        result = run_child({_cache.ENV_VAR: str(directory)})
+        self.assertTrue(result["verified"])
+        self.assertEqual(0, cache_entries(directory))
+
+    @unittest.skipUnless(POSIX, "only a POSIX environment hands Python bytes that are not UTF-8")
+    def test_a_directory_whose_name_is_not_utf8_still_verifies(self) -> None:
+        # The variable holds the byte 0xE9 alone, which Python reads as a
+        # lone surrogate. Wasmtime's TOML is UTF-8 and cannot name such a
+        # directory, so the cache is off; Verifier() must not raise.
+        directory = self.directory() / "caf\udce9"
         result = run_child({_cache.ENV_VAR: str(directory)})
         self.assertTrue(result["verified"])
         self.assertEqual(0, cache_entries(directory))

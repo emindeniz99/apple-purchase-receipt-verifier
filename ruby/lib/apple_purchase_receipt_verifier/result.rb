@@ -11,9 +11,10 @@ module ApplePurchaseReceiptVerifier
   # @!attribute [r] message
   #   @return [String] safe to log, not meant to be parsed
   # @!attribute [r] cause
-  #   @return [Exception, nil] the parser or provider exception behind
-  #     {Reason::UNREADABLE_PAYLOAD} or {Reason::INTERNAL_ERROR}, when there
-  #     is one; its own message is equally log-safe
+  #   @return [Exception, nil] the exception behind an
+  #     {Reason::INTERNAL_ERROR} the gem produced itself, when the module
+  #     trapped or gave an answer the gem could not read; nil for every
+  #     verdict the module gives, {Reason::UNREADABLE_PAYLOAD} included
   Failure = Data.define(:reason, :message, :cause)
 
   # The outcome of one {Verifier} call: `verified?` and, exclusively, either

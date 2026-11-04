@@ -1,6 +1,6 @@
 """The wrapper's own behaviour, over the WAT test double (``double.wat``): the
 six outcomes kept apart, trap recovery, the clock and the environment, the
-pool. The double speaks ABI 0.1.0 and verifies nothing, so these tests hold
+pool. The double speaks ABI 0.2.0 and verifies nothing, so these tests hold
 whatever module the package carries: they exercise the host code, and the
 verdicts are the module's own business (test_conformance.py, test_abi.py)."""
 
