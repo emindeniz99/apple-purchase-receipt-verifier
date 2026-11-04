@@ -137,7 +137,8 @@ struct ServeArgs {
     #[arg(long, value_name = "N", value_parser = max_connections)]
     max_connections: Option<NonZeroUsize>,
     /// How long a connection may take to send a request head, from accept or from the end of the
-    /// last response; then it is closed [default: 30000]
+    /// last response, and how long a response write may send nothing; then it is closed
+    /// [default: 30000]
     #[arg(long, value_name = "N")]
     header_timeout_ms: Option<NonZeroU64>,
     #[command(flatten)]

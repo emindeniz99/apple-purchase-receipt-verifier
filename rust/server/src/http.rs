@@ -19,8 +19,13 @@ use axum::Router;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use subtle::ConstantTimeEq;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// The problem types, documented in README.md ("Problems").
 const PROBLEM_BASE: &str =
@@ -235,7 +240,9 @@ pub struct Limits {
     /// How long a connection may take to send a complete request head,
     /// counted from accept and again from the end of each response, so it
     /// is also the keep-alive idle timeout. The connection is closed
-    /// without an answer when it passes.
+    /// without an answer when it passes. It also bounds a response write
+    /// that makes no progress: once writing to the peer has been blocked
+    /// this long with nothing sent, the connection is closed.
     pub header_timeout: std::time::Duration,
     /// Connections open at once. At the cap the server stops accepting;
     /// further connections wait in the listen backlog until one closes.
@@ -250,7 +257,11 @@ pub struct Limits {
 /// hyper's request-head deadline off, and it accepts without bound: a peer
 /// that opens connections and sends nothing could hold every descriptor
 /// before the token check ran. This loop is `axum::serve` with those two
-/// bounds added.
+/// bounds added, and a third that hyper has no setting for: a write to the
+/// peer that stays blocked for `limits.header_timeout` with nothing sent
+/// fails ([`WriteDeadline`]), so a peer that sends requests and never reads
+/// the answers loses its connection, and its place under the cap, instead
+/// of keeping both for good.
 pub async fn serve(
     listener: tokio::net::TcpListener,
     router: Router,
@@ -284,7 +295,7 @@ pub async fn serve(
             () = &mut shutdown => break,
         };
         let conn = builder.serve_connection(
-            TokioIo::new(stream),
+            TokioIo::new(WriteDeadline::new(stream, limits.header_timeout)),
             TowerToHyperService::new(router.clone()),
         );
         let conn = graceful.watch(conn);
@@ -297,6 +308,107 @@ pub async fn serve(
     }
     drop(listener);
     graceful.shutdown().await;
+}
+
+/// A connection's socket whose writes fail once they have made no progress
+/// for `timeout`.
+///
+/// hyper arms no timer while it writes a response. A peer that sends
+/// requests and stops reading fills the socket's send buffer, after which
+/// the write waits for the peer forever and the connection keeps its place
+/// under the cap. Here a write, flush or shutdown that is still pending
+/// `timeout` after the first one pended, with none completing since, fails
+/// with `TimedOut`; the connection then ends with an error, as it does on a
+/// reset. Anything that completes restarts the count. Reads pass through.
+struct WriteDeadline<S> {
+    inner: S,
+    timeout: std::time::Duration,
+    /// Armed by the first write that pends after one that completed, and
+    /// cleared when one completes, so a connection that writes without
+    /// waiting never allocates it.
+    stalled: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<S: Unpin> WriteDeadline<S> {
+    fn new(inner: S, timeout: std::time::Duration) -> Self {
+        Self {
+            inner,
+            timeout,
+            stalled: None,
+        }
+    }
+
+    /// `polled` as the caller sees it: a result restarts the count, and a
+    /// pending write past the deadline becomes `TimedOut`.
+    fn deadline<T>(
+        &mut self,
+        cx: &mut Context<'_>,
+        polled: Poll<io::Result<T>>,
+    ) -> Poll<io::Result<T>> {
+        if polled.is_ready() {
+            self.stalled = None;
+            return polled;
+        }
+        let timeout = self.timeout;
+        let stalled = self
+            .stalled
+            .get_or_insert_with(|| Box::pin(tokio::time::sleep(timeout)));
+        match stalled.as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "the peer took nothing written to it within the deadline",
+            ))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for WriteDeadline<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for WriteDeadline<S> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.inner).poll_write(cx, buf);
+        this.deadline(cx, polled)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.inner).poll_write_vectored(cx, bufs);
+        this.deadline(cx, polled)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.inner).poll_flush(cx);
+        this.deadline(cx, polled)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.inner).poll_shutdown(cx);
+        this.deadline(cx, polled)
+    }
 }
 
 /// As `axum::serve` handles an accept error: a connection that failed
@@ -496,9 +608,21 @@ mod serve_tests {
         tokio::sync::oneshot::Sender<()>,
         tokio::task::JoinHandle<()>,
     ) {
+        start_with(axum::Router::new(), limits).await
+    }
+
+    /// As [`start`], with `/healthz` added to `routes`.
+    async fn start_with(
+        routes: axum::Router,
+        limits: Limits,
+    ) -> (
+        SocketAddr,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let router = axum::Router::new().route("/healthz", get(|| async { "ok" }));
+        let router = routes.route("/healthz", get(|| async { "ok" }));
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let server = tokio::spawn(serve(listener, router, limits, async move {
             let _ = stopped.await;
@@ -591,6 +715,38 @@ mod serve_tests {
             let held = idle.elapsed();
             assert!(held >= Duration::from_millis(250), "closed after {held:?}");
             assert!(held < Duration::from_secs(5), "closed after {held:?}");
+        })
+        .await
+        .unwrap();
+    }
+
+    /// A peer that sends requests and never reads the answers blocks the
+    /// server's write once the socket buffers fill. That write fails after
+    /// the deadline with nothing sent, so the connection ends and its place
+    /// goes to the next one: with a cap of one, the stalled write would
+    /// otherwise lock every client out for good. The head deadline cannot
+    /// end it, since every head has arrived.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_peer_that_reads_no_answers_is_dropped_after_the_write_stalls() {
+        const BIG: usize = 4 << 20;
+        let limits = Limits {
+            header_timeout: Duration::from_millis(300),
+            max_connections: 1,
+        };
+        let routes = axum::Router::new().route("/big", get(|| async { vec![b'x'; BIG] }));
+        let (addr, _stop, _server) = start_with(routes, limits).await;
+        tokio::task::spawn_blocking(move || {
+            // 64 MiB of answers, far past what the loopback buffers hold.
+            let mut stalled = connect(addr);
+            let request = b"GET /big HTTP/1.1\r\nHost: aprv\r\n\r\n";
+            stalled.write_all(&request.repeat(16)).unwrap();
+            let start = Instant::now();
+            let mut next = connect(addr);
+            assert_eq!(healthz(&mut next), "HTTP/1.1 200 OK");
+            let waited = start.elapsed();
+            assert!(waited < Duration::from_secs(8), "answered after {waited:?}");
+            // Held open until here: closing it would free the place too.
+            drop(stalled);
         })
         .await
         .unwrap();

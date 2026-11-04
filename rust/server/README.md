@@ -37,7 +37,7 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
 | `--max-connections N` | serve | Connections open at once; at the cap the server stops accepting and further connections wait in the listen backlog. Default 512 |
-| `--header-timeout-ms N` | serve | How long a connection may take to send a complete request head, from accept and again from the end of each response; then it is closed unanswered. Default 30,000 |
+| `--header-timeout-ms N` | serve | How long a connection may take to send a complete request head, from accept and again from the end of each response, then it is closed unanswered; and how long a response write may send nothing, then the connection is closed. Default 30,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
 
 `aprv --help` and `aprv <command> --help` print the same, generated from
@@ -189,6 +189,7 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 | Request bodies in flight | four per worker, received or waiting for a worker; a request takes its place before reading the body and gives it back when a worker takes the call |
 | Body deadline | 30 s from admission; a body that has not arrived by then gets 408 and the connection closed |
 | Request-head deadline | 30 s by default (`--header-timeout-ms`), from accept and again from the end of each response, so it is also the keep-alive idle timeout. A connection that has not sent a complete head by then is closed without an answer. It runs before the token check, so a peer without the token cannot hold a connection open longer |
+| Write deadline | The same time as the request-head deadline (`--header-timeout-ms`). A response write that has sent nothing for that long, because the peer stopped reading and the socket buffers are full, closes the connection |
 | Open connections | 512 by default (`--max-connections`). At the cap the server stops accepting until one closes; the kernel's listen backlog holds what arrives meanwhile. Each connection holds one file descriptor, so the process's descriptor limit (`ulimit -n`) must be above the cap |
 
 A trapped instance is discarded in both lifecycles. In the default pool
