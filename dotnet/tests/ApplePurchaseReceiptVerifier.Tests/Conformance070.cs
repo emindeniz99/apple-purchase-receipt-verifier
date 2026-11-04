@@ -80,6 +80,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     [InlineData(9223372036854775807L, "9223372036854775808", false)]
     [InlineData(9007199254740993L, "9007199254740993.0", false)]
     [InlineData(9007199254740993L, "9007199254740992", false)]
+    [InlineData(9007199254740992L, "9007199254740993.0", false)]
     [InlineData(1722945600000L, "1722945600000.0", true)]
     [InlineData(1L, "\"1\"", false)]
     public void FieldIntegersCompareWithoutRounding(long expected, string actualJson, bool same)
@@ -364,9 +365,10 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     /// Whether <paramref name="actual"/> is the integer <paramref name="expected"/>,
     /// with nothing rounded through a double. A long compares as a long. A
     /// double (any number <see cref="TestJson"/> did not read as a long, an
-    /// integer past 2^63 included) matches only within 2^53, where a double
-    /// holds every integer, so 2^63 never passes for 2^63-1 while
-    /// 1722945600000.0 still matches 1722945600000.
+    /// integer past 2^63 included) matches only strictly inside ±2^53, where
+    /// a double holds every integer and no neighbour rounds onto it, so 2^63
+    /// never passes for 2^63-1, 2^53+1 written with a fraction never passes
+    /// for 2^53, and 1722945600000.0 still matches 1722945600000.
     /// </summary>
     private static bool SameInteger(long expected, object? actual)
     {
@@ -374,7 +376,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         return actual switch
         {
             long l => l == expected,
-            double d => expected >= -exact && expected <= exact && d >= -exact && d <= exact && d == expected,
+            double d => expected > -exact && expected < exact && d > -exact && d < exact && d == expected,
             _ => false,
         };
     }
