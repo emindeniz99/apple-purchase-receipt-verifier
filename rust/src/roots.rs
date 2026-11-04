@@ -121,8 +121,11 @@ impl TrustAnchor {
     /// # Errors
     /// [`ConfigError`] when the bytes are neither, when PEM holds no
     /// certificate, or when any certificate in them is not one whole
-    /// certificate a strict reader decodes. A bad anchor is a
-    /// configuration mistake, not a verification verdict.
+    /// certificate a strict reader decodes. A certificate that does not
+    /// decode is a configuration mistake, not a verification verdict. An
+    /// anchor whose validity times are not in RFC 5280's form decodes, so
+    /// it is accepted here and refuses every chain later (see
+    /// [`TrustAnchor`]).
     pub fn from_der_or_pem(bytes: &[u8]) -> Result<Vec<TrustAnchor>, ConfigError> {
         if bytes.first() == Some(&0x30) {
             return TrustAnchor::from_der(bytes).map(|anchor| vec![anchor]);
