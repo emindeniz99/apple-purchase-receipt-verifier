@@ -4,6 +4,14 @@
 # toolchain-watch.yml reports them. Every ecosystem waits seven days
 # after a release before proposing it, so a version pulled or patched in its
 # first week (the common shape of a hijacked package) never reaches a PR.
+#
+# Every manifest that pins a third-party version has an entry below, with
+# one deliberate exception: tools/cross/requirements.txt holds the wheels
+# the 2026-10-31 cross-build spike measured
+# (docs/evidence/2026-10-31-cross-build-spike.md), only that spike's
+# parked workflow installs from it, and a bump would make its rerun
+# install something the spike never measured. Give it a pip entry if a
+# live workflow starts to use it.
 version: 2
 updates:
   # `/` covers .github/workflows (and a root action.yml, which this
@@ -22,6 +30,10 @@ updates:
     groups:
       actions:
         group-by: dependency-name
+  # Dependabot rewrites a package.json `overrides` entry only while it
+  # updates that package, and version updates cover direct dependencies
+  # only, so the exact override pins (weval, minimatch; node/CI-NOTES.md
+  # says why each exists) are not moved by this entry.
   - package-ecosystem: npm
     directory: /node
     schedule:
@@ -324,6 +336,8 @@ updates:
       default-days: 7
   # The Cloudflare Worker example: wrangler and the published package it
   # deploys. One weekly PR, so a release does not open one per package.
+  # Its `overrides` pin of sharp is not moved by this entry either (see
+  # /node above).
   - package-ecosystem: npm
     directory: /node/examples/cloudflare-worker
     schedule:
