@@ -44,7 +44,7 @@
     "runtime:node": "node runtime-smoke/node-like.mjs",
     "runtime:bun": "npx --yes bun@1.4.4 runtime-smoke/node-like.mjs",
     "runtime:deno": "npx --yes deno@2.9.6 run --allow-read --allow-env=JCO_DEBUG runtime-smoke/node-like.mjs",
-    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20260922.1",
+    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20261028.1",
     "runtime:edge": "node --experimental-vm-modules runtime-smoke/edge.mjs",
     "runtime:browser": "node runtime-smoke/browser.mjs"
   },
