@@ -247,15 +247,16 @@ the lockfile as `@bytecodealliance/jco@1.35.0` →
   componentize-js, weval or decompress module loaded.
 - **No newer jco.** 1.35.0 is the registry's latest and still depends on
   componentize-js 0.22.0.
-- **Override.** weval 0.5.0 keeps the same `getWeval()` export and
+- **Override.** weval 0.5 keeps the same `getWeval()` export and
   replaces decompress with `tar`, `fflate` and `@napi-rs/lzma`. It extracts
   only the entry whose basename is `weval`, into a path it builds itself,
   so an archive entry name cannot pick the destination. componentize-js
   asks for `^0.4.1`, so `package.json` pins it with
-  `"overrides": {"@bytecodealliance/weval": "0.5.0"}`. After that,
+  `"overrides": {"@bytecodealliance/weval": "0.5.1"}` (0.5.1 differs from
+  0.5.0 only in the weval release tag `getWeval()` downloads). After that,
   `npm ls decompress` is empty and `npm audit` reports 0 vulnerabilities.
   Transpiling the G1d component gave byte-identical files before and after
-  the override, and `node scripts/g1.mjs` on G1d passed: 824/824 tests,
+  the override at 0.5.0, and `node scripts/g1.mjs` on G1d passed: 824/824 tests,
   6,179/6,179 corpus rows identical, 0 traps.
 
 Remove the override when a jco release depends on weval 0.5 or later.
