@@ -1064,13 +1064,18 @@ jobs:
       # takes the sdist, which stops with the pointer to aprv-server (R28).
       # build_dist.py copies APRV_WASM (build-wasm's module, checked above)
       # into the package and writes its aprv.wasm.sha256; --check refuses a
-      # set of files that is not exactly that.
+      # set of files that is not exactly that. pyproject.toml asks for
+      # setuptools>=70.1, which `python -m build` installs into its isolated
+      # environment; the pip it runs there reads PIP_CONSTRAINT, so the
+      # constraint below decides which setuptools builds what PyPI ships.
       - name: Build the sdist and the platform wheels
         if: steps.gate.outputs.publish == 'true'
         working-directory: python
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade build
+          python3 -m pip install build==1.6.1
+          echo "setuptools==84.2.1" > "$RUNNER_TEMP/build-constraints.txt"
+          export PIP_CONSTRAINT="$RUNNER_TEMP/build-constraints.txt"
           python3 tools/build_dist.py --out dist
           python3 tools/build_dist.py --check dist
 
@@ -1271,6 +1276,12 @@ jobs:
       # does NOT have a .pom file"; v0.9.0, run 37526489816). Deploy with
       # 3.9.16, checked against its SHA-512 on Maven Central, until the
       # plugin leaves those files out. Not cached: this is a publish job.
+      # Revisit: the failure was on central-publishing-maven-plugin 0.11.0;
+      # the poms now use 0.12.0, which no deploy has tried on 3.10. This
+      # step goes once a dry run (release.yml with dry_run) on the runner's
+      # Maven builds a bundle with no _remote.repositories in it, and the
+      # Maven entry in tools/toolchain-watch.mjs goes with it. Until then
+      # toolchain-watch reports 3.9.x releases only.
       - name: Maven 3.9.16 for the deploy
         if: steps.gate.outputs.publish == 'true' || steps.gate-wasm.outputs.publish == 'true'
         env:

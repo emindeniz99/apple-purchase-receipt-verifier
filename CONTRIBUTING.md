@@ -281,11 +281,19 @@ Wasmtime .NET, WasmKit, jco, Endive, the server's `wasmtime`) changes how
 it runs. Either passes the full cross-host run before it merges
 (docs/rust-core/DECISIONS.md R14). Dependabot moves the Rust compiler
 (`rust/rust-toolchain.toml`) and the Dockerfile bases. It cannot read
-`tools/wasm-toolchain.sh`, a version in a workflow's `run:` or `with:`
-(cbindgen, spectral-cli, Gradle), the reproduce image's rustup, or a
-workflow's container images, so `toolchain-watch.yml` compares those pins
-with upstream every week and opens an issue when one is behind; move the
-version and its checksum or digest together.
+`tools/wasm-toolchain.sh`, a version in a workflow's `run:`, `with:` or
+matrix (uv, zizmor, ty, cargo-fuzz, cargo-deny and the other tools a step
+installs, the newest symfony/process and Spring Boot legs, the release's
+Maven, build and setuptools), `install-age.sh`, the poms'
+palantir-java-format, the bun, deno and workerd the node runtime scripts
+run, npm `overrides` of transitive packages, the reproduce image's rustup,
+or a workflow's container images. `toolchain-watch.yml` compares those
+pins with upstream every week and opens an issue when one is behind; the
+header of `tools/toolchain-watch.mjs` lists each pin and where it is read.
+Move the version and its checksum or digest together. A pin held in
+several files must agree across them, and uv, zizmor, ty, cargo-fuzz,
+cargo-deny and build name their version at every use: toolchain-watch
+fails on either.
 
 Every ecosystem that has a lockfile commits it, and CI installs from it
 strictly, so a bump reaches CI only as a committed change to a lockfile

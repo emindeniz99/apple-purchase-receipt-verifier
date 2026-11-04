@@ -1,7 +1,14 @@
 # Watches the pins dependabot cannot read: wasi-sdk, wasm-tools,
-# wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh; cbindgen,
-# spectral-cli and Gradle in ci.yml; rustup in tools/reproduce/Dockerfile;
-# and every image a workflow or composite action pins by digest.
+# wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh; the tool
+# versions written into workflow steps and matrices (cbindgen,
+# spectral-cli, Gradle, uv, zizmor, ty, cargo-fuzz, cargo-deny,
+# cargo-cyclonedx, schemathesis, symfony/process, Spring Boot, Maven,
+# build and setuptools); age in install-age.sh; palantir-java-format in
+# the poms; bun, deno, workerd and the npm overrides in the node
+# manifests; the vendored openssl-sys's upstream; rustup in
+# tools/reproduce/Dockerfile; and every image a workflow or composite
+# action pins by digest. The header of tools/toolchain-watch.mjs lists
+# each with its source.
 # tools/toolchain-watch.mjs compares each against upstream (a release or a
 # push counts once it is seven days old, as dependabot's cooldown does;
 # ghcr.io gives no push time, so a moved ghcr.io tag is reported at once);
