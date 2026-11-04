@@ -134,7 +134,7 @@ struct ServeArgs {
     #[arg(long, value_name = "N")]
     time_limit_ms: Option<NonZeroU64>,
     /// Connections open at once; more wait to be accepted [default: 512]
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = max_connections)]
     max_connections: Option<NonZeroUsize>,
     /// How long a connection may take to send a request head, from accept or from the end of the
     /// last response; then it is closed [default: 30000]
@@ -142,6 +142,17 @@ struct ServeArgs {
     header_timeout_ms: Option<NonZeroU64>,
     #[command(flatten)]
     component: ComponentArg,
+}
+
+/// `--max-connections`: the cap is a semaphore's permits, and
+/// `Semaphore::new` panics above `MAX_PERMITS`, so a larger value is a
+/// usage error rather than a crash at start.
+fn max_connections(s: &str) -> Result<NonZeroUsize, String> {
+    let max = tokio::sync::Semaphore::MAX_PERMITS;
+    match s.parse::<NonZeroUsize>() {
+        Ok(n) if n.get() <= max => Ok(n),
+        _ => Err(format!("expected an integer from 1 to {max}")),
+    }
 }
 
 fn main() {
@@ -738,6 +749,9 @@ mod cli_tests {
             &["serve", "--workers", "0"],
             &["serve", "--time-limit-ms", "0"],
             &["serve", "--max-connections", "0"],
+            // The cap is a tokio semaphore, which holds at most MAX_PERMITS.
+            &["serve", "--max-connections", "2305843009213693952"],
+            &["serve", "--max-connections", "18446744073709551616"],
             &["serve", "--header-timeout-ms", "0"],
             &["verify-receipt", "--max-connections", "1"],
             &["serve", "--now-ms", "1"],
