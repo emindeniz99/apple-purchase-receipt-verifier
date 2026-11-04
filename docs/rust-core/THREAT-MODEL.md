@@ -133,7 +133,7 @@ several times more.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|
-| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
+| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413; at most 512 open connections (`--max-connections`), each closed when it has not sent a complete request head within 30 s of accept or of its last response (`--header-timeout-ms`) |
 | wasmtime-py, the Ruby gem, Wasmtime .NET | Wasmtime's store limits, available in each binding; Phase 5 sets the server's 256 MiB and tests it | epoch interruption and fuel are Wasmtime features; not exercised in the evidence | one instance per call; the pool bounds the count |
 | wazero (Go) | wazero's memory page limit; Phase 4 sets and tests it | context cancellation; not exercised in the evidence | the pool |
 | JS engines | the engine's limit for a 32-bit memory; workerd's 128 MB isolate, measured in Phase 4 | the platform's own CPU limits | one instance |
@@ -156,6 +156,12 @@ Wasmi bindings ran ([final Python round §4][pyfinal]).
 - **Token.** With a token configured, a request without the right
   `X-Aprv-Token` gets 401 ([aprv-server §1][server]). A server bound
   beyond loopback should always have one.
+- **Connections before the token.** The token is checked once a request
+  head has arrived, so the bounds on a connection without one are the
+  connection cap (512 by default) and the request-head deadline (30 s
+  from accept or from the last response). A peer can hold the server at
+  its cap only by reconnecting, never past the deadline, and cannot run
+  the process out of descriptors (rust/server/README.md, "Limits").
 - **Managed mode** (the Java 8 child): the child binds `127.0.0.1:0`
   whatever `APRV_LISTEN` says, and reports its port on stdout. The parent
   sends a fresh 256-bit `SecureRandom` token as the first stdin line, not

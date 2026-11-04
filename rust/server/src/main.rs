@@ -16,7 +16,7 @@ use runtime::{Instance, Load, Op, Runtime, Verifier};
 use std::io::{BufRead, Read, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// After `--help`: what clap's generated text does not say. The input
 /// length is the module's own: its `init` answer states `max_input_bytes`
@@ -133,6 +133,13 @@ struct ServeArgs {
     /// The guest time limit per call [default: 10000]
     #[arg(long, value_name = "N")]
     time_limit_ms: Option<NonZeroU64>,
+    /// Connections open at once; more wait to be accepted [default: 512]
+    #[arg(long, value_name = "N")]
+    max_connections: Option<NonZeroUsize>,
+    /// How long a connection may take to send a request head, from accept or from the end of the
+    /// last response; then it is closed [default: 30000]
+    #[arg(long, value_name = "N")]
+    header_timeout_ms: Option<NonZeroU64>,
     #[command(flatten)]
     component: ComponentArg,
 }
@@ -475,6 +482,14 @@ fn serve(o: ServeArgs) -> i32 {
     info["token_required"] = token.is_some().into();
     let open = token.is_none();
     let lifecycle = verifier.lifecycle_name();
+    let limits = http::Limits {
+        header_timeout: o
+            .header_timeout_ms
+            .map_or(http::HEADER_TIMEOUT, |n| Duration::from_millis(n.get())),
+        max_connections: o
+            .max_connections
+            .map_or(http::MAX_CONNECTIONS, NonZeroUsize::get),
+    };
     let app = Arc::new(http::App {
         verifier: Arc::new(verifier),
         permits: Arc::new(tokio::sync::Semaphore::new(workers)),
@@ -513,9 +528,7 @@ fn serve(o: ServeArgs) -> i32 {
         // One line on stdout, flushed: a managed parent reads the port here.
         println!("APRV_LISTEN={addr}");
         let _ = std::io::stdout().flush();
-        if let Err(e) = axum::serve(listener, http::router(app)).with_graceful_shutdown(shutdown()).await {
-            return die(e);
-        }
+        http::serve(listener, http::router(app), limits, shutdown()).await;
         EXIT_OK
     })
 }
@@ -672,6 +685,10 @@ mod cli_tests {
                 "2",
                 "--time-limit-ms",
                 "5",
+                "--max-connections",
+                "64",
+                "--header-timeout-ms",
+                "1000",
                 "--component",
                 "c.wasm",
             ][..],
@@ -720,6 +737,9 @@ mod cli_tests {
             &["serve", "--managed", "--token-file", "t"],
             &["serve", "--workers", "0"],
             &["serve", "--time-limit-ms", "0"],
+            &["serve", "--max-connections", "0"],
+            &["serve", "--header-timeout-ms", "0"],
+            &["verify-receipt", "--max-connections", "1"],
             &["serve", "--now-ms", "1"],
             &["verify-receipt", "--now-ms", "-1"],
             // WIT `now-ms` is an `s64` (ABI 0.2.0): above i64::MAX is refused.

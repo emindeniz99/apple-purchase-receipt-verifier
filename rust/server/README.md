@@ -36,6 +36,8 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--lifecycle pool\|fresh` | serve | `pool` (default): instances are kept, one request at a time each, at most one per worker, and one that trapped or broke the interface is destroyed, never reused. `fresh`: a new store, instance and `init` per request. The default follows DECISIONS.md R23: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4 times a pooled call (`docs/evidence/2026-09-29-init-cost.md`) |
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
+| `--max-connections N` | serve | Connections open at once; at the cap the server stops accepting and further connections wait in the listen backlog. Default 512 |
+| `--header-timeout-ms N` | serve | How long a connection may take to send a complete request head, from accept and again from the end of each response; then it is closed unanswered. Default 30,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
 
 `aprv --help` and `aprv <command> --help` print the same, generated from
@@ -186,6 +188,8 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 | Concurrent verifications | a semaphore of `--workers`, default the CPU count; a call holds its worker until the guest call ends, even when the client has gone |
 | Request bodies in flight | four per worker, received or waiting for a worker; a request takes its place before reading the body and gives it back when a worker takes the call |
 | Body deadline | 30 s from admission; a body that has not arrived by then gets 408 and the connection closed |
+| Request-head deadline | 30 s by default (`--header-timeout-ms`), from accept and again from the end of each response, so it is also the keep-alive idle timeout. A connection that has not sent a complete head by then is closed without an answer. It runs before the token check, so a peer without the token cannot hold a connection open longer |
+| Open connections | 512 by default (`--max-connections`). At the cap the server stops accepting until one closes; the kernel's listen backlog holds what arrives meanwhile. Each connection holds one file descriptor, so the process's descriptor limit (`ulimit -n`) must be above the cap |
 
 A trapped instance is discarded in both lifecycles. In the default pool
 an instance that answered normally serves later requests, so its guest
