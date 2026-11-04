@@ -231,17 +231,21 @@ private func fieldMatches(_ actual: Any?, _ expected: Any) -> Bool {
     return sameNumber(actualNumber, expectedNumber)
 }
 
-/// Whether `value` is a JSON boolean. `parseJsonLastWins`, and
-/// `JSONSerialization` on Linux, hand one back as a Swift `Bool`.
-/// `JSONSerialization` on Darwin hands back a `CFBoolean`, and there an
-/// `NSNumber` 0 or 1 passes `as? Bool` and `is Bool` too, so only the
-/// CoreFoundation type ID tells a boolean from the number.
+/// Whether `value` is a JSON boolean. `parseJsonLastWins` hands one back
+/// as a Swift `Bool`. `JSONSerialization` hands back the shared boolean
+/// `NSNumber` on both platforms, and an `NSNumber` 0 or 1 passes
+/// `as? Bool` too. On Darwin the CoreFoundation type ID tells the two
+/// apart; on Linux, where CoreFoundation is not importable, the boolean is
+/// the one object `NSNumber(value: true)` or `NSNumber(value: false)`
+/// returns.
 func isJsonBool(_ value: Any) -> Bool {
     if type(of: value) == Bool.self { return true }
+    guard let number = value as? NSNumber else { return false }
     #if canImport(Darwin)
-        if let number = value as? NSNumber { return CFGetTypeID(number) == CFBooleanGetTypeID() }
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
+    #else
+        return number === NSNumber(value: true) || number === NSNumber(value: false)
     #endif
-    return false
 }
 
 /// Two JSON numbers by value, nothing rounded through a `Double`. Integers
