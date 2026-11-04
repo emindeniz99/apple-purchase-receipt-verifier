@@ -30,6 +30,7 @@ dependencies = [
  "aprv-surface",
  "aprv-wire",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]

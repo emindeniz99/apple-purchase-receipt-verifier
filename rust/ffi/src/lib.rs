@@ -33,7 +33,10 @@
 //! as long as the handle, and unwind-proof, and getting any of that wrong is
 //! a crash rather than a rejected argument. So the ABI takes the one thing a
 //! fixed clock actually is, a single instant in milliseconds since the Unix
-//! epoch, and a null pointer means the system clock, read once per call.
+//! epoch. A null pointer means the system clock, which the core reads
+//! itself (through `aprv-surface`'s `_by_clock` calls) and only when a call
+//! needs the time, as the Rust `Config` clock is read; this crate keeps no
+//! clock reader of its own.
 //!
 //! # Panics never cross the boundary
 //!
@@ -68,7 +71,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_panics_doc)]
 
-use aprv_surface::{Environment, Failure, JsonPayload, Reason, Verifier};
+use aprv_surface::{Environment, Failure, JsonPayload, Reason, ReceiptPayload, Verifier};
 use std::ffi::{c_char, CStr, CString};
 use std::sync::OnceLock;
 
@@ -200,21 +203,32 @@ pub struct AprvVerifier {
     fixed_now: Option<i64>,
 }
 
+/// Each call at the pinned instant, or, with none pinned, at the system
+/// clock, which the core reads only when the call needs the time.
 impl AprvVerifier {
-    /// The instant of one call: the pinned one, or the system clock read
-    /// now, once.
-    fn now_ms(&self) -> i64 {
-        self.fixed_now.unwrap_or_else(system_millis)
+    fn verify_receipt(&self, input: &[u8]) -> Result<ReceiptPayload, Failure> {
+        match self.fixed_now {
+            Some(now_ms) => self.inner.verify_receipt(input, now_ms),
+            None => self.inner.verify_receipt_by_clock(input),
+        }
     }
-}
 
-/// The system clock in milliseconds since the Unix epoch; negative before
-/// it, and saturated at the ends of `i64`, which no clock reaches.
-fn system_millis() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(after) => i64::try_from(after.as_millis()).unwrap_or(i64::MAX),
-        Err(before) => i64::try_from(before.duration().as_millis()).map_or(i64::MIN, |ms| -ms),
+    fn verify_signed_data(&self, input: &[u8]) -> Result<JsonPayload, Failure> {
+        match self.fixed_now {
+            Some(now_ms) => self.inner.verify_signed_data(input, now_ms),
+            None => self.inner.verify_signed_data_by_clock(input),
+        }
+    }
+
+    fn verify_receipt_endpoint(&self, environment: Environment, body: &[u8]) -> String {
+        match self.fixed_now {
+            Some(now_ms) => self
+                .inner
+                .verify_receipt_endpoint(environment, body, now_ms),
+            None => self
+                .inner
+                .verify_receipt_endpoint_by_clock(environment, body),
+        }
     }
 }
 
@@ -532,8 +546,7 @@ pub unsafe extern "C" fn aprv_verify_receipt(
         unsafe {
             call(verifier, receipt_base64, out, |verifier, input| {
                 verifier
-                    .inner
-                    .verify_receipt(input.as_bytes(), verifier.now_ms())
+                    .verify_receipt(input.as_bytes())
                     .map(|payload| aprv_wire::receipt_payload(&payload))
             })
         }
@@ -560,8 +573,7 @@ pub unsafe extern "C" fn aprv_verify_signed_data(
         unsafe {
             call(verifier, jws, out, |verifier, input| {
                 verifier
-                    .inner
-                    .verify_signed_data(input.as_bytes(), verifier.now_ms())
+                    .verify_signed_data(input.as_bytes())
                     .map(JsonPayload::into_json)
             })
         }
@@ -646,10 +658,7 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint(
         };
         // SAFETY: non-null, and a live handle per the contract.
         let verifier = unsafe { &*verifier };
-        let response =
-            verifier
-                .inner
-                .verify_receipt_endpoint(environment, body.as_bytes(), verifier.now_ms());
+        let response = verifier.verify_receipt_endpoint(environment, body.as_bytes());
         // SAFETY: non-null, and a writable `char *` per the contract.
         unsafe { response_json.write(into_c_string(Some(response))) };
         AprvReason::Ok as i32
@@ -680,7 +689,7 @@ pub unsafe extern "C" fn aprv_verify_receipt_bytes(
         // own contract, which is `call_bytes`'s.
         unsafe {
             call_bytes(verifier, receipt_base64, len, out, |verifier, input| {
-                let result = verifier.inner.verify_receipt(input, verifier.now_ms());
+                let result = verifier.verify_receipt(input);
                 let status = result
                     .as_ref()
                     .map_or_else(|failure| reason_code(failure.reason()), |_| 0);
@@ -708,7 +717,7 @@ pub unsafe extern "C" fn aprv_verify_signed_data_bytes(
         // SAFETY: as in `aprv_verify_receipt_bytes`.
         unsafe {
             call_bytes(verifier, jws, len, out, |verifier, input| {
-                let result = verifier.inner.verify_signed_data(input, verifier.now_ms());
+                let result = verifier.verify_signed_data(input);
                 let status = result
                     .as_ref()
                     .map_or_else(|failure| reason_code(failure.reason()), |_| 0);
@@ -790,9 +799,7 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint_bytes(
         };
         // SAFETY: non-null, and a live handle per the contract.
         let verifier = unsafe { &*verifier };
-        let response = verifier
-            .inner
-            .verify_receipt_endpoint(environment, body, verifier.now_ms());
+        let response = verifier.verify_receipt_endpoint(environment, body);
         // SAFETY: non-null, and a writable `char *` per the contract.
         unsafe { response_json.write(into_c_string(Some(response))) };
         AprvReason::Ok as i32
@@ -1244,6 +1251,26 @@ mod tests {
             assert_eq!(status, expected as i32, "at {now}");
             unsafe { aprv_verifier_free(verifier) };
         }
+    }
+
+    /// With no clock pinned, a dateless receipt is judged at the system
+    /// clock. The fixture chain is valid from 2024-01-01 to 2050-01-01, so
+    /// this expects `Ok` only until 2050-01-01; the epoch, or any other
+    /// stand-in for a missing clock, falls outside it.
+    #[test]
+    fn a_null_clock_judges_a_dateless_receipt_at_the_system_clock() {
+        let der = std::fs::read(fixture("generated-0.7/receipt-no-creation-date.der")).unwrap();
+        let root = std::fs::read(fixture("generated-0.7/divergence-receipt-root.der")).unwrap();
+        let base64 = CString::new(base64_encode(&der)).unwrap();
+        let ders = [root.as_ptr()];
+        let lens = [root.len()];
+        let verifier =
+            unsafe { aprv_verifier_new(ders.as_ptr(), lens.as_ptr(), 1, std::ptr::null()) };
+        assert!(!verifier.is_null());
+        let status =
+            unsafe { aprv_verify_receipt(verifier, base64.as_ptr(), std::ptr::null_mut()) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        unsafe { aprv_verifier_free(verifier) };
     }
 
     // --- the rest of the surface -----------------------------------------

@@ -114,6 +114,20 @@ pub use verifier::Verifier;
 #[cfg(doctest)]
 struct VerdictsHaveNoPublicConstructor;
 
+/// [`TrustAnchor::from_der_or_pem`] is the one public way to make an
+/// anchor. Each block below must fail to compile; one that compiles means
+/// a second reader became public again.
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::TrustAnchor::from_der(&[0x30]);
+/// ```
+///
+/// ```compile_fail
+/// let _ = apple_purchase_receipt_verifier::TrustAnchor::from_pem("");
+/// ```
+#[cfg(doctest)]
+struct OneTrustAnchorReader;
+
 /// This library's version, for startup logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -143,9 +157,11 @@ const fn larger(a: usize, b: usize) -> usize {
 /// the configuration's base64 roots with, and a base64 encoder for
 /// building inputs. Built only under the `test-seams` feature, which this
 /// crate's own tests and benchmark turn on through the dev-dependency on
-/// the crate itself: the date reader, the path policy over the OpenSSL
-/// adapter's certificates, the key-use and full-decode seams, the `x5c`
-/// decoder the shared decodeBase64 cases call, and hand-built payloads and
+/// the crate itself, and the fuzz crate turns on for its payload targets:
+/// the date reader, the path policy over the OpenSSL adapter's
+/// certificates, the key-use and full-decode seams, the `x5c` decoder the
+/// shared decodeBase64 cases call, the receipt and JWS payload decoders
+/// with no signature in front of them, and hand-built payloads and
 /// failures. Outside this crate a [`Failure`](crate::Failure),
 /// [`JsonPayload`](crate::JsonPayload) or
 /// [`ReceiptPayload`](crate::ReceiptPayload) comes only from a
@@ -246,5 +262,35 @@ pub mod __internal {
     #[cfg(feature = "test-seams")]
     pub fn decode_x5c_entry(text: &str) -> Result<Vec<u8>, crate::Failure> {
         crate::jws::decode_x5c_entry(text)
+    }
+
+    /// A receipt's signed content (the eContent octets) decoded by the
+    /// production code that runs once a signature has passed, and beside
+    /// it the creation date the chain would be judged at, read from the
+    /// same parse as it is before the signature. No envelope, chain or
+    /// signature is involved, so random bytes reach the decoder.
+    ///
+    /// # Errors
+    /// [`Failure`](crate::Failure) with
+    /// [`Reason::UnreadablePayload`](crate::Reason::UnreadablePayload),
+    /// as for a signed receipt whose content does not parse.
+    #[cfg(feature = "test-seams")]
+    pub fn read_receipt_content(
+        content: &[u8],
+    ) -> (Option<i64>, Result<crate::ReceiptPayload, crate::Failure>) {
+        crate::receipt::read_signed_content(content)
+    }
+
+    /// A JWS payload (the decoded middle segment) read by the production
+    /// code: as before the chain check, then as after the signature has
+    /// passed. No header, chain or signature is involved.
+    ///
+    /// # Errors
+    /// [`Failure`](crate::Failure) with
+    /// [`Reason::UnreadablePayload`](crate::Reason::UnreadablePayload),
+    /// as for a signed payload that is not a JSON object in UTF-8.
+    #[cfg(feature = "test-seams")]
+    pub fn read_jws_payload(bytes: &[u8]) -> Result<crate::JsonPayload, crate::Failure> {
+        crate::jws::read_signed_payload(bytes)
     }
 }

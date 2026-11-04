@@ -2,16 +2,17 @@
 # The corpus parity run (DECISIONS.md R35): put the module in place, run
 # the five corpora through the gem's host code and compare every row byte
 # for byte with the reference rows. The nightly `corpus` job runs it. Rows
-# only: the gem's suite runs in ci.yml against the freshly built module,
-# and the archive's module predates whatever the core and the shared cases
-# changed since its release. docs/evidence/2026-09-29-ruby-host/scripts/g1.sh
+# only: the gem's suite runs in ci.yml against the module built from the
+# same commit. docs/evidence/2026-09-29-ruby-host/scripts/g1.sh
 # is the copy that round recorded its results with (it ran the suite too).
 #
 #   sh ruby/tools/g1.sh <g1-dir> [<work-dir>]
 #
-# <g1-dir> has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
-# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
-# rows/module-<corpus>.jsonl and same.py. <work-dir> (default: a fresh
+# <g1-dir> is the directory tools/corpus.sh g1 assembles (the nightly's
+# corpus-reference job): aprv.wasm, aprv.component.wasm and aprv.wit built
+# from the commit, with the SHA256SUMS over them, the pinned
+# calls/<corpus>.pinned.jsonl, rows/module-<corpus>.jsonl derived from that
+# module, and same.py. <work-dir> (default: a fresh
 # temporary directory) receives the gem's rows. The gem's bundle (ruby/Gemfile)
 # must be installed. .github/scripts/place-module.sh checks <g1-dir> against
 # its SHA256SUMS and puts the module in the gem's ignored path, rewriting

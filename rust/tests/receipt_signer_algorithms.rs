@@ -14,7 +14,7 @@
 
 mod common;
 
-use apple_purchase_receipt_verifier::{Config, Reason, TrustAnchor, Verifier};
+use apple_purchase_receipt_verifier::{Config, Reason, Verifier};
 use common::mint::SigningKey;
 use common::mint::{
     certificate, certificate_for_spki, key, name, RECEIPT_SIGNER_MARKER, WWDR_MARKER,
@@ -85,7 +85,7 @@ fn pki_with(signer_spki: Option<Vec<u8>>) -> Pki {
         Some(RECEIPT_SIGNER_MARKER),
     );
     let config = Config::builder()
-        .roots([TrustAnchor::from_der(&root).unwrap()])
+        .roots([common::anchor_from_der(&root)])
         .clock(|| NOW)
         .build()
         .unwrap();
@@ -583,7 +583,7 @@ fn every_certificate_signature_algorithm_openssl_verifies_is_accepted() {
         Certificate::from_der(&assemble(tbs, algorithm, &signature)).unwrap()
     };
     let authenticated = |root: &[u8], certificate: &Certificate| {
-        let roots = [TrustAnchor::from_der(root).unwrap()];
+        let roots = [common::anchor_from_der(root)];
         path::authenticated_top_down(std::slice::from_ref(certificate), &roots).len() == 1
     };
 

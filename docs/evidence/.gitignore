@@ -1,0 +1,13 @@
+# Spike lockfiles stay out of git: README.md, "What stays out".
+Cargo.lock
+go.sum
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
+uv.lock
+poetry.lock
+Gemfile.lock
+composer.lock
+packages.lock.json
+Package.resolved

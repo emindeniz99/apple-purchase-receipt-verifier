@@ -104,18 +104,30 @@ use apple_purchase_receipt_verifier::{Config, TrustAnchor};
 let config = Config::default(); // Apple's three roots, the system clock
 
 let pinned = Config::builder()
-    .roots([TrustAnchor::from_der(&root_der)?]) // replaces the defaults
-    .clock(|| 1_735_689_600_000)                  // epoch milliseconds
+    .roots(TrustAnchor::from_der_or_pem(&root_bytes)?) // replaces the defaults
+    .clock(|| 1_735_689_600_000)                         // epoch milliseconds
     .build()?;
 ```
 
 An empty root set is a `ConfigError` from `build()`, never a verdict: a
 verifier with no roots would reject everything, and nobody would notice
 until production. So is a `TrustAnchor` whose bytes are not a certificate.
-`TrustAnchor::from_der_or_pem(&bytes)` reads bytes in either encoding,
-told apart by the bytes, and returns every certificate a PEM bundle holds;
-it is how the module's `init` reads each root. PEM goes through OpenSSL's
-reader, as does `TrustAnchor::from_pem`.
+`TrustAnchor::from_der_or_pem(&bytes)` is the one way to make an anchor.
+It reads bytes in either encoding, told apart by the bytes, and returns
+every certificate a PEM bundle holds, so its `Vec` goes straight into
+`roots(...)`; it is how the module's `init` reads each root. PEM goes
+through OpenSSL's reader. `TrustAnchor::from_der` and
+`TrustAnchor::from_pem` are gone: `from_pem` kept only the first
+certificate of a bundle without saying so.
+
+Pin roots only. An anchor must be a root above Apple's WWDR intermediate,
+because the receipt's marker check looks for the intermediate below the
+anchor and a JWS path is always leaf, `x5c[1]`, anchor. An anchor that is
+the intermediate, or anything below it, never verifies a receipt or a
+JWS. Pinned beside its root, the intermediate makes the order of the roots
+matter: after the root it changes nothing; before it, a genuine receipt or
+JWS is refused, and the reason given depends on the order. Every such case
+fails closed.
 
 At startup, prefer `Config::builder().build()?` to `Config::default()`,
 even with nothing to set: it reports bundled roots that did not load as a
@@ -135,6 +147,18 @@ The defaults have one spelling, the `Default` trait. 0.7's
 
 The first two return `Result<_, Failure>`. The endpoint never fails: the
 Apple status code is a field of the body, for every input.
+
+Each method comes in two forms. The plain one reads the `Config` clock when
+it needs the time; the `_at` one takes the time as its last argument, epoch
+milliseconds, and never reads the clock. At the same instant they give the
+same answer. A `_bytes` variant of each takes the input as `&[u8]`.
+
+```rust
+let verifier = Verifier::new(config);
+let by_clock = verifier.verify_receipt(&receipt_base64);               // the Config clock
+let at_instant = verifier.verify_receipt_at(&receipt_base64, 1_735_689_600_000);
+let body = verifier.verify_receipt_endpoint_at(Environment::Sandbox, &request, 1_735_689_600_000);
+```
 
 `VERSION` is the library version; `AppleStatus` holds Apple's `verifyReceipt`
 status codes as constants.
@@ -243,8 +267,9 @@ into different byte strings that carry the same signed content.
 
 ## The clock
 
-`Config`'s clock is read at most once per call, and only when one of these
-needs it, after the input has passed every check that comes before:
+`Config`'s clock, or the `now_ms` of an `_at` method, is read at most once
+per call, and only when one of these needs it, after the input has passed
+every check that comes before:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
@@ -358,9 +383,10 @@ denial-of-service cases pin this with a time budget, and the tests assert it
 directly through a seam that records every key used. The seam compiles only
 under the `test-seams` feature, which the crate's own tests turn on through
 a dev-dependency on the crate itself, so a plain `cargo test` runs them. The
-same feature gates the rest of `__internal` that only tests use (the date
-reader, the path policy, the `x5c` decoder, hand-built payloads and
-failures); without it, `__internal` holds only the input length, the
+same feature gates the rest of `__internal` that only tests and fuzz
+targets use (the date reader, the path policy, the `x5c` decoder, the
+payload decoders with no signature in front of them, hand-built payloads
+and failures); without it, `__internal` holds only the input length, the
 `receipt-data` decoder and a base64 encoder that the workspace's other
 crates and the fuzz targets use.
 

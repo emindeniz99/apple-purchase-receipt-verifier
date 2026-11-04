@@ -8,7 +8,7 @@
 mod common;
 
 use apple_purchase_receipt_verifier::__internal::base64_encode;
-use apple_purchase_receipt_verifier::{AppleStatus, Environment, Reason, TrustAnchor, Verifier};
+use apple_purchase_receipt_verifier::{AppleStatus, Environment, Reason, Verifier};
 use common::pki::{
     self, basic_constraints, bc_sign, bc_signed, extension, key_usage, marker, name, now_rfc3339,
     payload_now, random_rsa_spki, receipt_payload, rsa_label, rsa_spki_with_parameters, timed,
@@ -64,7 +64,7 @@ fn material() -> &'static Material {
             None,
             None,
         );
-        let verifier = common::verifier([TrustAnchor::from_der(&root).unwrap()]);
+        let verifier = common::verifier([common::anchor_from_der(&root)]);
         let test_pki = Pki::receipt();
         let test_pki_verifier = test_pki.verifier();
         Material {

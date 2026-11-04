@@ -262,6 +262,25 @@ If Socket still reports the old path from a cached scan, the alert can be
 marked acceptable: dev-time tool, path unreachable from `jco transpile`,
 nothing of it in the tarball.
 
+## `minimatch` alert (Dependabot, GHSA-g3hv-75wg-m249)
+
+`minimatch` before 11.0.1 lets a crafted glob pattern grow its
+preprocessing quadratically (CPU and memory). It came in as
+`@bytecodealliance/jco@1.39.0` → `@bytecodealliance/jco-std@0.9.0` →
+`minimatch@10.2.6`, pinned exactly; jco 1.41.0 and jco-std 0.10.0, the
+latest on 2026-11-03, pin the same version, and 10.x has no fix.
+
+- **Not shipped.** jco is a devDependency, as above.
+- **Not reached by our build.** jco-std uses it only in its WASI path
+  implementation, which `jco transpile` does not load.
+- **Override.** 11.0.4 keeps the same ESM entry point; its engines drop
+  Node 18 only. `package.json` pins it with `"minimatch": "11.0.4"` in
+  `overrides`. `jco transpile` of one component gave byte-identical
+  `src/generated/` before and after (2026-11-03), and `npm audit`
+  reports 0 vulnerabilities.
+
+Remove the override when jco-std depends on `minimatch` 11.0.1 or later.
+
 ## Phase 7
 
 `node/certs`, `src/roots-data.ts` and `scripts/gen-roots.mjs` are gone:

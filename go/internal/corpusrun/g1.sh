@@ -1,15 +1,16 @@
 #!/bin/sh
 # The corpus parity run (DECISIONS.md R35): check the module, then run the
 # five corpora through the host layer and compare every row with the
-# reference rows. Rows only: the suite runs in ci.yml against the freshly
-# built module, and the archive's module predates whatever the core and the
-# shared cases changed since its release.
+# reference rows. Rows only: the suite runs in ci.yml against the module
+# built from the same commit.
 #
 #   g1.sh G1_DIR [WORK_DIR]
 #
-# G1_DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
-# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
-# rows/module-<corpus>.jsonl and same.py. .github/scripts/place-module.sh
+# G1_DIR is the directory tools/corpus.sh g1 assembles (the nightly's
+# corpus-reference job): aprv.wasm, aprv.component.wasm and aprv.wit built
+# from the commit, with the SHA256SUMS over them, the pinned
+# calls/<corpus>.pinned.jsonl, rows/module-<corpus>.jsonl derived from that
+# module, and same.py. .github/scripts/place-module.sh
 # checks G1_DIR against its SHA256SUMS and copies the module over the
 # committed internal/wasm/aprv.wasm, rewriting aprv.wasm.sha256 in this
 # checkout. Both are for this run only and never committed: the release

@@ -4,16 +4,19 @@
 # corpus through the Endive engine on one and on four threads; with a server
 # binary, also the corpus through the server engine, and with JAVA8 that
 # engine on Java 8. Rows only: the suite, the cases on each JDK and the
-# Java 8 leg run in ci.yml against the freshly built module, and the
-# archive's module predates whatever the core and the shared cases changed
-# since its release; scripts/bench.sh times the engine on its own.
+# Java 8 leg run in ci.yml against the module built from the same commit;
+# scripts/bench.sh times the engine on its own.
 #
 #   g1.sh G1_DIR OUT_DIR
 #
-# G1_DIR has the corpus archive's layout: aprv.wasm, aprv.component.wasm and
-# aprv.wit with the SHA256SUMS over them, calls/<corpus>.pinned.jsonl,
-# rows/module-<corpus>.jsonl. The module must hash to the pin committed in
-# src/main/wasm/aprv.wasm.sha256; .github/scripts/place-module.sh then checks
+# G1_DIR is the directory tools/corpus.sh g1 assembles (the nightly's
+# corpus-reference job): aprv.wasm, aprv.component.wasm and aprv.wit built
+# from the commit, with the SHA256SUMS over them, the pinned
+# calls/<corpus>.pinned.jsonl and rows/module-<corpus>.jsonl derived from
+# that module. The module must hash to the pin in
+# src/main/wasm/aprv.wasm.sha256, which the nightly rewrites for its own
+# checkout because the committed pin lags main between releases;
+# .github/scripts/place-module.sh then checks
 # G1_DIR against its SHA256SUMS and puts the module in
 # src/main/wasm/aprv.wasm, which git ignores, for this run only (the release
 # tooling refreshes the pin). Build tooling settings, not the library's:

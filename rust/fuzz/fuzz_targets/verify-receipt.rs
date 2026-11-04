@@ -45,7 +45,7 @@ fn verifiers() -> &'static (Verifier, Verifier) {
     static VERIFIERS: OnceLock<(Verifier, Verifier)> = OnceLock::new();
     VERIFIERS.get_or_init(|| {
         let mut trusted = Config::default().roots().to_vec();
-        trusted.push(TrustAnchor::from_der(RECEIPT_ROOT).expect("fixture root"));
+        trusted.extend(TrustAnchor::from_der_or_pem(RECEIPT_ROOT).expect("fixture root"));
         let build = |roots: Vec<TrustAnchor>| {
             Verifier::new(
                 Config::builder()
@@ -55,7 +55,7 @@ fn verifiers() -> &'static (Verifier, Verifier) {
                     .expect("a non-empty anchor set"),
             )
         };
-        let unrelated = vec![TrustAnchor::from_der(JWS_ROOT).expect("fixture root")];
+        let unrelated = TrustAnchor::from_der_or_pem(JWS_ROOT).expect("fixture root");
         (build(trusted), build(unrelated))
     })
 }

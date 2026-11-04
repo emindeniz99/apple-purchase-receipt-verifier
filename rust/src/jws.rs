@@ -140,12 +140,16 @@ pub(crate) fn verify(
         ));
     }
     // Split as bytes: input that is not UTF-8 is judged by the same rules,
-    // and cannot be canonical base64url.
-    let parts: Vec<&[u8]> = jws.split(|byte| *byte == b'.').collect();
-    let [header_b64, payload_b64, signature_b64] = parts.as_slice() else {
+    // and cannot be canonical base64url. At most four parts are taken, so
+    // a string of dots allocates nothing in proportion to it; the refusal
+    // counts the segments without collecting them.
+    let mut parts = jws.splitn(4, |byte| *byte == b'.');
+    let (Some(header_b64), Some(payload_b64), Some(signature_b64), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        let segments = jws.split(|byte| *byte == b'.').count();
         return Err(malformed(format!(
-            "expected 3 dot-separated segments, got {}",
-            parts.len()
+            "expected 3 dot-separated segments, got {segments}"
         )));
     };
     // Strict, not lenient: a lenient reading would give one Apple-signed
@@ -180,8 +184,9 @@ pub(crate) fn verify(
     };
     validate_pair(&leaf, &intermediate, anchors, at_millis)?;
     // The marker OIDs after the chain, as on the receipt path: a foreign
-    // chain is UNTRUSTED_CHAIN whatever it carries, and only a pinned chain can be the wrong kind of Apple
-    // certificate. Still before the leaf's key checks the JWS signature.
+    // chain is UNTRUSTED_CHAIN whatever it carries, and only a pinned chain
+    // can be the wrong kind of Apple certificate. This still runs before
+    // the leaf's key checks the JWS signature.
     if !leaf.has_extension(SIGNING_LEAF_OID) {
         return Err(Failure::new(
             Reason::InvalidCertificatePurpose,
@@ -195,6 +200,11 @@ pub(crate) fn verify(
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
+    signed_payload(payload)
+}
+
+/// The verdict on a payload whose signature passed.
+fn signed_payload(payload: Result<ReadPayload, Unreadable>) -> Result<JsonPayload, Failure> {
     match payload {
         Ok(read) => Ok(JsonPayload {
             json: read.json,
@@ -206,6 +216,15 @@ pub(crate) fn verify(
         )
         .with_source(err)),
     }
+}
+
+/// A decoded payload segment read as [`verify`] reads it, with no header,
+/// chain or signature around it: read once, as it is before the chain, and
+/// returned as it is after the signature passes. The payload fuzz target's
+/// way past a signature it cannot forge.
+#[cfg(feature = "test-seams")]
+pub(crate) fn read_signed_payload(bytes: &[u8]) -> Result<JsonPayload, Failure> {
+    signed_payload(read_payload(bytes))
 }
 
 /// The last `alg` string and the last `x5c` array of strings, as a map

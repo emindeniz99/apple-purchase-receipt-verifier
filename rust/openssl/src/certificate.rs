@@ -173,6 +173,12 @@ impl Certificate {
     /// the issuer's key (`X509_verify`, which also requires the two
     /// signature `AlgorithmIdentifier`s to agree). The issuer's key is
     /// built only once the names match.
+    ///
+    /// The pairing rule of the core's top-down walk
+    /// (`authenticated_top_down` in `rust/src/path.rs`). The adapter's own
+    /// walk, `linked_above` in `path.rs`, pairs with
+    /// `Certificate::signed_by` instead; the two rules differ on purpose
+    /// (REVIEW-LOG.md §11.3), and merging the walks is left for later.
     #[must_use]
     pub fn issued_by(&self, issuer: &Certificate) -> bool {
         init();
@@ -199,6 +205,13 @@ impl Certificate {
     /// identifiers are not judged here; OpenSSL judges them on the path it
     /// builds and reports what fails. The issuer's key is built only once
     /// the names match.
+    ///
+    /// The pairing rule of the adapter's walk (`linked_above` in
+    /// `path.rs`), the second of two top-down walks after the core's
+    /// `authenticated_top_down`, which pairs with
+    /// [`Certificate::issued_by`]. Judging `keyUsage` here too would drop
+    /// the "not a CA" report OpenSSL gives for such an issuer
+    /// (REVIEW-LOG.md §11.3); merging the walks is left for later.
     #[must_use]
     pub(crate) fn signed_by(&self, issuer: &Certificate) -> bool {
         init();

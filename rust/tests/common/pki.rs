@@ -755,7 +755,7 @@ impl Pki {
     }
 
     pub fn anchor(&self) -> TrustAnchor {
-        TrustAnchor::from_der(&self.root).unwrap()
+        super::anchor_from_der(&self.root)
     }
 
     /// A verifier pinned to this root alone, on the system clock.

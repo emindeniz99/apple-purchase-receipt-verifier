@@ -279,19 +279,26 @@ impl Walker {
 fn size_of_value(input: &[u8]) -> Option<usize> {
     let mut walker = Walker {
         nodes_left: usize::MAX,
-        // Deeper than any bound a caller walks with, so a value a walk
-        // accepted is measured; the recursion stays bounded.
-        max_depth: 256,
+        max_depth: HELPER_DEPTH,
         headers: Headers::Ber,
         primitive: None,
     };
     walker.value(input, 0, 0).ok()
 }
 
+/// How deep the helpers below go on their own: constructed values nested
+/// inside one another, as [`Budget::depth`] counts them. They are meant for
+/// input a walk has accepted, and this is deeper than any bound a caller
+/// walks with (the core's is 32), so every such value is read as before;
+/// on any other input the recursion still stops here rather than relying
+/// on a walk having run first.
+const HELPER_DEPTH: usize = 256;
+
 /// The values inside the constructed value at the start of `input`, each as
 /// its whole encoding, in order. `None` when `input` does not start with a
 /// constructed value, or one of them is not a value. Meant for input a walk
-/// has accepted: an indefinite-length child is measured by walking it.
+/// has accepted: an indefinite-length child is measured by walking it, no
+/// deeper than [`HELPER_DEPTH`], so a child nested deeper is `None`.
 pub(crate) fn children(input: &[u8]) -> Option<Vec<&[u8]>> {
     let outer = header(input)?;
     if !outer.constructed {
@@ -341,8 +348,13 @@ pub(crate) fn octet_string_exact(input: &[u8]) -> Result<(), ChunkError> {
 /// The encoded size of the `OCTET STRING` at the start of `input`, when its
 /// chunks at every depth are `OCTET STRING`s. Every chunk consumes at least
 /// two octets, so the walk is bounded by the input's length, and its depth
-/// by the walk that accepted the input.
+/// by [`HELPER_DEPTH`]: a string nested deeper is `Malformed`.
 pub(crate) fn octet_string(input: &[u8]) -> Result<usize, ChunkError> {
+    octet_string_within(input, HELPER_DEPTH)
+}
+
+/// [`octet_string`] with `depth_left` constructed levels still allowed.
+fn octet_string_within(input: &[u8], depth_left: usize) -> Result<usize, ChunkError> {
     let string = header(input).ok_or(ChunkError::Malformed)?;
     if string.tag != ffi::V_ASN1_OCTET_STRING || string.class != sys::V_ASN1_UNIVERSAL {
         return Err(ChunkError::Foreign);
@@ -350,6 +362,8 @@ pub(crate) fn octet_string(input: &[u8]) -> Result<usize, ChunkError> {
     if !string.constructed {
         return Ok(string.definite_size());
     }
+    // This constructed string is one level; its chunks get one fewer.
+    let depth_left = depth_left.checked_sub(1).ok_or(ChunkError::Malformed)?;
     let mut at = string.head;
     if string.indefinite {
         loop {
@@ -357,12 +371,57 @@ pub(crate) fn octet_string(input: &[u8]) -> Result<usize, ChunkError> {
             if rest.starts_with(&[0, 0]) {
                 return Ok(at + 2);
             }
-            at += octet_string(rest)?;
+            at += octet_string_within(rest, depth_left)?;
         }
     }
     let end = string.definite_size();
     while at < end {
-        at += octet_string(input.get(at..end).ok_or(ChunkError::Malformed)?)?;
+        at += octet_string_within(input.get(at..end).ok_or(ChunkError::Malformed)?, depth_left)?;
     }
     Ok(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{children, octet_string, ChunkError, HELPER_DEPTH};
+
+    /// An `OCTET STRING` of `levels` constructed, indefinite-length levels
+    /// around one empty primitive chunk.
+    fn nested_octet_string(levels: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        for _ in 0..levels {
+            out.extend([0x24, 0x80]);
+        }
+        out.extend([0x04, 0x00]);
+        for _ in 0..levels {
+            out.extend([0x00, 0x00]);
+        }
+        out
+    }
+
+    /// The helpers bound their own recursion: input no walk has accepted
+    /// stops at `HELPER_DEPTH` levels, and anything within it reads as
+    /// before.
+    #[test]
+    fn the_helpers_stop_at_their_own_depth_bound() {
+        crate::init();
+        let within = nested_octet_string(HELPER_DEPTH);
+        assert_eq!(octet_string(&within), Ok(within.len()));
+        let deeper = nested_octet_string(HELPER_DEPTH + 1);
+        assert_eq!(octet_string(&deeper), Err(ChunkError::Malformed));
+        let far = nested_octet_string(100_000);
+        assert_eq!(octet_string(&far), Err(ChunkError::Malformed));
+
+        let sequence = |child: &[u8]| {
+            let mut out = vec![0x30, 0x80];
+            out.extend_from_slice(child);
+            out.extend([0x00, 0x00]);
+            out
+        };
+        // A child is walked on its own, so the SEQUENCE around it is not
+        // one of its levels: the bound is the child's own nesting.
+        assert_eq!(children(&sequence(&within)), Some(vec![within.as_slice()]));
+        assert_eq!(children(&sequence(&deeper)), None);
+        assert_eq!(children(&sequence(&far)), None);
+    }
 }
