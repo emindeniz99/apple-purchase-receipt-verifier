@@ -303,6 +303,9 @@ class ServerHttpTest {
             assertEquals(callers, server.connections.get(), "a kept connection served the next call");
             assertEquals(0, server.closedByClient.availablePermits(), "a kept connection was closed");
             connection.close();
+            assertTrue(
+                    server.closedByClient.tryAcquire(maxIdle, 10, TimeUnit.SECONDS),
+                    "close() closed the kept connections");
             assertEquals(0, connection.idle());
         }
     }
