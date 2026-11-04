@@ -23,7 +23,11 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 mvn -B -f "$repo_root/java/pom.xml" package -DskipTests
+# The guard puts the main artifact's BouncyCastle jars beside it, at the
+# version java/pom.xml pins (the only copy, the one Dependabot moves).
+bouncycastle="$(mvn -q -f "$repo_root/java/pom.xml" help:evaluate -Dexpression=bouncycastle.version -DforceStdout)"
 mvn -B -f "$repo_root/java-wasm/pom.xml" verify -Pclasspath-guard \
+  -Dbouncycastle.version="$bouncycastle" \
   -Dtest=NONE -Dsurefire.failIfNoSpecifiedTests=false
 
 deploy="$work/repo"

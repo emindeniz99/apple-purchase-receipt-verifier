@@ -391,9 +391,13 @@
 
     <!-- The two real jars on one classpath (ClasspathGuardJarsIT, after
          package), and the public API compared with the main artifact's.
-         Build the main artifact first:
+         The BouncyCastle jars are the main artifact's, at the version
+         java/pom.xml pins: this pom does not repeat it, so the caller
+         passes it. java-wasm/scripts/classpath-guard.sh does all of this:
            mvn -f java package -DskipTests
-           mvn -f java-wasm verify -Pclasspath-guard -->
+           mvn -f java-wasm verify -Pclasspath-guard \
+             -Dbouncycastle.version="$(mvn -q -f java help:evaluate \
+               -Dexpression=bouncycastle.version -DforceStdout)" -->
     <profile>
       <id>classpath-guard</id>
       <build>
@@ -415,17 +419,17 @@
                     <artifactItem>
                       <groupId>org.bouncycastle</groupId>
                       <artifactId>bcprov-jdk18on</artifactId>
-                      <version>1.86</version>
+                      <version>${bouncycastle.version}</version>
                     </artifactItem>
                     <artifactItem>
                       <groupId>org.bouncycastle</groupId>
                       <artifactId>bcpkix-jdk18on</artifactId>
-                      <version>1.86</version>
+                      <version>${bouncycastle.version}</version>
                     </artifactItem>
                     <artifactItem>
                       <groupId>org.bouncycastle</groupId>
                       <artifactId>bcutil-jdk18on</artifactId>
-                      <version>1.86</version>
+                      <version>${bouncycastle.version}</version>
                     </artifactItem>
                     <artifactItem>
                       <groupId>com.fasterxml.jackson.core</groupId>
