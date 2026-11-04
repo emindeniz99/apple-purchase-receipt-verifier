@@ -2,6 +2,7 @@ package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -9,6 +10,9 @@ import org.jspecify.annotations.Nullable;
  * ({@link ServerSource#url}, a fixed address) or a supervised child
  * ({@link ServerProcess}). Keeps a pool of keep-alive connections, one
  * request at a time on each, so calls on several threads run in parallel.
+ * At most {@code maxIdle} connections are kept between calls, as
+ * {@link GuestPool} keeps instances; one returned past that is closed, so a
+ * burst of callers does not leave a socket open per caller on both sides.
  *
  * <p>A request whose connection fails is sent again, up to three times in
  * all: a keep-alive connection the server closed is replaced, and a child
@@ -27,25 +31,38 @@ final class ServerConnection {
     private final HttpConn.@Nullable Target fixed;
     private final @Nullable ServerProcess process;
     private final String description;
+    private final int maxIdle;
     private final ConcurrentLinkedQueue<HttpConn> idle = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger idleCount = new AtomicInteger();
     private volatile boolean closed;
     /** The module's {@code max_input_bytes}, as {@code GET /v1/info} stated it; 0 until it is read. */
     private volatile int maxInputBytes;
 
-    private ServerConnection(HttpConn.@Nullable Target fixed, @Nullable ServerProcess process, String description) {
+    private ServerConnection(
+            HttpConn.@Nullable Target fixed, @Nullable ServerProcess process, String description, int maxIdle) {
         this.fixed = fixed;
         this.process = process;
         this.description = description;
+        this.maxIdle = maxIdle;
+    }
+
+    /** The idle connections kept by default: the CPU count, at least two, as for {@link GuestPool}. */
+    private static int defaultMaxIdle() {
+        return Math.max(2, Runtime.getRuntime().availableProcessors());
     }
 
     static ServerConnection fixed(HttpConn.Target target, String description) {
-        return new ServerConnection(target, null, description);
+        return fixed(target, description, defaultMaxIdle());
+    }
+
+    static ServerConnection fixed(HttpConn.Target target, String description, int maxIdle) {
+        return new ServerConnection(target, null, description, maxIdle);
     }
 
     /** Starts the child now, so a start failure belongs to the source that named it. */
     static ServerConnection managed(ServerProcess process, String description) {
         process.target();
-        return new ServerConnection(null, process, description);
+        return new ServerConnection(null, process, description, defaultMaxIdle());
     }
 
     String description() {
@@ -90,19 +107,17 @@ final class ServerConnection {
                 throw new ServerProcessFailure("the server engine was closed");
             }
             HttpConn.Target target = process != null ? process.target() : fixed;
-            HttpConn conn = idle.poll();
+            HttpConn conn = takeIdle();
             while (conn != null && conn.target != target) {
                 conn.close(); // a connection to a child that has since been replaced
-                conn = idle.poll();
+                conn = takeIdle();
             }
             try {
                 if (conn == null) {
                     conn = new HttpConn(target, CONNECT_TIMEOUT_MILLIS, READ_TIMEOUT_MILLIS);
                 }
                 HttpConn.Response response = conn.exchange(method, path, body, nowMs);
-                if (conn.reusable() && !closed) {
-                    idle.add(conn);
-                } else {
+                if (!conn.reusable() || closed || !keepIdle(conn)) {
                     conn.close();
                 }
                 return response;
@@ -120,11 +135,35 @@ final class ServerConnection {
                 "aprv-server (" + description + ") did not answer " + method + " " + path + ": " + last, last);
     }
 
+    /** How many connections are idle now, for tests. */
+    int idle() {
+        return idleCount.get();
+    }
+
+    @Nullable
+    private HttpConn takeIdle() {
+        HttpConn conn = idle.poll();
+        if (conn != null) {
+            idleCount.decrementAndGet();
+        }
+        return conn;
+    }
+
+    /** Keeps {@code conn} for a later call, unless {@code maxIdle} are kept already. */
+    private boolean keepIdle(HttpConn conn) {
+        if (idleCount.incrementAndGet() <= maxIdle) {
+            idle.add(conn);
+            return true;
+        }
+        idleCount.decrementAndGet();
+        return false;
+    }
+
     /** Closes the pooled connections and stops the child, if this connection owns one. */
     void close() {
         closed = true;
         HttpConn conn;
-        while ((conn = idle.poll()) != null) {
+        while ((conn = takeIdle()) != null) {
             conn.close();
         }
         if (process != null) {
