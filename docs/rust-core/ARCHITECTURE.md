@@ -827,7 +827,9 @@ Verifier v3 = Verifier.create(config,
   2026-10-04). A classifier cannot replace the main jar: it shares the
   artifact's POM and dependencies, which is why the two implementations
   have two artifactIds. macOS and Windows binaries come from GitHub
-  Releases.
+  Releases, but the jar pins only the two Linux hashes today, so
+  `github()` fails there and a caller uses `download()` with the hash
+  from the release's `SHA256SUMS` (ROADMAP.md).
 - `Config.runtimeProbe` stays in the API. What the `-wasm` artifact probes
   at `create` (the engine instantiating one instance and calling `init`)
   is fixed in Phase 3.
