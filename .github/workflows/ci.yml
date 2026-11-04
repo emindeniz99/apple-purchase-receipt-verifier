@@ -3028,6 +3028,16 @@ jobs:
       # licenses/wasm/ is the one source, and every package that ships the
       # module ships a byte-identical copy.
       - run: node tools/check-licence-copies.mjs
+      # Compiled Python embeds the absolute path it was compiled from, so a
+      # tracked .pyc leaks a local path into history for good (two early
+      # commits did; docs/evidence/README.md). .gitignore keeps
+      # __pycache__/ out, but `git add -f` does not ask it.
+      - name: no compiled Python is tracked
+        run: |
+          if git ls-files -- '*.pyc' '*.pyo' '*__pycache__/*' | grep .; then
+            echo "::error::compiled Python is tracked; remove it with git rm --cached"
+            exit 1
+          fi
 
   zizmor:
     runs-on: ubuntu-latest

@@ -121,7 +121,7 @@ if result.verified?
 else
   result.failure.reason    # a Reason Symbol, e.g. :UNTRUSTED_CHAIN
   result.failure.message   # safe to log, not meant to be parsed
-  result.failure.cause     # the inner exception behind UNREADABLE_PAYLOAD/INTERNAL_ERROR, else nil
+  result.failure.cause     # the exception behind an INTERNAL_ERROR the gem raised (a trap); nil for every module verdict
 end
 ```
 
@@ -512,7 +512,7 @@ runs, not `Config` options.
 | JWS, UTF-8 bytes | 262,144 | `TOO_LARGE` |
 | ASN.1 nesting depth | 32 | `MALFORMED` in the envelope, `UNREADABLE_PAYLOAD` in signed content |
 | Certificates embedded in a receipt | 10 | `MALFORMED` |
-| Chain length below the anchor | 6 certificates | `UNTRUSTED_CHAIN` |
+| Chain length below the anchor | no bound of its own: at most the 10 certificates a receipt embeds, and a JWS `x5c` holds exactly 3 | (none) |
 | SignerInfos in a receipt | 4 | `MALFORMED` |
 
 The gem never copies more of an input into the module's memory than the
@@ -559,7 +559,7 @@ one pull request.
 | `UNTRUSTED_CHAIN` | the chain does not reach a pinned root |
 | `INVALID_CERTIFICATE` | an `x5c`/embedded certificate does not decode, or a certificate on the chain is outside its validity window at the signing instant |
 | `INVALID_CERTIFICATE_PURPOSE` | a certificate on the chain is missing its Apple marker OID |
-| `UNREADABLE_PAYLOAD` | the chain and signature verified, but the signed content does not parse (`failure.cause` is the parser's error) |
+| `UNREADABLE_PAYLOAD` | the chain and signature verified, but the signed content does not parse (`failure.cause` is nil) |
 | `INTERNAL_ERROR` | the library failed before it could decide — not the client's fault: alert and escalate, never retry |
 
 **Order of the checks**, the same for both paths: base64/JWS structure →

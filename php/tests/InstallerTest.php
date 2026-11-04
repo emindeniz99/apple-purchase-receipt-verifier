@@ -188,6 +188,26 @@ final class InstallerTest extends TestCase
         self::assertSame([], $this->server->requests());
     }
 
+    /**
+     * Releases pin only the Linux binaries (php/CI-NOTES.md), so on macOS
+     * the installer must point at the server option, not claim the package
+     * has no release binaries at all.
+     */
+    public function testAPlatformWithNoPinNamesTheServerOption(): void
+    {
+        try {
+            Installer::install($this->sums([self::ASSET => $this->sha256]), $this->installDirectory, $this->server->url, null, false, ['Darwin', 'arm64']);
+            self::fail('SHA256SUMS pins no macOS binary');
+        } catch (InstallException $e) {
+            self::assertSame(InstallException::UNAVAILABLE, $e->exitCode);
+            self::assertStringContainsString('aprv-aarch64-apple-darwin', $e->getMessage());
+            self::assertStringContainsString('HttpTransport', $e->getMessage());
+            self::assertStringNotContainsString('no release binaries', $e->getMessage());
+        }
+        self::assertSame([], $this->installed());
+        self::assertSame([], $this->server->requests());
+    }
+
     /** @return iterable<string, array{string, string, string|null, string|null}> */
     public static function platformProvider(): iterable
     {

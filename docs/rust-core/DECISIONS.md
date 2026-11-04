@@ -1591,6 +1591,10 @@ each engine's runtime probe checks moved to its own `Verifier.create`.
   platforms in the jar would cost about 21.5 MB per release and allow 3 a
   month ([aprv-server §10][server]); two Linux classifiers stay well
   inside.
+- **As built (2026-11-04):** the release writes only the two Linux
+  hashes into the jar's `SHA256SUMS`, so `github()` has no pin for a
+  macOS or Windows asset and fails there. Pinning all six costs no jar
+  size, since the binaries stay on the release; it is a ROADMAP item.
 
 ---
 

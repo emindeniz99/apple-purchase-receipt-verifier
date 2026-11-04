@@ -202,6 +202,14 @@ from the migration:
 - **PHP on macOS and Windows** installs no binary until the release
   publishes those builds' exact files and pins their hashes in
   `php/SHA256SUMS`; until then those platforms use a server URL.
+- **The `-wasm` jar pins only the two Linux binaries.** `release.yml`
+  writes the jar's `SHA256SUMS` from the two musl builds, so `github()`, and
+  the default `Engine.server()` a Java 8 JVM gets, fail on macOS and
+  Windows. The darwin and windows assets come from the same
+  `build-server` run whose files the release publishes, so the jar can
+  pin all six; do it before `APRV_PUBLISH_JAVA_WASM` flips, then restore
+  the macOS and Windows promise in java-wasm/README.md,
+  SUPPORT-MATRIX.md, ARCHITECTURE.md §7.8 and R26.
 - **A guest time limit in the in-process hosts.** Only `aprv-server`
   enforces one (epoch interruption); Wasmtime's hosts could too.
 - **Python's compile time.** Winch halves the compile at half the speed;

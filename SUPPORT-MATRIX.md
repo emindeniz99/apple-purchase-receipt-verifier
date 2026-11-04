@@ -300,8 +300,10 @@ classifier jars, found by `ServerSource.maven()`:
 Both run on any Linux kernel of their architecture, glibc or musl, with no
 loader. The x86_64 jar size is the one lane E built around the 0.7 core's
 component; the aarch64 jar has not been built outside CI. macOS and Windows
-binaries are GitHub Release assets that `ServerSource.github()` downloads
-against a SHA-256 pinned in the jar.
+binaries are GitHub Release assets, but the jar pins only the two Linux
+hashes, so `ServerSource.github()` fails on those platforms; there a caller
+passes `ServerSource.download()` the asset's URL and its SHA-256 from the
+release's `SHA256SUMS`, or uses `executable()` or `url()` (ROADMAP.md).
 
 ## What changes against 0.7.0
 
