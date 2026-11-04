@@ -2937,7 +2937,7 @@ jobs:
         # seven-day cooldown, pinned exactly so this leg never runs a
         # release the cooldown has not looked at (SECURITY.md); bump it by
         # hand.
-        symfony-process: ["8.0.5", "8.1.7"]
+        symfony-process: ["8.0.5", "8.1.10"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
