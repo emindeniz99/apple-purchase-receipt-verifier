@@ -98,7 +98,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
@@ -120,11 +120,11 @@ jobs:
           persist-credentials: false
       # Two JDKs: 8 for the test JVM (exposed as JAVA_HOME_8_X64), then 25
       # last so it wins JAVA_HOME and drives Maven itself.
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '8'
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '25'
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -255,7 +255,7 @@ jobs:
       # The runner-side JDK only compiles; the pom's --release 8 applies to the
       # test sources too, so target/test-classes is major version 52 and loads
       # on every JRE in the matrix.
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '25'
@@ -477,7 +477,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
@@ -529,7 +529,7 @@ jobs:
           host: python
       # setup-uv provisions the interpreter too (uv python install), from
       # python-build-standalone, including the 3.11 floor.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
           python-version: ${{ matrix.python }}
@@ -1072,7 +1072,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1115,7 +1115,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1169,7 +1169,7 @@ jobs:
         with:
           host: ruby
       - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
-        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1202,7 +1202,7 @@ jobs:
         with:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
       - name: python 3.11
@@ -1293,7 +1293,7 @@ jobs:
         with:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
       - name: python 3.11
@@ -1322,7 +1322,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1359,7 +1359,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -1765,7 +1765,7 @@ jobs:
         run: |
           chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
           echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.4"
           extensions: json, curl, posix, pcntl
@@ -1839,7 +1839,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -1909,7 +1909,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: python
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
           python-version: "3.13"
@@ -2041,7 +2041,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2569,7 +2569,7 @@ jobs:
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
           enable-cache: false
@@ -2685,11 +2685,11 @@ jobs:
           (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
       # The JVM under test first (its home is exported as JAVA_HOME_<v>_X64),
       # then JDK 21 last, which wins JAVA_HOME and runs Maven.
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2731,11 +2731,11 @@ jobs:
           .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
           chmod +x "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
           (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '8'
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -2774,7 +2774,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: java
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2812,14 +2812,14 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: java
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
       # The newest Gradle release, on PATH: the capability check is what a
       # current Gradle consumer sees.
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           gradle-version: "9.8.2"
           cache-disabled: true
@@ -2857,7 +2857,7 @@ jobs:
         run: |
           chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
           echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
           extensions: json, curl, posix
@@ -2908,7 +2908,7 @@ jobs:
         run: |
           chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
           echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.2"
           extensions: json, curl, posix
@@ -2950,7 +2950,7 @@ jobs:
         run: |
           chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
           echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.4"
           extensions: json, curl, posix
@@ -3042,7 +3042,7 @@ jobs:
       # pull request red; toolchain-watch reports each newer release once
       # it is seven days old, and moving the pin is when a new audit runs
       # over these workflows.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
       - run: uvx zizmor@1.31.1 .github/workflows/ .github/actions/
@@ -3112,7 +3112,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.6"
           python-version: "3.13"
@@ -3342,7 +3342,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3364,7 +3364,7 @@ jobs:
       # name). HostPolicyProbe then shows the premise on the same JDK: under the
       # same policy the JDK's own PKIX refuses the chain the suite accepted.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -3392,7 +3392,7 @@ jobs:
       # interop tests. Never part of the release: jvm-interop has no
       # release-please entry and no <module> anywhere.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3412,7 +3412,7 @@ jobs:
         run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
       # --- smoke-maven -------------------------------------------------------
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3459,7 +3459,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.4"
           extensions: openssl, json
@@ -3480,7 +3480,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl"
           echo "APRV_BIN=$RUNNER_TEMP/aprv-bin/aprv-x86_64-unknown-linux-musl" >> "$GITHUB_ENV"
       - if: ${{ !cancelled() }}
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: "8.4"
           extensions: json, curl, posix
@@ -3591,7 +3591,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: python
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
       # pip builds a wheel from python/ (aprv.wasm included, as package data)
@@ -3690,7 +3690,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
