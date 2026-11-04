@@ -441,7 +441,7 @@ jobs:
         if: matrix.host == 'swift'
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/w" -v "$G1:/g1:ro" -w /w \
-            swift:6.3@sha256:56ef1be2c1ca36f4c52440357dc1fcdfdb5e113587134fcadeef57c225c71b54 \
+            swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866 \
             sh -euc 'apt-get update -qq && apt-get install -y -qq python3 > /dev/null
                      OUT=/tmp/gate sh swift/scripts/gate.sh /g1 --pin'
 

@@ -1,13 +1,17 @@
-# Watches the build toolchain pins dependabot cannot read: wasi-sdk,
-# wasm-tools, wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh.
-# tools/toolchain-watch.mjs compares each against upstream (a release counts
-# once it is seven days old, as dependabot's cooldown does); when one is
-# behind, this job opens an issue, or comments on the open one. It only
-# reports: moving a pin changes its SHA-256 and the module's bytes, so it is
-# a reviewed commit. A network failure fails the run and files nothing.
+# Watches the pins dependabot cannot read: wasi-sdk, wasm-tools,
+# wit-bindgen and the OpenSSL source in tools/wasm-toolchain.sh; cbindgen,
+# spectral-cli and Gradle in ci.yml; rustup in tools/reproduce/Dockerfile;
+# and every image a workflow or composite action pins by digest.
+# tools/toolchain-watch.mjs compares each against upstream (a release or a
+# push counts once it is seven days old, as dependabot's cooldown does;
+# ghcr.io gives no push time, so a moved ghcr.io tag is reported at once);
+# when one is behind, this job opens an issue, or comments on the open one.
+# It only reports: moving a pin changes a checksum or a digest, and for the
+# toolchain the module's bytes, so it is a reviewed commit. A pin the script
+# cannot find, or a network failure, fails the run and files nothing.
 #
-# rust/rust-toolchain.toml and the Dockerfiles are dependabot's
-# (.github/dependabot.yml).
+# rust/rust-toolchain.toml, the Dockerfiles' base images and the `uses:`
+# actions are dependabot's (.github/dependabot.yml).
 #
 # Scheduled runs happen on the default branch only.
 name: toolchain-watch
@@ -51,7 +55,7 @@ jobs:
           set -e
           cat "$RUNNER_TEMP/toolchain-watch.txt"
           if [ "$status" -eq 2 ]; then
-            echo "::error::toolchain-watch could not read upstream; no issue filed"
+            echo "::error::toolchain-watch could not read a pin or upstream; no issue filed"
             exit 2
           fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
@@ -71,11 +75,11 @@ jobs:
           marker="<!-- toolchain-watch $(sha256sum "$RUNNER_TEMP/toolchain-watch.txt" | cut -c1-64) -->"
           {
             echo "$marker"
-            echo "tools/toolchain-watch.mjs found pins in tools/wasm-toolchain.sh behind upstream ($RUN_URL)."
+            echo "tools/toolchain-watch.mjs found pins that Dependabot does not update behind upstream ($RUN_URL). Each line names the file, then pinned -> available."
             echo
             sed 's/^/    /' "$RUNNER_TEMP/toolchain-watch.txt"
             echo
-            echo 'Move each pin with its SHA-256 in one commit (CONTRIBUTING.md, "Adding or bumping a dependency by hand"), then close this issue.'
+            echo 'Move each pin with its checksum or digest in one commit (CONTRIBUTING.md, "Adding or bumping a dependency by hand"), then close this issue.'
           } > "$body"
           number=$(gh issue list --state open --limit 200 --json number,title \
             --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)

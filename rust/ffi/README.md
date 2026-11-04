@@ -33,7 +33,7 @@ diff, so it cannot drift from the symbols the library exports. Regenerate it
 with the pinned version:
 
 ```bash
-cargo install cbindgen --locked --version 0.29.0
+cargo install cbindgen --locked --version 0.29.4
 cd rust/ffi && cbindgen --config cbindgen.toml \
   --crate apple-purchase-receipt-verifier-ffi \
   --output include/apple_purchase_receipt_verifier.h
@@ -232,7 +232,7 @@ fails if a `#[no_mangle]` function is ever added that does not do it.
   exports; `tests/exported_symbols.rs` reads the built library with `nm`
   (Linux and macOS) and fails on any other symbol, so no Rust, OpenSSL or
   libc symbol reaches a caller's namespace.
-* `check-header.sh` regenerates the header with cbindgen 0.29.0 and fails
+* `check-header.sh` regenerates the header with cbindgen 0.29.4 and fails
   on any difference from the committed one; the unit test
   `the_committed_header_declares_exactly_the_exports` checks the names and
   parameter counts without cbindgen.

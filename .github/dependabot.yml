@@ -1,5 +1,7 @@
-# Keeps the SHA-pinned actions (and the digest-pinned swift container)
-# current — pins without updates just rot. Every ecosystem waits seven days
+# Keeps the SHA-pinned actions and the Dockerfiles' digest-pinned bases
+# current — pins without updates just rot. The workflows' container images
+# and the versions inside scripts and run: steps have no ecosystem here;
+# toolchain-watch.yml reports them. Every ecosystem waits seven days
 # after a release before proposing it, so a version pulled or patched in its
 # first week (the common shape of a hijacked package) never reaches a PR.
 version: 2
