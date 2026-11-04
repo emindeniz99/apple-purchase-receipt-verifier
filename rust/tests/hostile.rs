@@ -310,7 +310,7 @@ fn unsigned_content_of_tiny_attributes_is_refused_at_a_bounded_cost() {
     let encode = apple_purchase_receipt_verifier::__internal::base64_encode;
     // Each tiny input is judged against the flat input of the same size
     // and the same signer, which pays the same base64, decodes and copies
-    // (round-3 review F3; junk, which costs only its base64, made a
+    // (junk, which costs only its base64, made a
     // control whose margin shrank with the optimiser). Without a signer
     // the ratio is near 1 in every build. Under an embedded signer the tiny
     // input also pays the payload walk up to the 100,000-value budget,

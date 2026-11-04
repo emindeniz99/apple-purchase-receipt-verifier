@@ -1002,7 +1002,7 @@ mod tests {
 
     #[test]
     fn anchor_lengths_over_ptrdiff_max_are_refused_before_a_slice_is_built() {
-        // Round-3 review F8: the header promises INVALID_ARGUMENT for a
+        // The header promises INVALID_ARGUMENT for a
         // length over PTRDIFF_MAX, and building a slice that long is
         // undefined behaviour before a byte is read.
         let junk: [u8; 4] = [0, 1, 2, 3];

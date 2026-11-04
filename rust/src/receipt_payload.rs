@@ -1087,7 +1087,7 @@ mod tests {
 
     #[test]
     fn what_openssl_refuses_on_its_own_is_refused_one_sequence_deeper_too() {
-        // Round-2 review F3: OpenSSL's ANY decoder refuses these as the
+        // OpenSSL's ANY decoder refuses these as the
         // fourth field, but the walk passed them one SEQUENCE deeper, where
         // OpenSSL keeps the SEQUENCE whole, so the verdict depended on the
         // depth. A short UTCTime or GeneralizedTime, a constructed BOOLEAN,

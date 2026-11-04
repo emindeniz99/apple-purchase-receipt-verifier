@@ -653,7 +653,7 @@ fn lookalikes() -> Lookalikes {
     }
 }
 
-/// Round-2 review F2 (a): OpenSSL's issuer lookup takes the first store
+/// OpenSSL's issuer lookup takes the first store
 /// certificate with the right name and never tries a second, so with both
 /// same-named roots in one store the order decided, and a certificate the
 /// second root issued, appended to the unsigned certificates bag, kept both
@@ -688,7 +688,7 @@ fn a_certificate_from_a_same_named_roots_pki_in_the_bag_does_not_decide_the_path
     }
 }
 
-/// Round-2 review F2 (b): a pinned self-signed anchor carrying the
+/// A pinned self-signed anchor carrying the
 /// intermediate's subject name was, under OpenSSL's trusted-first lookup,
 /// taken as the leaf's issuer, and the path to the real root never
 /// verified, for receipts and for the JWS pair alike.
@@ -714,7 +714,7 @@ fn an_anchor_named_as_the_intermediate_does_not_change_the_verdict() {
 }
 
 /// What `TrustAnchor` documents: an anchor must be a root above the WWDR
-/// intermediate (fable review F2). The intermediate pinned alone never
+/// intermediate. The intermediate pinned alone never
 /// verifies, since the marker check and the JWS path need it below the
 /// anchor; pinned beside its root, the order decides whether a genuine
 /// input verifies. Every case fails closed: what is refused is genuine,
@@ -782,7 +782,7 @@ fn a_root_verifies_when_a_same_named_root_vouches_for_a_stranger_in_the_bag() {
     }
 }
 
-/// Round-3 review F1: OpenSSL's issuer lookup over the untrusted
+/// OpenSSL's issuer lookup over the untrusted
 /// certificates also takes the first name match and never backtracks, so a
 /// same-named intermediate placed before the real one in the unsigned bag
 /// decided the path: one issued by a second pinned root (the verdict then

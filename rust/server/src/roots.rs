@@ -357,11 +357,11 @@ mod tests {
         pem
     }
 
-    /// The finding this guards (review N7): a base64 line, or a managed
-    /// roots entry, that carries PEM bytes was passed to `init` as PEM and
-    /// fingerprinted as the PEM text, a hash no client compares. Now the
-    /// PEM is unwrapped here, `init` receives the DER, and `/v1/info`
-    /// reports the DER's SHA-256, the same as for the DER root itself.
+    /// A base64 line, or a managed roots entry, that carries PEM bytes was
+    /// passed to `init` as PEM and fingerprinted as the PEM text, a hash no
+    /// client compares. Now the PEM is unwrapped here, `init` receives the
+    /// DER, and `/v1/info` reports the DER's SHA-256, the same as for the
+    /// DER root itself.
     #[test]
     fn a_pem_root_in_a_base64_line_is_fingerprinted_as_its_der() {
         let ders: Vec<Vec<u8>> = certs().into_iter().map(|(_, b)| b).collect();

@@ -1493,7 +1493,7 @@ FlatBuffers as the encoding.
   The ABI carries `now-ms: u64` on every verify call anyway, so an
   override later is additive.
 
-**Amended 2026-11-03** (owner, "option B"; review A7). The Rust core
+**Amended 2026-11-03** (owner). The Rust core
 takes a per-call time.
 
 - **Decision:** the core's `Verifier` gains `verify_receipt_at`,
@@ -2120,7 +2120,7 @@ caller's root bytes as they are, and the core reads DER or PEM.
   Each `--roots` flag adds its file's roots, in order; managed mode, which
   takes its roots on stdin, is unchanged.
 
-**Amended 2026-11-03** (owner; review B9, fable F2). A root must be a
+**Amended 2026-11-03** (owner). A root must be a
 root: every anchor must sit above the WWDR intermediate.
 
 - **Why:** the core looks for the intermediate below the anchor. A
@@ -2141,7 +2141,7 @@ root: every anchor must sit above the WWDR intermediate.
   `build()`, and making the per-anchor runs independent of one another,
   stay open.
 
-**Amended 2026-11-03** (owner; review B10, fable F3). One public reader.
+**Amended 2026-11-03** (owner). One public reader.
 
 - **Decision:** `TrustAnchor::from_der_or_pem` is the only public way to
   make an anchor. `TrustAnchor::from_pem` is removed and

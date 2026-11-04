@@ -468,7 +468,7 @@ fn a_broken_clock_is_not_hidden_behind_an_earlier_signer_infos_failure() {
     // INTERNAL_ERROR is the operator's alarm, and an input verdict must not
     // outrank it. The first SignerInfo names a certificate the receipt does
     // not embed (MALFORMED, before any clock); the second is genuine and,
-    // with no attribute 12, needs the clock. Review finding Fable F1.
+    // with no attribute 12, needs the clock.
     use common::pki::{receipt_payload_full, signed_data, signer_info, Hash, Pki};
     let (stranger, pinned) = (Pki::receipt(), Pki::receipt());
     let payload = receipt_payload_full(
