@@ -319,7 +319,9 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
 - `support-matrix.yml`: weekly (Monday) and on demand, runs
   `tools/support-matrix.mjs --check`, writes the vendor statuses to the
   job summary, and fails when a line SUPPORT-MATRIX.md lists as tested,
-  and not as a floor or kept, is past its end of life.
+  and not as a floor or kept, is past its end of life. It warns, without
+  failing, when a supported line is newer than the newest one tested,
+  Erlang/OTP and Elixir included (from `elixir-ffi`'s matrix).
 - `apple-pki-watch.yml`: daily and on demand, runs
   `tools/apple-pki-watch.mjs` against `tools/apple-pki-watch.json` and,
   on a change, opens or comments on one issue; a network failure fails

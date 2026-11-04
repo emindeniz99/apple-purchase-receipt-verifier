@@ -12,9 +12,12 @@ every Monday (and on demand), writes its output to the job summary, and
 fails when a line in the tables below is past its vendor's end of life.
 It reads the tables themselves: a row whose text says `floor` or `kept`
 stays a leg past EOL on purpose (rules 1 and 2) and is not checked, so a
-failed run means a row to drop, or to mark kept with its reason. Rust and
-Swift are not checked: CI tests Rust's current stable, and endoflife.date
-does not track Swift.
+failed run means a row to drop, or to mark kept with its reason. It also
+warns, without failing, when the vendor supports a line newer than the
+newest one a table lists (rule 3), and does the same for Erlang/OTP and
+Elixir against the `elixir-ffi` job's matrix. Rust and Swift are not
+checked: CI tests Rust's current stable, and endoflife.date does not
+track Swift.
 
 ## The rule
 
