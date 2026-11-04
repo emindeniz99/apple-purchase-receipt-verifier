@@ -57,7 +57,7 @@ pub(crate) const WWDR_INTERMEDIATE_OID: &str = "1.2.840.113635.100.6.2.1";
 /// creation date.
 ///
 /// **An anchor's validity times must be in the form RFC 5280 section
-/// 4.1.2.5 sets**: a UTCTime `YYMMDDHHMMSSZ` or a GeneralizedTime
+/// 4.1.2.5 sets**: a `UTCTime` `YYMMDDHHMMSSZ` or a `GeneralizedTime`
 /// `YYYYMMDDHHMMSSZ`, with no fraction of a second and no `+hhmm` offset.
 /// The window itself is not judged, but OpenSSL reads both times of every
 /// certificate on the path, the anchor included, and a time in another
