@@ -194,6 +194,23 @@ fn an_environment_other_than_0_or_1_traps() {
     }
 }
 
+/// The lift reads only the low 8 bits of the discriminant's `i32`, as the
+/// canonical ABI lifts a two-case enum (DECISIONS.md R46): 256 is
+/// production and 257 sandbox, and 258 traps as 2 does. No wrapper passes
+/// anything but 0 or 1; this pins the rule a hand-rolled host meets.
+#[test]
+fn only_the_low_byte_of_the_environment_counts() {
+    for (env, status) in [(256, 21007), (257, 0)] {
+        let mut guest = ready(|r| Box::new(CoreGuest::new(r).unwrap()), DEFAULTS);
+        let answer = guest.verify_receipt_endpoint(env, now(), &endpoint_body());
+        let answer = json(&answer.unwrap_or_else(|e| panic!("env {env}: {e:?}")));
+        assert_eq!(answer["status"], status, "env {env}");
+    }
+    let mut guest = ready(|r| Box::new(CoreGuest::new(r).unwrap()), DEFAULTS);
+    let result = guest.verify_receipt_endpoint(258, now(), &endpoint_body());
+    assert!(is_trap(&result), "env 258: {result:?}");
+}
+
 /// Both cases reach the guest as themselves on both hosts: the sandbox
 /// receipt answers 21007 at production and 0 at sandbox. A typed host
 /// cannot express another case; ComponentGuest refuses it before the call.

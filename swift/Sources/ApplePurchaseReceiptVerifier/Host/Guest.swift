@@ -148,8 +148,8 @@ final class Guest: @unchecked Sendable {
     }
 
     /// `env` is the `environment` enum's discriminant, 0 (production) or 1
-    /// (sandbox); the guest traps on anything else, and ``Verifier`` only
-    /// ever passes those two.
+    /// (sandbox). The guest reads its low 8 bits and traps on any other low
+    /// byte; ``Verifier`` only ever passes those two.
     func verifyReceiptEndpoint(env: UInt32, now: UInt64, _ requestJson: some Collection<UInt8>) throws(HostError) -> String {
         try call("verify-receipt-endpoint", [.i32(env), .i64(now)], capped(requestJson))
     }

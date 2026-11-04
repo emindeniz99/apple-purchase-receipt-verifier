@@ -81,7 +81,8 @@ func (p *Pool) VerifySignedData(nowMs uint64, jws string) (string, error) {
 }
 
 // VerifyReceiptEndpoint is verify-receipt-endpoint; env is 0 for
-// production and 1 for sandbox, and the guest traps on anything else.
+// production and 1 for sandbox. The guest reads its low 8 bits and traps
+// on any other low byte.
 func (p *Pool) VerifyReceiptEndpoint(env uint32, nowMs uint64, requestJSON string) (string, error) {
 	return p.call("verify-receipt-endpoint", env, nowMs, requestJSON)
 }

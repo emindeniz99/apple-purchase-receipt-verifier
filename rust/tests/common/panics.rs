@@ -2,7 +2,7 @@
 //! included.
 //!
 //! `Verifier` runs every verification inside `catch_unwind` and answers a
-//! panic with a reason (`MALFORMED` before a signature has verified), so
+//! panic with a reason (`INTERNAL_ERROR`, wherever it happened), so
 //! a test's own `catch_unwind` around a verify call never fires and a
 //! "never panics" test cannot judge by the outcome. A panic hook runs when
 //! the panic starts, before the unwind reaches any `catch_unwind`, so it

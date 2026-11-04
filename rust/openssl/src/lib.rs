@@ -10,9 +10,10 @@
 //! decides a verdict. It does hold trust policy, though: see the next two
 //! paragraphs. It knows nothing about JSON, the C ABI or Wasm.
 //!
-//! **Not a general-purpose OpenSSL binding.** It is published only because
-//! the core depends on it, moves in lockstep with the core's version, and
-//! its API serves the core alone. Use the core.
+//! **Not a general-purpose OpenSSL binding.** It is a crate of its own only
+//! because the core depends on it; it moves in lockstep with the core's
+//! version, is unpublished like the core, and its API serves the core
+//! alone. Use the core.
 //!
 //! **Part of the security review boundary.** The path validation
 //! (`src/path.rs`) holds trust policy of its own, not only FFI: it trusts

@@ -102,7 +102,10 @@ public class ClockTests
                 AppleEnvironment.Sandbox, "{\"receipt-data\":\"" + Fixtures070.ForReceipt("receipt") + "\"}"));
     }
 
-    /// <summary>A negative time cannot be a u64 <c>now-ms</c>; it is the host's fault too.</summary>
+    /// <summary>
+    /// The s64 <c>now-ms</c> would carry a negative time to the core as an instant, so every
+    /// package refuses a clock before 1970 itself (DECISIONS.md R46); it is the host's fault.
+    /// </summary>
     [Fact]
     public void ANegativeClockIsAnInternalError()
     {

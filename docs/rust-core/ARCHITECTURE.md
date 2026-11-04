@@ -42,7 +42,7 @@ the Wasm-first basis** (R22). The decisions it rests on are in
      ┌───────────┬──────────┬──────┼───────────┬───────────┬──────────────┐
      ▼           ▼          ▼      ▼           ▼           ▼              ▼
   Endive      V8 / JSC /  wazero  wasmtime-  WasmKit    wasmtime gem,  aprv-server
-  (build-     SpiderMonkey (Go)   py         (Swift)    Wasmtime .NET  (Wasmtime 49,
+  (build-     SpiderMonkey (Go)   py         (Swift)    Wasmtime .NET  (Wasmtime 50,
   time, JVM   (npm)               (Python)              (Ruby, .NET)   own process)
   bytecode)                                                            ├ Java 8 (-wasm)
   Java 11+                                                             ├ PHP (CLI/URL)
@@ -280,7 +280,9 @@ older module and is a module failure.
   `rust/Cargo.toml` turns them on for `aprv-abi` alone
   (`[profile.wasm.package.aprv-abi]`), so 2, 255 and 2^32-1 trap on every
   host, and every hand-rolled host's env-trap test guards the setting
-  ([enum lift][enumlift]). The wrapper's own `Environment` type still
+  ([enum lift][enumlift]). The lift reads only the low 8 bits of the
+  `i32`, as the canonical ABI lifts a discriminant: 256 answers as
+  production and 257 as sandbox, and any other low byte but 0 or 1 traps. The wrapper's own `Environment` type still
   keeps a caller on the two cases.
 - **`now-ms` is an `s64` argument** on every verify call (§6), the core's
   own instant type, so every value reaches the core. Every wrapper refuses
@@ -652,7 +654,7 @@ aarch64).
 
 ### 7.7 aprv-server
 
-One Rust binary, `aprv`, built on axum and tokio with Wasmtime 49
+One Rust binary, `aprv`, built on axum and tokio with Wasmtime 50
 **runtime-only** plus `component-model`: Cranelift, Winch, the cache and
 every other optional feature are off. The release precompiles the
 component to a Cranelift `.ccwasm` for an **explicit baseline target**
@@ -889,10 +891,10 @@ workspace ([CMS everywhere §1][cms]).
 | Trust policy is reviewed where it lives | Not mechanised: the policy is in `rust/src/` and in `rust/openssl/src/path.rs` (anchor waivers, per-anchor runs, bag narrowing; §1), and a review of either reads both. `tests/trust_pinning.rs` pins the behaviour of both, and that neither crate loads a trust path |
 | `unsafe` only at the edges | `#![forbid(unsafe_code)]` in the core, the surface and the wire crate; `unsafe` only in `aprv-openssl`, `aprv-abi`, `rust/ffi` and `aprv-server` (for `Module::deserialize`), each block with a `// SAFETY:` comment |
 | `aprv.wasm` imports exactly `random-get` | CI lists the module's imports with `wasm-tools` and fails on anything else |
-| The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`; a change to the file is a change to the ABI version |
+| The WIT is the contract | CI reads the interface back from the built module with `wasm-tools component wit` and diffs it against `rust/bindings/abi/wit/aprv.wit`. A change to a name or a type in the file is a change to the ABI version, and `tools/check-wit-version.sh` fails a pull request that makes one without moving the `package` version; a `///`-only edit keeps it |
 | `aprv.wasm` takes no unmeasured path | Every change runs the corpus through a host whose import object traps on anything unexpected, with the module's own WASI stubs trapping; any trap or any row that differs from native fails |
 | One `aprv.wasm` everywhere | The release builds it once; every package's copy (npm, Go, Swift, PyPI, RubyGems, NuGet, the Endive input, the server's `.cwasm` input) is checked against its published SHA-256; the committed Go and Swift copies are rebuilt in CI and diffed |
-| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap on a hand-rolled host, through the checked lift of R46; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
+| The canonical ABI holds | The ABI tests of the final round (env 2, 255 and 2^32-1 trap on a hand-rolled host, through the checked lift of R46, and 256, whose low byte is 0, answers as production; verify before `init` and a second `init` trap; a wrong-length `random-get` traps; a trap in one instance leaves another verifying; 2,000 calls leave memory the same size) plus each facade's own run on every host on every change |
 | The wire shapes match their schemas | Every corpus answer and every `init` configuration and answer validates against the JSON Schema 2020-12 files in `rust/bindings/wire/schema/`, from the core, the C ABI and `aprv.wasm` |
 | The server's HTTP contract is its OpenAPI document | Spectral lints `rust/server/openapi.yaml`; Schemathesis runs it against the server in the `aprv-server` job; non-result errors are RFC 9457 |
 | Same verdicts everywhere | Every host runs every `fixtures/cases.json` case as one test each; the `-wasm` artifact runs them once per engine; the main Java artifact runs them too (SURFACE.md §6) |

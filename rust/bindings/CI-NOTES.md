@@ -70,10 +70,10 @@ Add to the job, after the build:
    `cargo clippy --locked -p aprv-abi --target wasm32-wasip1 -- -D warnings`
    with the environment `build.sh` sets (the `CC_wasm32_wasip1`,
    `CFLAGS_wasm32_wasip1`, `AR_wasm32_wasip1` and `OPENSSL_DIR` lines).
-8. **The 1.85.0 floor leg must exclude `aprv-abi`**: wit-bindgen 0.62's
-   generator crates (wit-parser, wasm-encoder, wasmparser 0.259) declare
+8. **The 1.85.0 floor leg must exclude `aprv-abi`**: wit-bindgen 0.63's
+   generator crates (wit-parser, wasm-encoder, wasmparser 0.262) declare
    Rust 1.88, and `aprv-abi` says so (`rust-version = "1.88.0"`). The
-   module is built with the pinned 1.99.0 only. Use
+   module is built with the pinned 1.99.1 only. Use
    `cargo +1.85.0 test --locked --workspace --exclude aprv-abi`. Not run in
    this lane (no 1.85 toolchain here), as A1 noted for the core.
 9. **The layering check** (MIGRATION.md step 1.3): `node
@@ -83,7 +83,7 @@ Add to the job, after the build:
    runs it too, since it matches `test/*.test.mjs`). Both call `cargo
    metadata` and `cargo tree` on `rust/`, so they fetch the crates once.
 10. **cargo-deny** over the workspace now sees the dev-dependency
-    `jsonschema` 0.58.2 (no network features) and `wit-bindgen` 0.62.0 with
+    `jsonschema` 0.58.2 (no network features) and `wit-bindgen` 0.63.0 with
     its generator crates: `bans licenses sources` pass with `deny.toml` as
     it is (checked with cargo-deny 0.18.9; `advisories` not run, the
     database could not be fetched). Do not run it over

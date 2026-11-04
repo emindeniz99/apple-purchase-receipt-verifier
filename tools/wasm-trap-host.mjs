@@ -27,7 +27,8 @@
 //        difference, a trap, or an unexpected import call.
 //   node tools/wasm-trap-host.mjs abi-tests <module.wasm> <cases.json>
 //        The ABI tests of the final round that a hand-rolled host can run
-//        (ARCHITECTURE.md §9): env 2, 255 and 2^32-1 trap; a clock before
+//        (ARCHITECTURE.md §9): env 2, 255, 258 and 2^32-1 trap and env 256
+//        answers as production (only the low byte counts); a clock before
 //        1970 is a value; verify before
 //        init and a second init trap; a bad root is {"ok":false} and init
 //        retries; a wrong-length random-get traps; a trap in one instance
@@ -596,6 +597,12 @@ function modeAbiTests(modulePath, casesPath) {
     r = attempt(() => fresh().call('verify-receipt-endpoint', env, now(), request));
     check(`endpoint with env ${env} traps`, r.trap === true, show(r));
   }
+  // The lift reads the discriminant's low 8 bits only, as the canonical ABI
+  // lifts a two-case enum (DECISIONS.md R46): 256 is production, 258 traps.
+  r = attempt(() => fresh().call('verify-receipt-endpoint', 256, now(), request));
+  check('endpoint env 256 (low byte 0) answers as production, 21007', !r.error && JSON.parse(r.out).status === 21007, show(r));
+  r = attempt(() => fresh().call('verify-receipt-endpoint', 258, now(), request));
+  check('endpoint with env 258 (low byte 2) traps', r.trap === true, show(r));
   // now-ms is an s64 (ABI 0.2.0): a clock before 1970 is a value, not a trap.
   r = attempt(() => fresh().call('verify-receipt', -1n, g5));
   const atMin = attempt(() => fresh().call('verify-receipt-endpoint', 1, -(1n << 63n), request));

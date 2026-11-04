@@ -75,15 +75,17 @@ component).
 | `init(config-json)` | `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, which the core tells apart (a PEM bundle is one entry); no bytes or `{}` mean the three Apple roots, and an empty list is refused (`roots must not be empty`). Answers `{"ok":true,"max_input_bytes":N}` or `{"ok":false,"message":...}`; after a refusal it may be called again, after an `ok` answer it traps. `N` is the most bytes of one input a host needs to hand the module, one over its largest cap (3,145,729): a longer input may be cut to `N`, and the module answers `TOO_LARGE` for it (DECISIONS.md R42) |
 | `verify-receipt(now-ms, receipt-base64)` | `aprv-wire`'s answer (`../wire/schema/verify-receipt-result.schema.json`) |
 | `verify-signed-data(now-ms, jws)` | `aprv-wire`'s answer (`../wire/schema/verify-signed-data-result.schema.json`) |
-| `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` is the WIT `environment` enum, which a hand-rolled host passes as 0 (`production`) or 1 (`sandbox`); any other discriminant traps |
+| `verify-receipt-endpoint(env, now-ms, request-json)` | Apple's response JSON; `env` is the WIT `environment` enum, which a hand-rolled host passes as 0 (`production`) or 1 (`sandbox`); the module reads the low 8 bits of the `i32`, so any other low byte traps and 256 answers as production |
 | `random-get(len)`, the one import | OpenSSL's randomness (EC blinding, its DRBG); an answer that is not exactly `len` bytes traps |
 
 A verify call before a successful `init` traps. `now-ms` is an `s64`, the
 core's own instant, so every value the type holds reaches the core; the
 wrappers refuse a clock before 1970 themselves (STATUS.md). Traps are
 `unreachable`, reached directly, but for one: an `environment`
-discriminant other than 0 or 1 is caught by wit-bindgen's generated lift,
-which checks it only with debug assertions on. `rust/Cargo.toml` turns
+discriminant whose low byte is neither 0 nor 1 is caught by
+wit-bindgen's generated lift, which reads only that byte, as the
+canonical ABI lifts a discriminant, and checks it only with debug
+assertions on. `rust/Cargo.toml` turns
 them on for this package alone in `[profile.wasm.package.aprv-abi]`;
 without that setting the lift `transmute`s the value and the endpoint
 answers for the wrong environment (2 as production, 255 as sandbox; see

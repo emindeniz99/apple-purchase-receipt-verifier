@@ -141,12 +141,12 @@ version, and pin it.
 | [Maven Central](https://central.sonatype.com/artifact/io.github.emindeniz99/apple-purchase-receipt-verifier) | `io.github.emindeniz99:apple-purchase-receipt-verifier` (the Java implementation); `io.github.emindeniz99:apple-purchase-receipt-verifier-wasm` (the core) is not yet published ([why](java-wasm/README.md)); depend on one, never both | `import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;` |
 | [npm](https://www.npmjs.com/package/apple-purchase-receipt-verifier) | `npm install apple-purchase-receipt-verifier` | `import { createConfig, createVerifier } from 'apple-purchase-receipt-verifier';` |
 | [PyPI](https://pypi.org/project/apple-purchase-receipt-verifier/) | `pip install apple-purchase-receipt-verifier` | `from apple_purchase_receipt_verifier import Config, Verifier` |
-| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.7.0")` | `import ApplePurchaseReceiptVerifier` |
+| [SwiftPM](https://swiftpackageindex.com/emindeniz99/apple-purchase-receipt-verifier) | `.package(url: "https://github.com/emindeniz99/apple-purchase-receipt-verifier.git", from: "0.8.0")` | `import ApplePurchaseReceiptVerifier` |
 | [Go module proxy](https://pkg.go.dev/github.com/emindeniz99/apple-purchase-receipt-verifier/go) | `go get github.com/emindeniz99/apple-purchase-receipt-verifier/go` | `import applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"` |
 | RubyGems | `gem "apple-purchase-receipt-verifier"` | `require "apple_purchase_receipt_verifier"` |
 | NuGet | `dotnet add package ApplePurchaseReceiptVerifier` | `using ApplePurchaseReceiptVerifier;` |
 | Packagist | `composer require emindeniz99/apple-purchase-receipt-verifier`, then `vendor/bin/aprv-install` | `use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;` |
-| crates.io (not yet published) | `cargo add apple-purchase-receipt-verifier` | `use apple_purchase_receipt_verifier::{Config, Verifier};` |
+| crates.io (not yet published) | a git dependency on a release tag ([rust/README.md](rust/README.md)) | `use apple_purchase_receipt_verifier::{Config, Verifier};` |
 | GitHub Releases, GHCR | the `aprv` binary for your platform, or `ghcr.io/emindeniz99/aprv-server` | HTTP, or `aprv verify-receipt` on stdin |
 
 The import namespace is the registry name in each ecosystem's casing
@@ -158,7 +158,7 @@ and the Go proxy publish on every release. RubyGems, NuGet, Packagist and Docker
 owner action, listed in [BOOTSTRAP.md](./BOOTSTRAP.md). The Rust crate
 has never been published to crates.io and waits until `openssl-sys`
 accepts OpenSSL 4; building
-the 0.8 core from source needs `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL
+the core from source needs `OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<OpenSSL
 4>` ([rust/openssl/README.md](rust/openssl/README.md)). C and C++ build
 from source against the core, and [rust/ffi/README.md](rust/ffi/README.md)
 covers the ABI and the example consumers.

@@ -50,6 +50,13 @@ the parser (`clap`); a bad flag or value exits 2.
 These belong to the server binary. The language packages define no
 environment variables of their own.
 
+`serve` with no token bound to an address that is not loopback still
+starts, and prints one warning on stderr: `aprv: warning: listening on
+ADDR with no token; any client that reaches it can call /v1/`. The
+server holds no secret, so this is a warning rather than a refusal, but a
+server reachable from beyond loopback should have a token (the root
+`THREAT-MODEL.md` §9).
+
 ### CLI exit codes
 
 | Code | Meaning |

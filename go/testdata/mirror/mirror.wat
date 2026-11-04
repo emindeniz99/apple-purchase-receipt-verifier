@@ -5,7 +5,8 @@
 ;;   verify-receipt, verify-signed-data, verify-receipt-endpoint
 ;;       answer with their input bytes, unchanged, so a test passes the
 ;;       JSON it wants back. An input starting with '!' traps. The endpoint
-;;       traps on an env other than 0 or 1, as aprv.wasm does.
+;;       traps on an env other than 0 or 1 (aprv.wasm reads only the low
+;;       byte, so it traps on 2 to 255 but not on 256).
 ;;   init
 ;;       answers {"ok":true,"max_input_bytes":3145729}, the real module's
 ;;       answer, or a refusal when the configuration is over 100 bytes (one

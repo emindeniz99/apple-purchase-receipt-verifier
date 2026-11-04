@@ -127,10 +127,10 @@ final class EndiveGuest implements Guest {
     // --- canonical ABI (hand-written) begin ---
     /**
      * Lowers WIT values to core arguments, checked against the export's
-     * signature: an Integer is a u32 and a Long a u64; a byte[] is a
-     * list&lt;u8&gt;, copied into a guest buffer from cabi_realloc (the guest
-     * takes ownership) and passed as (ptr, len). A wrong count or type is an
-     * error before any call.
+     * signature: an Integer is the environment discriminant (an i32) and a
+     * Long the s64 now-ms; a byte[] is a list&lt;u8&gt;, copied into a guest
+     * buffer from cabi_realloc (the guest takes ownership) and passed as
+     * (ptr, len). A wrong count or type is an error before any call.
      */
     long[] lower(String fn, Object... args) {
         String signature = SIGNATURES.get(fn);

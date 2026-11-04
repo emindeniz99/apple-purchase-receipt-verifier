@@ -5,8 +5,9 @@ changes `node/` now needs there and in the root documents.
 
 ## What the build needs
 
-- `npm ci --ignore-scripts` still works: jco 1.35.0 and its dependencies
-  need no install script (checked from a clean copy of `node/`).
+- `npm ci --ignore-scripts` still works: jco 1.39.0 and its dependencies
+  need no install script (no `hasInstallScript` entry in
+  `package-lock.json`).
 - `npm run build` (and `npm test`, `npm pack`, `npm publish` through
   `prepack`) now runs `jco transpile` before `tsc`. It reads the component
   from `node/wasm/aprv.component.wasm`, which is gitignored and never

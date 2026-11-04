@@ -2630,6 +2630,16 @@ the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
     the 0.2.0 module is 4,525 bytes larger than 0.1.0's. A panic hook
     that traps would add 317 bytes and is not used;
   - `tools/reproduce-wasm.sh` rebuilds the module byte for byte.
+- **What the check reads (added 2026-11-04):** the lift is
+  `Environment::_lift(arg as u8)`, so it reads only the low 8 bits of the
+  core `i32`. That is the canonical ABI's rule: a two-case enum's
+  discriminant is a `u8`, and `lift_flat_unsigned` takes the `i32` modulo
+  2^8. A low byte of 0 is production, 1 is sandbox, and any other low
+  byte traps; 256 answers as production and 257 as sandbox. 2^32-1 traps
+  because its low byte is 255. Every wrapper passes only 0 or 1, so no
+  wrapper can reach the difference; the Rust ABI host and
+  `tools/wasm-trap-host.mjs` pin 256 and 258, and the `abi-call` fuzz
+  oracle expects the same rule.
 - **The guard is the existing tests.** Every hand-rolled host's
   "env 2, 255, 2^32-1 traps" test and the ABI fuzz oracle fail without
   the setting (shown on the Rust ABI host with an unchecked build); each
@@ -2705,7 +2715,7 @@ One table for everything the plan measured or considered and rejected.
 | `now_ms` as an 8-byte little-endian prefix on the input | A private framing rule inside a byte string; the canonical ABI passes `now-ms` as a typed `u64` argument at no cost | [canonical ABI][cabi] | — |
 | One generic `call(op, args...)` export | Loses the per-function signature; a hand-rolled host would have to encode an argument list, which is what the canonical ABI's flattening already specifies | the owner's discussion of 2026-09-29; no evidence note | — |
 | WIT `string` for the inputs | A WIT `string` must be UTF-8 and the release-mode lift is unchecked, so 243 non-UTF-8 JWS rows could not cross; `list<u8>` carries any bytes and the core answers as ABI v1 did | [canonical ABI][cabi]; [canonical ABI final][cabifinal] | — |
-| A WIT `enum` for the environment | Lifted with an unchecked `transmute` in release builds; a `u32` the guest matches traps on every out-of-range value on every host. Superseded by R46 (2026-11-02): with debug assertions on for `aprv-abi` the lift is checked and traps the same way | [canonical ABI][cabi]; [canonical ABI final][cabifinal]; [enum lift][enumlift] | — |
+| A WIT `enum` for the environment | Lifted with an unchecked `transmute` in release builds; a `u32` the guest matches traps on every out-of-range value on every host. Superseded by R46 (2026-11-02): with debug assertions on for `aprv-abi` the lift is checked and traps on every low byte but 0 and 1, though not on 256 or 257, whose low bytes are 0 and 1 | [canonical ABI][cabi]; [canonical ABI final][cabifinal]; [enum lift][enumlift] | — |
 | Keeping `env: u32` in ABI 0.2.0 | Hand-rolled hosts would see no difference, but jco and wasmtime-py do not range-check a `u32` (ToUint32, ctypes) and the release assets would keep numbering the environments against nothing a reader can see; the checked enum costs 4,865 bytes and one Cargo setting the existing trap tests guard (R46) | [enum lift][enumlift] | the checked lift stops trapping, or a toolchain drops the per-package `debug-assertions` override |
 | WASI 0.2 (`wasm32-wasip2`) as the build target | The canonical ABI is independent of the WASI version; the p1 module with the link-time C file has no WASI imports left to adapt, and the component wrapper needs no adapter. p2 would add the adapter and the `wasi:*` imports the C file exists to remove | [canonical ABI][cabi] | a host needs WASI 0.2 interfaces from the guest |
 | memory64 | A 3 MiB input and a 256 MiB limit fit 32-bit addressing with room; memory64 costs bounds checks and is unsupported on Endive | the owner's discussion of 2026-09-29; no evidence note | inputs approach 4 GiB |
