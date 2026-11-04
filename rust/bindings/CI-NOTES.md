@@ -110,8 +110,8 @@ Add to the job, after the build:
 Lane A3 (MIGRATION.md 1.13, review round 2 F3 and F4) adds:
 
 13a. **The header check** on one OS (Linux): `rust/ffi/check-header.sh`
-     with cbindgen 0.29.0 on PATH (`cargo install cbindgen --locked
-     --version 0.29.0`); it refuses another version rather than diffing.
+     with cbindgen 0.29.4 on PATH (`cargo install cbindgen --locked
+     --version 0.29.4`); it refuses another version rather than diffing.
      It replaces any step that regenerates the header and diffs by hand.
 13b. **The exported-symbol test** (`rust/ffi/tests/exported_symbols.rs`)
      runs inside `cargo test` on Linux and macOS and needs `nm` on PATH

@@ -5,12 +5,12 @@
 #
 #   rust/ffi/check-header.sh            from any directory
 #
-# Needs cbindgen 0.29.0 on PATH (`cargo install cbindgen --locked --version
-# 0.29.0`); another version is refused rather than compared, since its
+# Needs cbindgen 0.29.4 on PATH (`cargo install cbindgen --locked --version
+# 0.29.4`); another version is refused rather than compared, since its
 # formatting alone would differ.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
-want="cbindgen 0.29.0"
+want="cbindgen 0.29.4"
 got="$(cbindgen --version 2>/dev/null || true)"
 [ "$got" = "$want" ] || { echo "check-header: need $want on PATH, found '${got:-none}'" >&2; exit 2; }
 tmp="$(mktemp)"

@@ -49,27 +49,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// The environment [`aprv_verify_receipt_endpoint`] answers as.
-//
-// This ABI numbers the two 1 and 2, and answers `InvalidArgument` for 0
-// and for any other value, so a zero-initialised argument names neither.
-// `aprv.wasm`'s WIT `environment` enum numbers the same two 0 and 1. This
-// ABI keeps 1 and 2: renumbering would silently turn an existing caller's
-// 1 from production into sandbox.
-enum AprvEnvironment
-#ifdef __cplusplus
-  : uint32_t
-#endif // __cplusplus
- {
-  // `Production`
-  APRV_ENVIRONMENT_PRODUCTION = 1,
-  // `Sandbox`
-  APRV_ENVIRONMENT_SANDBOX = 2,
-};
-#ifndef __cplusplus
-typedef uint32_t AprvEnvironment;
-#endif // __cplusplus
-
 // The value of [`AprvResult::status`], and the return value of every
 // verification call.
 //
@@ -86,9 +65,9 @@ typedef uint32_t AprvEnvironment;
 // (`INVALID_JWS_FORMAT`), `4` (`INVALID_CHAIN`), `6` to `10` (the 0.6
 // policy and format reasons) and `11` (`STALE_PAYLOAD`).
 enum AprvReason
-#ifdef __cplusplus
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
   : int32_t
-#endif // __cplusplus
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
  {
   // The call succeeded. `AprvResult::json` holds the payload.
   APRV_REASON_OK = 0,
@@ -131,7 +110,36 @@ enum AprvReason
   APRV_REASON_UNKNOWN_REASON = 104,
 };
 #ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum AprvReason AprvReason;
+#else
 typedef int32_t AprvReason;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+// The environment [`aprv_verify_receipt_endpoint`] answers as.
+//
+// This ABI numbers the two 1 and 2, and answers `InvalidArgument` for 0
+// and for any other value, so a zero-initialised argument names neither.
+// `aprv.wasm`'s WIT `environment` enum numbers the same two 0 and 1. This
+// ABI keeps 1 and 2: renumbering would silently turn an existing caller's
+// 1 from production into sandbox.
+enum AprvEnvironment
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : uint32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+  // `Production`
+  APRV_ENVIRONMENT_PRODUCTION = 1,
+  // `Sandbox`
+  APRV_ENVIRONMENT_SANDBOX = 2,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum AprvEnvironment AprvEnvironment;
+#else
+typedef uint32_t AprvEnvironment;
+#endif // __STDC_VERSION__ >= 202311L
 #endif // __cplusplus
 
 // A verifier: pinned roots and a clock. Created by `aprv_verifier_new`,
