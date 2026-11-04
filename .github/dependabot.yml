@@ -291,23 +291,29 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+  # /dotnet discovers its projects through ApplePurchaseReceiptVerifier.sln.
+  # Three projects sit outside that solution on purpose: fuzz/ (SharpFuzz,
+  # pinned inline in its csproj, and the sharpfuzz tool in
+  # .config/dotnet-tools.json), bench/ and tools/CorpusRun/. All three
+  # reference the library, so their packages.lock.json files lock Wasmtime
+  # and System.Text.Json from Directory.Packages.props too, and a CI restore
+  # is locked (Directory.Build.props). group-by moves a package in every
+  # directory's lock in one pull request; a bump that rewrote only the
+  # solution's locks would fail the locked restore of fuzz/ and bench/ in
+  # CI, and leave CorpusRun's (run by hand) stale.
   - package-ecosystem: nuget
-    directory: /dotnet
+    directories:
+      - /dotnet
+      - /dotnet/fuzz
+      - /dotnet/bench
+      - /dotnet/tools/CorpusRun
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
-  # dotnet/fuzz is outside ApplePurchaseReceiptVerifier.sln, and the entry
-  # above discovers projects through that solution, so SharpFuzz (pinned
-  # inline in the fuzz csproj, not in Directory.Packages.props) had no watcher.
-  # dotnet/bench gets no entry: it has no PackageReference of its own, only
-  # the library by project reference, so there is nothing for one to bump.
-  - package-ecosystem: nuget
-    directory: /dotnet/fuzz
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+    groups:
+      nuget:
+        group-by: dependency-name
   # tools/ has its own lockfile for the CI tools (ajv, for the wire-schema
   # check); a bump there changes what CI validates answers with.
   - package-ecosystem: npm
