@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Install;
 
 /**
- * `aprv install`: puts the `aprv` binary for this platform where
+ * `aprv-install`: puts the `aprv` binary for this platform where
  * {@see \EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport}
  * looks for it (docs/rust-core/DECISIONS.md R29).
  *

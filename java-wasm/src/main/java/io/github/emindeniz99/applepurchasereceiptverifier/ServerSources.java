@@ -57,8 +57,9 @@ final class ServerSources {
             case MAVEN: {
                 String target = platformTarget();
                 if (!target.endsWith("-linux-musl")) {
-                    throw new IOException("the classifier jars carry Linux binaries only, and this is " + target
-                            + "; use github() or download(...)");
+                    throw new IOException(
+                            "the classifier jars carry Linux binaries only, and this is " + target
+                                    + "; use download(url, sha256) with the release's SHA256SUMS, executable(path) or url(...)");
                 }
                 String pin = pin(target);
                 String resource = ServerBinary.classifierResource(target);
