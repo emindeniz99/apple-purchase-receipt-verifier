@@ -510,16 +510,16 @@ jobs:
       matrix:
         # Every supported line (endoflife.date/python); 3.11 is the
         # requires-python floor and stays tested while claimed.
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
         # macOS and Windows runners are the scarce ones. On a pull request
         # this job runs Linux only: every line on x86_64, the floor and the
-        # newest line (3.11, 3.14) on arm64. macos-wrappers runs 3.11 and
-        # 3.14 on Apple silicon and windows-wrappers runs them on
+        # newest line (3.11, 3.15) on arm64. macos-wrappers runs 3.11 and
+        # 3.15 on Apple silicon and windows-wrappers runs them on
         # windows-latest, in sequence on one runner each, and windows-11-arm
         # and macos-15-intel sit out. A push to main, which every release is
         # cut from, runs the whole grid here.
-        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"}]' || '[]') }}
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"},{"os":"ubuntu-24.04-arm","python":"3.14"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -554,12 +554,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:58f67f392d490af90763f17b57a31245e3f26fb12ac9b6322c7af20507f15336" } # python3.11-alpine, uv 0.13.6
           - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:8a8e1becc4af37b754fa36eb75e26340e3e4d421542b7c4fdc6bced966abd6bf" } # python3.12-alpine, uv 0.13.6
           - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:63b8fa4be2338728034164eb6c067a363fdbb3234fa79b64c83545317b7feec1" } # python3.13-alpine, uv 0.13.6
           - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a069b57ec30ef94da43700a7332b162a13adb0b8a1cfba4e0b62c1a9727153c4" } # python3.14-alpine, uv 0.13.6
+          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:f008ab85c84befffaaa8cbde7eb2b749331769df4e18be766269d0c4904deb40" } # python3.15-alpine, uv 0.13.7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1125,7 +1126,7 @@ jobs:
 
   # On a pull request every macOS leg except Swift's runs here, in sequence
   # on one macos-latest runner: go-platforms, ruby-macos, dotnet, python
-  # (3.11 and 3.14 on Apple silicon), rust-ffi and aprv-server. macOS
+  # (3.11 and 3.15 on Apple silicon), rust-ffi and aprv-server. macOS
   # runners are the scarce ones (five at a time on this plan), and each leg
   # runs for one to six minutes. Swift's two legs need Xcode on macos-26 and
   # share swift-apple instead. A push to main runs each leg in its own job,
@@ -1208,9 +1209,9 @@ jobs:
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         run: .github/scripts/python-suite.sh 3.11
-      - name: python 3.14
+      - name: python 3.15
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        run: .github/scripts/python-suite.sh 3.14
+        run: .github/scripts/python-suite.sh 3.15
       # rust-ffi: needs no module, only Node for the vector manifest.
       - if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1240,7 +1241,7 @@ jobs:
 
   # On a pull request the Windows legs of go-platforms, dotnet and python
   # share one windows-latest runner here, as macos-wrappers does for macOS:
-  # Go, .NET, then Python 3.11 and 3.14 (windows-11-arm sits out). Not
+  # Go, .NET, then Python 3.11 and 3.15 (windows-11-arm sits out). Not
   # folded: rust-ffi's Windows leg (about 10 minutes, the longest job of a
   # full run) and aprv-server's (5 to 8 minutes with a cold target cache);
   # either would make this the critical path. A push to main runs every
@@ -1300,10 +1301,10 @@ jobs:
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
         run: .github/scripts/python-suite.sh 3.11
-      - name: python 3.14
+      - name: python 3.15
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
-        run: .github/scripts/python-suite.sh 3.14
+        run: .github/scripts/python-suite.sh 3.15
 
   # The arm64-darwin platform gem of wasmtime, which the Linux legs never
   # load. One current-Ruby leg is enough. On a pull request this leg runs in
@@ -1892,7 +1893,7 @@ jobs:
   # on a pull request -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
-  # library's: the `python` matrix above is what proves 3.11 through 3.14, and
+  # library's: the `python` matrix above is what proves 3.11 through 3.15, and
   # every crasher these targets found is pinned as a test under python/tests/
   # so it runs on all of them. atheris stays out of the package's dependency
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
