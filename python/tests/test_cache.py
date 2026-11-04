@@ -324,6 +324,16 @@ class EndToEndTest(Sandbox):
         self.assertTrue(result["verified"])
         self.assertEqual(0, cache_entries(directory))
 
+    @unittest.skipUnless(POSIX, "only a POSIX environment hands Python bytes that are not UTF-8")
+    def test_a_directory_whose_name_is_not_utf8_still_verifies(self) -> None:
+        # The variable holds the byte 0xE9 alone, which Python reads as a
+        # lone surrogate. Wasmtime's TOML is UTF-8 and cannot name such a
+        # directory, so the cache is off; Verifier() must not raise.
+        directory = self.directory() / "caf\udce9"
+        result = run_child({_cache.ENV_VAR: str(directory)})
+        self.assertTrue(result["verified"])
+        self.assertEqual(0, cache_entries(directory))
+
     def test_an_empty_variable_turns_the_cache_off(self) -> None:
         home = self.directory()
         env, _ = user_cache_under(home)

@@ -106,12 +106,25 @@ def usable_directory() -> "str | None":
         return None
 
 
+def _toml_can_carry(directory: str) -> bool:
+    """Whether a UTF-8 TOML literal string can name ``directory``: no quote,
+    no line break, and no byte that is not UTF-8 (POSIX hands such a byte to
+    Python as a lone surrogate, which UTF-8 cannot encode)."""
+    if any(c in directory for c in "'\r\n"):
+        return False
+    try:
+        directory.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def enable(config: "wasmtime.Config") -> bool:
     """Turns ``config``'s cache on when the rules allow it; ``True`` if it
     is on. Wasmtime takes its cache directory from a TOML file, so one is
     written into the (already vetted) directory and removed again."""
     directory = usable_directory()
-    if directory is None or any(c in directory for c in "'\r\n"):
+    if directory is None or not _toml_can_carry(directory):
         return False
     name = None
     try:
