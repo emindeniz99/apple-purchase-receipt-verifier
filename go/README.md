@@ -189,7 +189,7 @@ an unreadable answer, the clock). Match on `failure.Reason`; never parse
 | `ReasonInvalidCertificate` | `INVALID_CERTIFICATE` | a certificate does not decode, or is outside its validity window at the chain instant | 21003 |
 | `ReasonInvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `ReasonUnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
-| `ReasonInternalError` | `INTERNAL_ERROR` | the library failed after the signature held, the module trapped or gave an answer this package cannot read, or the configured clock panicked or answered a time before 1970; no input makes a correct library answer it | 21009 |
+| `ReasonInternalError` | `INTERNAL_ERROR` | the module trapped, which is a bug at whatever stage it happened, or gave an answer this package cannot read, or the configured clock panicked or answered a time before 1970; no input makes a correct library answer it | 21009 |
 
 `errors.As(err, &failure)` is the canonical read; `errors.Is(err,
 applereceipt.ReasonUntrustedChain)` is sugar for the single-reason case, and
@@ -317,14 +317,11 @@ standard base64 with canonical `=` padding and nothing else. `x5c` entries
 are standard base64, JWS segments unpadded canonical base64url, so one
 signed payload has one accepted spelling.
 
-The verify methods never panic for any input. What goes wrong inside the
-module is reported by the module: `MALFORMED` before a signature has
-verified, as input nobody vouched for must not be able to raise the
-internal-error alarm at will, `UNREADABLE_PAYLOAD` while signed content is
-read, `INTERNAL_ERROR` (21009 at the endpoint) after that. A module that
-traps is `INTERNAL_ERROR` too, its instance is discarded, and the next call
-gets a fresh one. A message never carries the trap's own text; the `Cause`
-does.
+The verify methods never panic for any input. A bug inside the module is
+`INTERNAL_ERROR` (21009 at the endpoint) at every stage, before the
+signature or after it: the module is built with `panic = "abort"`, so the
+bug traps, the instance is discarded, and the next call gets a fresh one.
+A message never carries the trap's own text; the `Cause` does.
 
 ## Speed
 

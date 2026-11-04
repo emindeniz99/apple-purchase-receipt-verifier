@@ -505,8 +505,7 @@ and `-second`.
 | Rust | `rust/src/roots.rs` `the_bundled_roots_are_the_ones_apple_publishes` | input built in code: stays with the Rust |
 | Rust | `rust/src/roots.rs` `one_root_that_does_not_load_empties_the_set` | input built in code: stays with the Rust |
 | Rust | `rust/src/verifier.rs` `a_verifier_without_anchors_answers_internal_error` | input built in code: stays with the Rust |
-| Rust | `rust/src/verifier.rs` `a_panic_is_judged_by_the_stage_it_happened_in` | input built in code: stays with the Rust |
-| Rust | `rust/src/verifier.rs` `every_verification_starts_before_the_signature_and_restores_the_caller` | input built in code: stays with the Rust |
+| Rust | `rust/src/verifier.rs` `a_panic_is_an_internal_error_wherever_it_happens` | input built in code: stays with the Rust |
 | Rust | `rust/src/verifier.rs` `the_clock_is_read_once_and_its_panic_is_an_internal_error` | input built in code: stays with the Rust |
 | Rust | `rust/openssl/tests/isolation.rs` `child` | same fixture as `endpoint/ids-absent-are-omitted`, `endpoint/request-date-is-the-verification-clock`, `endpoint/sandbox-receipt-on-production-answers-21007` and 9 more |
 | Rust | `rust/openssl/tests/isolation.rs` `a_planted_trust_store_configuration_and_module_path_are_ignored` | input built in code: stays with the Rust |
@@ -528,7 +527,6 @@ and `-second`.
 | Rust | `rust/tests/api.rs` `the_device_hash_is_computable_from_the_returned_fields` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `returned_byte_fields_are_copies_not_views_into_the_input` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `a_verified_jws_is_returned_exactly_as_signed` | input built in code: stays with the Rust |
-| Rust | `rust/tests/api.rs` `payloads_can_be_built_by_hand_and_write_their_json_value` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `fresh_verifiers_answer_their_first_concurrent_calls_as_one_thread_would` | same fixture as `endpoint/genuine-sandbox-receipt-echoes-zero-ids`, `receipt/genuine-sandbox-ids-are-zero`, `receipt/return-genuine-sandbox-g5-device-hash-inputs` and 2 more |
 | Rust | `rust/tests/api.rs` `the_byte_entry_points_answer_as_the_text_ones` | input built in code: stays with the Rust |
 | Rust | `rust/tests/api.rs` `decode_receipt_data_is_the_receipt_rule` | input built in code: stays with the Rust |
@@ -762,6 +760,7 @@ and `-second`.
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `the_module_imports_random_get_and_exports_the_interface_only` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `no_start_function_is_needed_and_the_calls_answer_the_wire` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `an_environment_other_than_0_or_1_traps` | input built in code: stays with the Rust |
+| Rust | `rust/bindings/abi/tests/tests/abi.rs` `only_the_low_byte_of_the_environment_counts` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `a_verify_before_init_traps` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `a_second_init_after_a_successful_one_traps` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `a_refused_configuration_is_a_value_and_init_may_be_retried` | input built in code: stays with the Rust |
@@ -769,7 +768,7 @@ and `-second`.
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `a_trap_in_one_instance_leaves_another_verifying` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `two_thousand_calls_leave_linear_memory_the_same_size` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/abi/tests/tests/abi.rs` `input_that_is_not_utf8_is_a_value` | input built in code: stays with the Rust |
-| Rust | `rust/bindings/abi/tests/tests/abi.rs` `a_clock_beyond_i64_is_an_internal_error` | input built in code: stays with the Rust |
+| Rust | `rust/bindings/abi/tests/tests/abi.rs` `every_s64_clock_is_a_value` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/wire/src/lib.rs` `a_failure_carries_exactly_three_members_in_a_fixed_order` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/wire/src/lib.rs` `a_verified_jws_carries_its_payload_as_a_string_holding_the_signed_text` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/wire/src/lib.rs` `an_empty_receipt_writes_every_key_as_null_or_empty` | input built in code: stays with the Rust |
@@ -780,13 +779,10 @@ and `-second`.
 | Rust | `rust/bindings/wire/tests/schema.rs` `every_answer_to_every_shared_case_validates` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/wire/tests/schema.rs` `every_expected_value_in_the_shared_cases_fits_the_schemas` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/wire/tests/schema.rs` `a_planted_wrong_type_fails_every_rule` | input built in code: stays with the Rust |
-| Rust | `rust/bindings/surface/src/lib.rs` `the_eight_reasons_are_the_cores_eight_in_the_same_order` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/surface/src/lib.rs` `an_empty_root_list_means_the_three_apple_roots` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/surface/src/lib.rs` `a_root_that_is_not_a_certificate_is_named_by_its_index` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/surface/src/lib.rs` `bytes_that_are_not_utf8_are_input_and_fail_as_the_core_says` | input built in code: stays with the Rust |
 | Rust | `rust/bindings/surface/src/lib.rs` `the_instant_of_each_call_is_its_own_argument` | input built in code: stays with the Rust |
-| Rust | `rust/bindings/surface/src/lib.rs` `attribute_types_cross_as_signed_integers_in_ascending_order` | input built in code: stays with the Rust |
-| Rust | `rust/bindings/surface/src/lib.rs` `a_clock_beyond_i64_is_an_internal_error_never_an_instant` | input built in code: stays with the Rust |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRootCertsTest.java` `defaultRootsAreAllThreePublishedAppleRoots` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRootCertsTest.java` `bundledRootsMatchTheirPinnedFingerprints` | input built in code: stays with the Java |
 | Java | `java/src/test/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRootCertsTest.java` `theDefaultRootsAreParsedOnceAndCannotBeChanged` | input built in code: stays with the Java |
