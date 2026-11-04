@@ -30,7 +30,25 @@ ENV_VAR = "APRV_WASM_CACHE_DIR"
 _APP = "apple-purchase-receipt-verifier"
 
 
+def _home_is_unusable() -> bool:
+    """Whether the default directory would hang off a ``HOME`` that is set
+    but not absolute (``~nouser`` included). platformdirs before 4.14 built
+    the path on such a HOME or raised; 4.14 treats it as unset and takes the
+    account's home from the password database instead. Either way the cache
+    stays off, so a HOME set wrong never moves native code somewhere the user
+    did not name. An empty HOME was always read as unset, and an absolute
+    ``XDG_CACHE_HOME`` names the directory without HOME, so neither counts."""
+    if os.name == "nt":
+        return False
+    home = os.environ.get("HOME")
+    if not home or os.path.isabs(home):
+        return False
+    return not os.path.isabs(os.environ.get("XDG_CACHE_HOME", "").strip())
+
+
 def _default_directory() -> "str | None":
+    if _home_is_unusable():
+        return None
     # appauthor=False and opinion=False keep Windows at
     # %LOCALAPPDATA%\<app>, without the <author>\<app>\Cache levels
     # platformdirs adds there by default; Linux and macOS ignore both.
