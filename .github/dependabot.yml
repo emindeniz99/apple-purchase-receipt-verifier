@@ -282,7 +282,11 @@ updates:
     cooldown:
       default-days: 7
   # The server image's two bases (rust slim for the build, distroless
-  # static for the runtime) are pinned by digest.
+  # static for the runtime) are pinned by digest. The cooldown dates only
+  # Docker Hub images: for distroless, on gcr.io, Dependabot opens the PR
+  # at once with "Cooldown could not be applied". ci.yml's image-age job
+  # covers every other registry, and fails until the digest is seven days
+  # old.
   - package-ecosystem: docker
     directory: /rust/server
     schedule:
