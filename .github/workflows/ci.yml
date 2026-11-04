@@ -1583,8 +1583,12 @@ jobs:
           # dependency at all.
           - otp: "27"
             elixir: "1.18"
-          # What a current install gets.
+          # Elixir 1.20 supports OTP 27 to 29 (hexdocs, "Compatibility and
+          # deprecations"): the previous OTP line, and the newest, which is
+          # what a current install gets.
           - otp: "28"
+            elixir: "1.20"
+          - otp: "29"
             elixir: "1.20"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
