@@ -179,11 +179,11 @@ from the migration:
   main artifact and the native core were not re-measured at all, and ARM64
   speed is unmeasured (the ARM64 spike branch of
   docs/rust-core/MIGRATION.md).
-- **`aprv-server`'s default lifecycle.** The `init` measurement met R23's
-  rule for making `--lifecycle pool` the default
-  (docs/evidence/2026-09-29-init-cost.md); the server still starts a fresh
-  instance per request unless told otherwise. Flip the default, or record
-  why fresh stays.
+- **`aprv-server`'s default lifecycle.** Done: the `init` measurement met
+  R23's rule (docs/evidence/2026-09-29-init-cost.md), and `aprv serve`
+  defaults to `--lifecycle pool` (OD-15); `--lifecycle fresh` stays for
+  per-request isolation (docs/rust-core/DECISIONS.md R23, amended
+  2026-11-04).
 - **A third review round** for the second round's fixes and the last ABI
   work, which have had no reader but their authors
   (docs/rust-core/REVIEW-LOG.md §10.9).

@@ -702,10 +702,11 @@ corpus.
 
 **What a compromised instance keeps.** An instance that is attacked and
 does not trap keeps its state, so a later call on the same instance runs
-in the attacker's state. The in-process pools reuse instances;
-`aprv-server`'s default, a fresh instance per request, removes that
-carry-over, and `--lifecycle pool` brings it back. Every host discards an
-instance that trapped.
+in the attacker's state. The in-process pools reuse instances, and so
+does `aprv-server` by default (`--lifecycle pool`).
+`aprv serve --lifecycle fresh` gives every request a new instance, which
+removes that carry-over at the cost of an `init` per request. Every host
+discards an instance that trapped.
 
 **No wrapper decides anything.** A wrapper reads the clock, copies the
 input in, reads the JSON answer back and maps it; it has no parser, no

@@ -377,14 +377,19 @@ noise; jco on Node and Deno +8%, which is loading the generated glue
 - Instances die with the `Verifier`. There are no handles in the public
   API and nothing for the caller to free or close.
 - **Node:** one instance. JavaScript runs one call at a time per isolate.
-- **aprv-server:** a fresh instance and `init` per request by default, so
-  nothing from one hostile input reaches the next request. Phase 1
-  measures `init`; if it costs more than 10% of a call, the default flips
-  to the existing `--lifecycle pool` flag (R31). The spike's fresh
-  lifecycle cost about 1.6 ms more per receipt than the pool, which it
-  attributed to the guest initialising OpenSSL and its roots on an
-  instance's first call ([aprv-server §3][server]); `init` separates that
-  cost from the call.
+- **aprv-server:** a pool by default (`--lifecycle pool`): instances are
+  kept, one request at a time each and at most one per worker, and one
+  that trapped or broke the interface is destroyed. An instance that
+  answered normally serves later requests, so a hostile input that took
+  control of an instance without trapping reaches the requests that
+  instance serves next. `--lifecycle fresh` gives every request a new
+  store, instance and `init`, so nothing from one input reaches the next
+  request. Phase 1 measured `init` at 2.3 to 3.7 ms, more than 10% of a
+  call, which by R23's rule made the pool the default (OD-15;
+  docs/evidence/2026-09-29-init-cost.md). The spike's fresh lifecycle
+  cost about 1.6 ms more per receipt than the pool, which it attributed
+  to the guest initialising OpenSSL and its roots on an instance's first
+  call ([aprv-server §3][server]).
 
 What an instance costs to create, measured: Endive 335 to 380 ms for the
 first, 2 to 4 ms after ([Endive §9][endive]); wasmtime-py 0.4 to 0.6 ms
@@ -710,9 +715,11 @@ calls the binding.
   concurrent verifications, N = CPU count; the 3 MiB body cap; a guest time
   limit of 10 s per call by default, by epoch interruption
   (`--time-limit-ms`, rust/server/README.md).
-- **Lifecycle.** A fresh store and instance, with `init`, per request;
-  `--lifecycle pool` keeps instances and destroys one on any trap or ABI
-  error, never sharing one between two requests (§5).
+- **Lifecycle.** The pool by default: instances are kept, an instance
+  serves one request at a time, and one is destroyed on any trap or ABI
+  error (§5). `--lifecycle fresh` gives every request a new store and
+  instance, with `init`, for callers that want no guest state carried
+  from one request to the next.
 - **The HTTP contract is an OpenAPI 3.1 document** (`rust/server/openapi.yaml`),
   the wire shapes referenced from the JSON Schema 2020-12 files of
   `aprv-wire`; Spectral lints it and Schemathesis runs it against the

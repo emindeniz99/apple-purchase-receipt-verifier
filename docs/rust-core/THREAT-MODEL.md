@@ -54,9 +54,10 @@ second opinion (R33).
 
 **In every class, the instance.** A compromised instance that does not
 trap keeps its state. Where an instance serves more than one call (the
-in-process pools, and `aprv-server` with `--lifecycle pool`), a later
-call on that instance runs in the attacker's state. `aprv-server`'s
-default, a fresh instance per request, removes that carry-over (R23).
+in-process pools, and `aprv-server` in its default pool lifecycle), a
+later call on that instance runs in the attacker's state.
+`aprv serve --lifecycle fresh` gives every request a new instance and
+`init`, which removes that carry-over (R23, amended 2026-11-04).
 
 Beyond that, per class:
 
