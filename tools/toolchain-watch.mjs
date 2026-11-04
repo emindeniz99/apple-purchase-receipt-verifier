@@ -117,7 +117,7 @@ export const OTHER_PINS = [
     every: /cargo install cargo-fuzz\b/g,
   },
   // The step's name repeats the version, so both are read.
-  { name: 'cargo-cyclonedx', file: RELEASE, pattern: /cargo-cyclonedx (?:--version )?(\d[^\s"]*)/g },
+  { name: 'cargo-cyclonedx', file: RELEASE, pattern: /cargo-cyclonedx (?:--(?!version\b)[^\s"]+ )*(?:--version )?(\d[^\s"]*)/g },
   { name: 'Maven', file: RELEASE, pattern: /apache-maven[/-](\d+\.\d+\.\d+)\b/g },
   { name: 'build', file: RELEASE, pattern: /pip install build==(\S+)/g, every: /pip install (?:--upgrade )?build\b/g },
   // The PIP_CONSTRAINT that build's isolated environment installs under.
@@ -296,11 +296,17 @@ async function npm(name) {
   return Object.keys(body.versions).map((version) => ({ version, date: body.time[version] }));
 }
 
-async function pypi(name) {
-  const body = await get(`https://pypi.org/pypi/${name}/json`);
+// A version's date is its first upload that is not yanked: an old yanked
+// file must not make a new upload look past the cooldown.
+export function pypiReleases(body) {
   return Object.entries(body.releases)
-    .filter(([, files]) => files.some((f) => !f.yanked))
+    .map(([version, files]) => [version, files.filter((f) => !f.yanked)])
+    .filter(([, files]) => files.length > 0)
     .map(([version, files]) => ({ version, date: files.map((f) => f.upload_time_iso_8601).sort()[0] }));
+}
+
+async function pypi(name) {
+  return pypiReleases(await get(`https://pypi.org/pypi/${name}/json`));
 }
 
 // Packagist's p2 metadata is minified: each version lists only the fields
@@ -364,7 +370,12 @@ async function githubReleases(repo, tagPrefix) {
     releases = await get(`https://api.github.com/repos/${repo}/releases?per_page=100`);
   } catch (error) {
     if (!/: HTTP 40[13]$/.test(error.message)) throw error;
-    return releasesFeed(await (await request(`https://github.com/${repo}/releases.atom`)).text(), tagPrefix);
+    // The feed holds only the ten newest releases: when none of them is past
+    // the cooldown, an older stable one may still be newer than the pin, so
+    // the run fails rather than report nothing.
+    const feed = releasesFeed(await (await request(`https://github.com/${repo}/releases.atom`)).text(), tagPrefix);
+    if (!latest(feed)) throw new Error(`${repo}: releases.atom holds no release past the cooldown`);
+    return feed;
   }
   return releases
     .filter((r) => !r.draft && !r.prerelease && r.tag_name.startsWith(tagPrefix))

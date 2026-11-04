@@ -74,9 +74,11 @@ export function testedLines(markdown) {
 export function elixirLines(workflow) {
   const job = /^ {2}elixir-ffi:\n([\s\S]*?)(?=^ {2}\S|(?![\s\S]))/m.exec(workflow);
   if (!job) throw new Error('ci.yml has no elixir-ffi job');
+  // A commented-out leg is not a tested line.
+  const body = job[1].replace(/^\s*#.*$/gm, '');
   const lines = [
-    ...[...job[1].matchAll(/\botp: "([^"]+)"/g)].map((m) => ({ product: 'erlang', line: m[1] })),
-    ...[...job[1].matchAll(/\belixir: "([^"]+)"/g)].map((m) => ({ product: 'elixir', line: m[1] })),
+    ...[...body.matchAll(/\botp: "([^"]+)"/g)].map((m) => ({ product: 'erlang', line: m[1] })),
+    ...[...body.matchAll(/\belixir: "([^"]+)"/g)].map((m) => ({ product: 'elixir', line: m[1] })),
   ];
   for (const product of ['erlang', 'elixir']) {
     if (!lines.some((l) => l.product === product)) throw new Error(`ci.yml's elixir-ffi matrix names no ${product} line`);
@@ -138,8 +140,14 @@ async function main() {
   for (const product of products) {
     const response = await fetch(`https://endoflife.date/api/${product}.json`);
     if (!response.ok) {
-      console.error(`${product}: HTTP ${response.status}`);
-      failed = true;
+      // Elixir and Erlang/OTP only feed the newer-line warning, so their
+      // outage is a warning too; every other product can fail --check.
+      if (product === 'elixir' || product === 'erlang') {
+        console.log(`::warning::${product}: endoflife.date answered HTTP ${response.status}; its newer-line check is skipped`);
+      } else {
+        console.error(`${product}: HTTP ${response.status}`);
+        failed = true;
+      }
       continue;
     }
     const cycles = await response.json();

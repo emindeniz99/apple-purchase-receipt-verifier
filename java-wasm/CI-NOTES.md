@@ -292,8 +292,13 @@ refuse both.
 
 ```sh
 mvn -B -f java package -DskipTests
-mvn -B -f java-wasm verify -Pclasspath-guard
+mvn -B -f java-wasm verify -Pclasspath-guard \
+  -Dbouncycastle.version="$(mvn -q -f java help:evaluate -Dexpression=bouncycastle.version -DforceStdout)"
 ```
+
+The profile takes BouncyCastle's version from `java/pom.xml` rather than
+repeating it, so the property is required;
+`java-wasm/scripts/classpath-guard.sh` runs both commands with it.
 
 The profile copies BouncyCastle, jackson-core and Endive's jars into
 `target/guard-lib` and runs `ClasspathGuardJarsIT` (failsafe, after

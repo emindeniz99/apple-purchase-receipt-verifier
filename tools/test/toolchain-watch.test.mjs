@@ -10,6 +10,7 @@ import {
   main,
   newer,
   packagistReleases,
+  pypiReleases,
   pinnedIn,
   readImages,
   readPin,
@@ -77,6 +78,9 @@ test('reads the pins whose shape a regex could misread', () => {
   // cargo-cyclonedx: the step's name repeats the version.
   const cyclonedx = '      - name: install cargo-cyclonedx 0.5.9\n          cargo install cargo-cyclonedx --version 0.5.10 --locked\n';
   assert.throws(() => readPin(cyclonedx, pin('cargo-cyclonedx')), /pins cargo-cyclonedx at 0\.5\.9 and 0\.5\.10/);
+  // ...whatever flags come before --version.
+  const cyclonedxLocked = '      - name: install cargo-cyclonedx 0.5.9\n          cargo install cargo-cyclonedx --locked --version 0.5.10\n';
+  assert.throws(() => readPin(cyclonedxLocked, pin('cargo-cyclonedx')), /pins cargo-cyclonedx at 0\.5\.9 and 0\.5\.10/);
 });
 
 test('a use that names no version fails the run', () => {
@@ -401,6 +405,8 @@ test('GitHub releases come from releases.atom when the API refuses', async () =>
   const r = await run(upstream({ releases: { ...current(), age: [['9.0.0', 30], ['9.1.0-rc.1', 30], [others.age, 30]] }, githubDown: true }));
   assert.equal(r.code, 1, r.out);
   assert.equal(r.out, `.github/scripts/install-age.sh: age ${others.age} -> 9.0.0 (released ${ago(30).slice(0, 10)})`);
+  // A feed with nothing past the cooldown cannot say what is newest.
+  await assert.rejects(run(upstream({ releases: { ...current(), age: [['9.0.0', 1]] }, githubDown: true })), /releases\.atom holds no release past the cooldown/);
   // Any other failure of the API still fails the run.
   await assert.rejects(run(upstream({ releases: current(), fail: 'api.github.com' })), /HTTP 500/);
 });
@@ -409,4 +415,18 @@ test('an upstream that fails rejects the whole run, so the CLI exits 2', async (
   await assert.rejects(run(upstream({ releases: current(), fail: 'gcr.io/v2/' })), /HTTP 500/);
   await assert.rejects(run(upstream({ releases: current(), fail: 'release-stable.toml' })), /HTTP 500/);
   await assert.rejects(run(upstream({ releases: current(), fail: 'repo1.maven.org' })), /HTTP 500/);
+});
+
+test('a PyPI version is dated by its first upload that is not yanked', () => {
+  const body = {
+    releases: {
+      '1.0.0': [
+        { upload_time_iso_8601: '2026-01-01T00:00:00Z', yanked: true },
+        { upload_time_iso_8601: '2026-11-01T00:00:00Z', yanked: false },
+      ],
+      '0.9.0': [{ upload_time_iso_8601: '2025-12-01T00:00:00Z', yanked: true }],
+    },
+  };
+  assert.deepEqual(pypiReleases(body), [{ version: '1.0.0', date: '2026-11-01T00:00:00Z' }]);
+  assert.equal(latest(pypiReleases(body), Date.parse('2026-11-04T00:00:00Z')), null);
 });
