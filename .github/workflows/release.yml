@@ -127,20 +127,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 125
     steps:
-      # A branch dispatch either completes a named tag or is a dry run; a
-      # bare one would tag go/<branch> and push an image named <branch>.
-      - name: the dispatch names a tag this tree carries, or is a dry run
-        if: github.event_name == 'workflow_dispatch'
+      # Every run names the vX.Y.Z tag it publishes -- the pushed tag, the
+      # tag a dispatch runs at, or a branch dispatch's `tag` input -- and
+      # version.txt at this commit must be that version: tag-go-module and
+      # publish-image key on the tag name and skip once it exists, so a tag
+      # pushed by hand on the wrong tree would otherwise be permanent. A
+      # branch dispatch either completes a named tag or is a dry run; a bare
+      # one would tag go/<branch> and push an image named <branch>.
+      - name: the run names a tag this tree carries, or is a dry run
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
-          if [ -z "$TAG" ]; then
+          if [ -z "$INPUT_TAG" ]; then
             if [ "$REF_TYPE" = "tag" ]; then
               # Another tag (go/vX.Y.Z, corpus-*) names no release.
               if ! [[ "$REF_NAME" =~ $semver ]]; then
@@ -150,10 +155,10 @@ jobs:
             elif [ "$DRY_RUN" != "true" ]; then
               echo "::error::a dispatch from a branch must name the tag it completes (tag=vX.Y.Z) or be a dry run (dry_run=true)"
               exit 1
+            else
+              exit 0
             fi
-            exit 0
-          fi
-          if ! [[ "$TAG" =~ $semver ]]; then
+          elif ! [[ "$TAG" =~ $semver ]]; then
             echo "::error::tag '$TAG' is not vX.Y.Z"
             exit 1
           fi
@@ -169,6 +174,11 @@ jobs:
           if [ "v$version" != "$TAG" ]; then
             echo "::error::version.txt at $GITHUB_SHA is $version, not ${TAG#v}; a completion publishes the tree's own version only"
             exit 1
+          fi
+          # A run at the tag itself has nothing to complete or compare.
+          if [ -z "$INPUT_TAG" ]; then
+            echo "publishing $TAG from $GITHUB_SHA"
+            exit 0
           fi
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::tag $TAG does not exist; a completion finishes a release that release-please already tagged"
