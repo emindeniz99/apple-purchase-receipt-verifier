@@ -10,7 +10,7 @@
 #
 # Linux x86_64 only, as the pinned toolchain archives are. Dependabot keeps
 # the digest current.
-FROM --platform=linux/amd64 debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM --platform=linux/amd64 debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git make perl xz-utils \
