@@ -818,4 +818,58 @@ mod serve_tests {
             .unwrap();
         assert_eq!(rest, b"");
     }
+
+    /// A request in flight when shutdown begins is answered in full, and
+    /// `serve` returns only after that.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_answers_a_request_in_flight_before_returning() {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+        let limits = Limits {
+            header_timeout: Duration::from_secs(30),
+            max_connections: 4,
+        };
+        let (entered, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let (e, r) = (entered.clone(), release.clone());
+        let routes = axum::Router::new().route(
+            "/slow",
+            get(move || async move {
+                e.notify_one();
+                r.notified().await;
+                "done"
+            }),
+        );
+        let (addr, stop, mut server) = start_with(routes, limits).await;
+        let client = tokio::task::spawn_blocking(move || {
+            let mut s = connect(addr);
+            s.write_all(b"GET /slow HTTP/1.1\r\nHost: aprv\r\n\r\n")
+                .unwrap();
+            until_closed(&mut s)
+        });
+        entered.notified().await;
+        drop(stop);
+        // The listener goes before the wait for connections begins, so a
+        // refused connection means shutdown is under way.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while tokio::net::TcpStream::connect(addr).await.is_ok() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the listener closed within 5 s");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut server)
+                .await
+                .is_err(),
+            "serve returned with a request in flight"
+        );
+        release.notify_one();
+        let got = String::from_utf8(client.await.unwrap()).unwrap();
+        assert!(got.starts_with("HTTP/1.1 200 OK\r\n"), "{got:?}");
+        assert!(got.ends_with("\r\n\r\ndone"), "{got:?}");
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("serve returned within 5 s")
+            .unwrap();
+    }
 }
