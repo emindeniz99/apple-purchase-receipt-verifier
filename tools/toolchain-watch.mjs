@@ -132,7 +132,6 @@ export const OTHER_PINS = [
   { name: 'deno', file: 'node/package.json', pattern: /npx --yes deno@(\S+)/g },
   { name: 'workerd', file: 'node/package.json', pattern: /\bworkerd@(\d+(?:\.\d+)*)/g },
   // npm overrides of transitive packages, which Dependabot never moves.
-  { name: '@bytecodealliance/weval', file: 'node/package.json', pattern: /"@bytecodealliance\/weval": "([^"]+)"/g },
   { name: 'minimatch', file: 'node/package.json', pattern: /"minimatch": "([^"]+)"/g },
   { name: 'sharp', file: 'node/examples/cloudflare-worker/package.json', pattern: /"sharp": "([^"]+)"/g },
   // setup-uv's `version:` input, in the `with:` block of its own step.
@@ -496,7 +495,6 @@ export async function main(root = new URL('..', import.meta.url)) {
     bun: () => npm('bun'),
     deno: () => npm('deno'),
     workerd: () => npm('workerd'),
-    '@bytecodealliance/weval': () => npm('@bytecodealliance/weval'),
     minimatch: () => npm('minimatch'),
     sharp: () => npm('sharp'),
     uv: () => pypi('uv'),

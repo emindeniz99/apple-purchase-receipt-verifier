@@ -478,7 +478,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        boot: ["pom", "4.1.1"]
+        boot: ["pom", "4.1.2"]
         jdk: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2628,9 +2628,9 @@ jobs:
           trap 'kill "$p1" "$p2" 2>/dev/null || true; cat serve1.log serve2.log' EXIT
           up 18080
           up 18081
-          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18080/openapi.json \
+          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18080/openapi.json \
             --checks all --max-examples 50 --workers 1
-          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18081/openapi.json \
+          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18081/openapi.json \
             --checks all --max-examples 30 --workers 1 -H "X-Aprv-Token: $token"
 
   # The Docker image both ways it is built: from source (the Dockerfile's
@@ -2804,7 +2804,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [jvm-interop, boot-pom, boot-4.1.1]
+        consumer: [jvm-interop, boot-pom, boot-4.1.2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2975,7 +2975,7 @@ jobs:
         # seven-day cooldown, pinned exactly so this leg never runs a
         # release the cooldown has not looked at (SECURITY.md); bump it by
         # hand.
-        symfony-process: ["8.0.5", "8.1.7"]
+        symfony-process: ["8.0.5", "8.1.10"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
