@@ -446,6 +446,9 @@ jobs:
   # leg per supported Boot line (endoflife.date/spring-boot: 4.0 until
   # 2026-12-31, 4.1 until 2027-07-31) on every Java LTS Boot 4 accepts;
   # the Boot line is a Maven property, so a new line is one entry here.
+  # "pom" is the oldest line at the patch the sample's pom pins, which
+  # Dependabot moves; a newer line is named here by its patch and passed
+  # as -Dspring-boot.version.
   # Deliberately a separate Maven project, not a module of java/pom.xml,
   # so the BOM governs versions the way it does in a real application.
   java-spring-boot:
@@ -455,7 +458,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        boot: ["4.0.8", "4.1.1"]
+        boot: ["pom", "4.1.1"]
         jdk: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -469,9 +472,12 @@ jobs:
       - run: mvn -B install -DskipTests
         working-directory: java
       - run: |
+          set -euo pipefail
           version=$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)
+          boot=()
+          if [ "$BOOT" != pom ]; then boot=("-Dspring-boot.version=$BOOT"); fi
           mvn -B -f samples/spring-boot-smoke/pom.xml test \
-            -Dverifier.version="$version" -Dspring-boot.version="$BOOT"
+            -Dverifier.version="$version" "${boot[@]}"
         working-directory: java
         env:
           BOOT: ${{ matrix.boot }}
@@ -2729,8 +2735,9 @@ jobs:
 
   # The JVM consumers again, on the -wasm artifact (Endive, since both need
   # Java 17 or later): jvm-interop's Kotlin and Scala tests and the Spring
-  # Boot smoke on both Boot lines take the artifact as
-  # -Dverifier.artifactId. Waits for java-wasm/pom.xml.
+  # Boot smoke on both Boot lines (boot-pom is the pom's own, as in
+  # java-spring-boot) take the artifact as -Dverifier.artifactId. Waits
+  # for java-wasm/pom.xml.
   java-wasm-consumers:
     needs: [changes, rust-wasm]
     if: needs.changes.outputs.java == 'true'
@@ -2739,7 +2746,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [jvm-interop, boot-4.0.8, boot-4.1.1]
+        consumer: [jvm-interop, boot-pom, boot-4.1.1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2763,8 +2770,10 @@ jobs:
             mvn -B -f jvm-interop test -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
           else
             version=$(mvn -q -f java help:evaluate -Dexpression=project.version -DforceStdout)
+            boot=()
+            if [ "$CONSUMER" != boot-pom ]; then boot=("-Dspring-boot.version=${CONSUMER#boot-}"); fi
             mvn -B -f java/samples/spring-boot-smoke/pom.xml test -Dverifier.version="$version" \
-              -Dspring-boot.version="${CONSUMER#boot-}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
+              "${boot[@]}" -Dverifier.artifactId=apple-purchase-receipt-verifier-wasm
           fi
 
   # The -wasm artifact's create must refuse the main jar on its classpath,
