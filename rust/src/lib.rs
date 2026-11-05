@@ -37,7 +37,10 @@
 //! - **Read the operating system's trust store.** Anchors come only from the
 //!   [`Config`], whose default is the three Apple roots embedded with
 //!   `include_bytes!`.
-//! - **Touch the network.** No OCSP, no CRL, no AIA fetch, no root download.
+//! - **Touch the network.** No OCSP, no CRL download, no AIA fetch, no root
+//!   download. Revocation lists are checked only when the caller downloads
+//!   them and passes them to [`ConfigBuilder::revocation_lists`]; the
+//!   built-in revocation list is compiled in.
 //! - **Judge a payload by its age.** How old a signed payload may be is the
 //!   caller's decision, made on its signing date.
 //! - **Return anything partial.** A failure returns a [`Failure`] and

@@ -6,7 +6,8 @@
 //! ES256 only, exactly three `x5c` certificates, the chain to a pinned root
 //! at the payload's `signedDate` (else its `receiptCreationDate`, as Apple's
 //! App Store Server Library reads an app transaction, else the clock), Apple's
-//! marker OIDs on leaf and intermediate, then the signature. The
+//! marker OIDs on leaf and intermediate, then the signature, then
+//! revocation (docs/design/revocation.md §3), then the payload. The
 //! order of the checks is observable: an input that fails an early check
 //! reports that check's reason, and the shared cases pin it.
 
