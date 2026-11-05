@@ -721,6 +721,10 @@ mod tests {
             read_init_config(br#"{"revocation_lists":[],"revocation_issuers":[],"distrust":[]}"#),
             Ok(InitConfig::default())
         );
+    }
+
+    #[test]
+    fn a_refused_configuration_names_its_first_problem() {
         let other = "the configuration has a member other than \"roots\", \"revocation_lists\", \
                      \"revocation_issuers\" and \"distrust\"";
         let refused: [(&[u8], &str); 26] = [

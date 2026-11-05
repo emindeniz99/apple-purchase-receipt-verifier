@@ -86,15 +86,16 @@ pub use core_api::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 
 // --------------------------------------------------------------- config
 
+/// Certificates read from a configuration member, beside the (entry index,
+/// place in that entry) each one came from.
+type ReadCertificates = (Vec<core_api::TrustAnchor>, Vec<(usize, usize)>);
+
 /// Each of `entries` read as the core reads a root, DER or PEM, every
 /// certificate of a PEM bundle in its place; the first that is not a
 /// certificate is named as `member[index]`. Beside them, for each
 /// certificate, the index of the entry it came from and its place in that
 /// entry, so a refusal the core makes by certificate can name the entry.
-fn certificates(
-    member: &str,
-    entries: &[Vec<u8>],
-) -> Result<(Vec<core_api::TrustAnchor>, Vec<(usize, usize)>), ConfigError> {
+fn certificates(member: &str, entries: &[Vec<u8>]) -> Result<ReadCertificates, ConfigError> {
     let mut read = Vec::with_capacity(entries.len());
     let mut origin = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
