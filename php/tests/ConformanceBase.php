@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use Closure;
+use InvalidArgumentException;
 use DateTimeImmutable;
 use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
@@ -12,6 +13,8 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
+use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\JsonPointer;
@@ -106,6 +109,11 @@ abstract class ConformanceBase extends TestCase
     {
         /** @var string $id */
         $id = $case['id'];
+        if ($case['operation'] === 'buildConfig') {
+            self::buildConfig($case, $factory);
+
+            return;
+        }
         if ($case['operation'] === 'decodeBase64') {
             $failures = self::decodeBase64Failures($case, $factory);
             self::assertSame([], $failures, implode("\n", $failures));
@@ -299,10 +307,77 @@ abstract class ConformanceBase extends TestCase
     {
         /** @var array<string, mixed> $config */
         $config = Shape::asArray($case['config'], 'config');
-        $roots = self::trustedRoots($config);
-        $clock = self::caseClock($case);
 
-        return $factory($clock === null ? new Config(roots: $roots) : new Config(roots: $roots, clock: $clock));
+        return $factory(self::config($config, self::caseClock($case)));
+    }
+
+    /**
+     * A case's `Config`: its roots, its revocation settings (fixture ids
+     * resolved to their bytes, distrust entries passed as written) and its
+     * clock.
+     *
+     * @param array<string, mixed> $config verifyConfig, endpointConfig, or buildConfig's input
+     */
+    private static function config(array $config, ?FrozenClock $clock): Config
+    {
+        $revocation = Shape::asArray($config['revocation'] ?? [], 'revocation');
+        $ids = static fn (string $member): array => array_map(
+            static fn (mixed $id): string => Fixtures07::bytes(Shape::asString($id, "revocation.{$member}")),
+            array_values(Shape::asArray($revocation[$member] ?? [], "revocation.{$member}")),
+        );
+        $distrust = array_map(
+            static function (mixed $entry): RevokedCertificate {
+                $entry = Shape::asArray($entry, 'revocation.distrust');
+
+                return new RevokedCertificate(
+                    Shape::asString($entry['issuer'] ?? null, 'distrust.issuer'),
+                    Shape::asString($entry['serial'] ?? null, 'distrust.serial'),
+                );
+            },
+            array_values(Shape::asArray($revocation['distrust'] ?? [], 'revocation.distrust')),
+        );
+
+        return new Config(
+            roots: self::trustedRoots($config),
+            clock: $clock ?? new SystemClock(),
+            revocationLists: $ids('lists'),
+            revocationIssuers: $ids('issuers'),
+            distrust: $distrust,
+        );
+    }
+
+    /**
+     * A buildConfig case: the configuration builds, and the verifier
+     * reports the case's `revocationUrls` (in order) and
+     * `revocationValidUntil`; or `Verifier::create` refuses it with an
+     * `InvalidArgumentException`.
+     *
+     * @param array<string, mixed> $case
+     * @param Closure(Config): Verifier $factory
+     */
+    private static function buildConfig(array $case, Closure $factory): void
+    {
+        $id = Shape::asString($case['id'], 'id');
+        $expected = Shape::asArray($case['expected'], 'expected');
+        $config = self::config(Shape::asArray($case['input'], 'input'), self::caseClock($case));
+        if ($expected['status'] === 'error') {
+            try {
+                $factory($config);
+            } catch (InvalidArgumentException $e) {
+                self::assertInstanceOf(InvalidArgumentException::class, $e);
+
+                return;
+            }
+            self::fail("{$id}: the configuration was taken; expected a refusal");
+        }
+        $verifier = $factory($config);
+        self::assertSame($expected['revocationUrls'], $verifier->revocationUrls(), "{$id}: revocationUrls");
+        $until = $verifier->revocationValidUntil();
+        self::assertSame(
+            $expected['revocationValidUntil'],
+            $until?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'),
+            "{$id}: revocationValidUntil",
+        );
     }
 
     /**

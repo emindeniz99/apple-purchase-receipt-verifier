@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Wire;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\RevocationState;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Transport;
 use InvalidArgumentException;
@@ -48,6 +51,7 @@ final class Verifier
     private function __construct(
         private readonly Transport $transport,
         private readonly Config $config,
+        private readonly RevocationState $revocation,
     ) {
     }
 
@@ -61,10 +65,14 @@ final class Verifier
      *         date to a float rather than refusing to run at all; when the
      *         `aprv` binary or server cannot be used or speaks another ABI
      * @throws InvalidArgumentException when the root set is an empty list
-     *         (leave the roots out for the built-in ones), when a root is
-     *         not a string or the module refuses it (for example a value that is not a
-     *         certificate), or when the server refuses the token or trusts
-     *         other roots than `$config` names
+     *         (leave the roots out for the built-in ones), when a root,
+     *         revocation list or issuer is not a non-empty string or a
+     *         distrust entry is not a {@see RevokedCertificate}, when the
+     *         module refuses the configuration (for example a value that is
+     *         not a certificate, a list no configured issuer signed, a
+     *         malformed distrust entry), or when the server refuses the
+     *         token or runs other roots or revocation settings than
+     *         `$config` names
      */
     public static function create(Config $config, ?Transport $transport = null): self
     {
@@ -80,20 +88,74 @@ final class Verifier
             );
         }
         foreach ($config->roots ?? [] as $root) {
-            self::requireDer($root);
+            self::requireBytes($root, 'every root must be a non-empty string of DER or PEM bytes');
+        }
+        foreach ($config->revocationLists as $list) {
+            self::requireBytes($list, 'every revocation list must be a non-empty string of DER bytes');
+        }
+        foreach ($config->revocationIssuers as $issuer) {
+            self::requireBytes($issuer, 'every revocation issuer must be a non-empty string of DER or PEM bytes');
+        }
+        foreach ($config->distrust as $entry) {
+            if (!$entry instanceof RevokedCertificate) {
+                throw new InvalidArgumentException('every distrust entry must be a RevokedCertificate');
+            }
         }
         $transport ??= new CliTransport();
-        $transport->open($config->roots);
+        $revocation = $transport->open($config);
 
-        return new self($transport, $config);
+        return new self($transport, $config, $revocation);
     }
 
     /** @throws InvalidArgumentException */
-    private static function requireDer(mixed $root): void
+    private static function requireBytes(mixed $value, string $message): void
     {
-        if (!is_string($root) || $root === '') {
-            throw new InvalidArgumentException('every root must be a non-empty string of DER or PEM bytes');
+        if (!is_string($value) || $value === '') {
+            throw new InvalidArgumentException($message);
         }
+    }
+
+    /**
+     * The URLs of the revocation lists this verifier's configuration
+     * expects, for the host to download and pass as
+     * `Config::$revocationLists` (docs/design/revocation.md §7): with the
+     * built-in roots, Apple's four, `http://crl.apple.com/root.crl`,
+     * `applerootcag3.crl`, `wwdrg5.crl` and `wwdrg6.crl`; then the
+     * distribution points of added issuers. As the module answered them.
+     *
+     * @return list<string>
+     */
+    public function revocationUrls(): array
+    {
+        return $this->revocation->revocationUrls;
+    }
+
+    /**
+     * The earliest `nextUpdate` among the lists held for the issuers this
+     * verifier expects lists from, or null when one of them has none
+     * (none passed, or ignored). Null means live revocation is not fully
+     * in force; an instant in the past means a list is stale. A stale or
+     * missing list never fails a call: monitor this value, and build a new
+     * `Verifier` with fresh lists. As the module answered it, in UTC.
+     */
+    public function revocationValidUntil(): ?DateTimeImmutable
+    {
+        $ms = $this->revocation->revocationValidUntilMs;
+        if ($ms === null) {
+            return null;
+        }
+        $remainder = (($ms % 1000) + 1000) % 1000;
+        $seconds = intdiv($ms - $remainder, 1000);
+        $at = DateTimeImmutable::createFromFormat(
+            'U.u',
+            sprintf('%d.%06d', $seconds, $remainder * 1000),
+            new DateTimeZone('UTC'),
+        );
+        if ($at === false) {
+            throw new RuntimeException("the module stated an unreadable revocation_valid_until_ms {$ms}");
+        }
+
+        return $at;
     }
 
     /**

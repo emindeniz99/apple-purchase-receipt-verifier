@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
 use InvalidArgumentException;
@@ -19,21 +20,30 @@ use Symfony\Component\Process\Process;
  * and its JSON on stdout (docs/rust-core/ARCHITECTURE.md §7.7, §7.9).
  *
  * symfony/process starts it from an argv array that carries only the
- * subcommand, the clock and the roots file's path: nothing the caller or a
- * receipt contains is ever on a command line. It lives for one call
+ * subcommand, the clock, the paths of the configuration files and the
+ * `Config`'s distrust entries: nothing a receipt contains is ever on a
+ * command line. It lives for one call
  * (about 12 ms) and ends with it: a hostile input reaches nothing that
  * outlives the call. Exit status 0 is a result (verified or not), 3 the
  * module's answer to an input over the size cap (on stdout, like any
  * result), 70 a trap, an ABI fault or a load failure.
  *
  * Custom roots go to `aprv` as one owner-only temporary file per transport
- * (`--roots FILE`), written by {@see open()} and deleted with the object.
+ * (`--roots FILE`), written by {@see open()} and deleted with the object;
+ * so do the revocation issuers (`--revocation-issuer FILE`) and each
+ * revocation list (`--revocation-list FILE`, the list's bytes as given).
+ * Every call passes them, so every process's `init` runs on the same
+ * configuration that `aprv info` accepted at {@see open()}.
  */
 final class CliTransport implements Transport
 {
     private ?string $binary = null;
 
-    private ?string $rootsFile = null;
+    /** @var list<string> the temporary files this transport wrote, deleted with it */
+    private array $files = [];
+
+    /** @var list<string> the configuration's arguments: roots, revocation lists and issuers, distrust */
+    private array $configArguments = [];
 
     private bool $opened = false;
 
@@ -67,7 +77,7 @@ final class CliTransport implements Transport
         return dirname(__DIR__, 2) . '/bin/aprv' . (PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
     }
 
-    public function open(?array $roots): void
+    public function open(Config $config): RevocationState
     {
         if ($this->opened) {
             throw new LogicException('a transport serves one Verifier');
@@ -93,36 +103,29 @@ final class CliTransport implements Transport
         // Absolute, so a relative path runs that file rather than an aprv on PATH.
         $this->binary = realpath($binary) ?: $binary;
 
-        [$code, $out, $err] = $this->execute(['info'], '');
+        $this->configArguments = $this->writeConfiguration($config);
+        // `aprv info` runs the module's init on the configuration: a root,
+        // list, issuer or distrust entry it refuses ends here, at create,
+        // not in the first real call, and its answer states the input
+        // length and the revocation state.
+        [$code, $out, $err] = $this->execute(array_merge(['info'], $this->configArguments), '');
+        if ($code === 2 && $this->configArguments !== []) {
+            throw new InvalidArgumentException('the verification module refused the configuration: ' . Text::printable($err));
+        }
         if ($code !== 0) {
             throw new RuntimeException($this->describe('aprv info', $code, $err));
         }
-        $this->maxInputBytes = Info::maxInputBytes(Info::decode($out, 'aprv info'), 'aprv info');
+        $info = Info::decode($out, 'aprv info');
+        $this->maxInputBytes = Info::maxInputBytes($info, 'aprv info');
 
-        if ($roots === null) {
-            return;
-        }
-        $this->rootsFile = $this->writeRoots($roots);
-        // Nothing reads the roots until a verification runs, so run one on
-        // no input: a root the module refuses ends here, at create, not in
-        // the first real call.
-        [$code, , $err] = $this->execute(
-            array_merge(Operation::SignedData->cliArguments(), $this->rootsArguments()),
-            '',
-        );
-        if ($code === 2) {
-            throw new InvalidArgumentException('the verification module refused the roots: ' . Text::printable($err));
-        }
-        if ($code !== 0) {
-            throw new RuntimeException($this->describe('aprv', $code, $err));
-        }
+        return Info::revocationState($info, 'aprv info');
     }
 
     public function call(Operation $operation, string $input, int $nowMs): string
     {
         $maxInputBytes = $this->maxInputBytes
             ?? throw new LogicException('call() before a successful open(): Verifier::create() opens a transport before its first call');
-        $arguments = array_merge($operation->cliArguments(), ['--now-ms', (string) $nowMs], $this->rootsArguments());
+        $arguments = array_merge($operation->cliArguments(), ['--now-ms', (string) $nowMs], $this->configArguments);
         [$code, $out, $err] = $this->execute($arguments, substr($input, 0, $maxInputBytes));
         // 3: the input was over the cap; stdout is still the module's answer.
         if ($code === 0 || $code === 3) {
@@ -136,37 +139,69 @@ final class CliTransport implements Transport
 
     public function __destruct()
     {
-        if ($this->rootsFile !== null) {
-            @unlink($this->rootsFile);
-            $this->rootsFile = null;
+        foreach ($this->files as $file) {
+            @unlink($file);
         }
-    }
-
-    /** @return list<string> */
-    private function rootsArguments(): array
-    {
-        return $this->rootsFile === null ? [] : ['--roots', $this->rootsFile];
+        $this->files = [];
     }
 
     /**
-     * @param list<string> $roots
+     * Writes the configuration's files and returns its arguments: the
+     * roots and the issuers each as one file of base64 lines (DER or PEM
+     * bytes, which `aprv` tells apart), each list as a file of its bytes,
+     * and each distrust entry as `--distrust=ISSUER:SERIAL`, written with
+     * `=` so a value that starts with a dash stays a value.
      *
-     * @throws RuntimeException
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException when a distrust entry holds a NUL byte, which no command line carries
+     * @throws RuntimeException when a file cannot be written
      */
-    private function writeRoots(array $roots): string
+    private function writeConfiguration(Config $config): array
+    {
+        $arguments = [];
+        if ($config->roots !== null) {
+            array_push($arguments, '--roots', $this->writeFile('roots', self::base64Lines($config->roots)));
+        }
+        foreach ($config->revocationLists as $list) {
+            array_push($arguments, '--revocation-list', $this->writeFile('revocation-list', $list));
+        }
+        if ($config->revocationIssuers !== []) {
+            array_push($arguments, '--revocation-issuer', $this->writeFile('revocation-issuers', self::base64Lines($config->revocationIssuers)));
+        }
+        foreach ($config->distrust as $index => $entry) {
+            $value = $entry->issuer . ':' . $entry->serial;
+            if (str_contains($value, "\0")) {
+                throw new InvalidArgumentException("distrust[{$index}] holds a NUL byte");
+            }
+            $arguments[] = '--distrust=' . $value;
+        }
+
+        return $arguments;
+    }
+
+    /** @param list<string> $certificates */
+    private static function base64Lines(array $certificates): string
     {
         $lines = '';
-        foreach ($roots as $der) {
-            $lines .= base64_encode($der) . "\n";
+        foreach ($certificates as $bytes) {
+            $lines .= base64_encode($bytes) . "\n";
         }
+
+        return $lines;
+    }
+
+    /** @throws RuntimeException */
+    private function writeFile(string $what, string $contents): string
+    {
         // tempnam() creates the file with mode 0600: owner-only.
-        $path = @tempnam(sys_get_temp_dir(), 'aprv-roots-');
+        $path = @tempnam(sys_get_temp_dir(), "aprv-{$what}-");
         if ($path === false) {
-            throw new RuntimeException('cannot create the roots file in ' . Text::printable(sys_get_temp_dir(), 200));
+            throw new RuntimeException("cannot create the {$what} file in " . Text::printable(sys_get_temp_dir(), 200));
         }
-        if (@file_put_contents($path, $lines) !== strlen($lines)) {
-            @unlink($path);
-            throw new RuntimeException('cannot write the roots file');
+        $this->files[] = $path;
+        if (@file_put_contents($path, $contents) !== strlen($contents)) {
+            throw new RuntimeException("cannot write the {$what} file");
         }
 
         return $path;

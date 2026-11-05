@@ -7,6 +7,7 @@ namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Aprv;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\CountingClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeServer;
@@ -50,6 +51,7 @@ final class HttpTransportTest extends TestCase
 
     /**
      * @param list<string> $fingerprints
+     * @param array<string, mixed> $revocation members that replace the server's revocation defaults
      *
      * @return array<string, mixed>
      */
@@ -58,6 +60,7 @@ final class HttpTransportTest extends TestCase
         array $fingerprints = [],
         string $abi = 'aprv:verifier@0.2.0',
         mixed $maxInputBytes = 3145729,
+        array $revocation = [],
     ): array {
         return [
             'status' => 200,
@@ -65,6 +68,12 @@ final class HttpTransportTest extends TestCase
                 'abi' => $abi,
                 'limits' => ['max_input_bytes' => $maxInputBytes],
                 'roots' => ['source' => $source, 'sha256' => $fingerprints],
+                'revocation_urls' => [],
+                'revocation_valid_until_ms' => null,
+                'revocation_lists' => [],
+                'revocation_issuers' => [],
+                'distrust' => [],
+                ...$revocation,
             ], JSON_THROW_ON_ERROR),
         ];
     }
@@ -87,7 +96,7 @@ final class HttpTransportTest extends TestCase
             'default' => ['status' => 200, 'body' => $answer],
         ]);
         $transport = new HttpTransport($server->url . '/', 'sekret');
-        $transport->open(null);
+        $transport->open(new Config());
         $bytes = "a\0b\xff\xfe\r\n";
 
         foreach ([
@@ -124,7 +133,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
         $twentyMib = str_repeat("A\xffB\0", 5 * 1024 * 1024);
 
         $transport->call(Operation::Receipt, $twentyMib, 1);
@@ -143,7 +152,7 @@ final class HttpTransportTest extends TestCase
         $info = self::info('defaults', [], 'aprv:verifier@0.2.0', 5);
         $server = $this->server([self::INFO_PATH => $info, 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
 
         $transport->call(Operation::SignedData, 'abcdefgh', 1);
         $request = $server->requests()[count($server->requests()) - 1];
@@ -157,7 +166,7 @@ final class HttpTransportTest extends TestCase
         foreach ([null, 0, -1, '3145729', 1.5] as $stated) {
             $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.2.0', $stated)]);
             try {
-                (new HttpTransport($server->url))->open(null);
+                (new HttpTransport($server->url))->open(new Config());
                 self::fail('create must refuse a server stating ' . json_encode($stated));
             } catch (RuntimeException $e) {
                 self::assertStringContainsString('max_input_bytes', $e->getMessage());
@@ -170,7 +179,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
         $transport->call(Operation::Receipt, 'x', 1);
 
         foreach ($server->requests() as $request) {
@@ -184,7 +193,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => ['status' => 200, 'body' => '{}']]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
         $handle = new ReflectionProperty($transport, 'curl');
 
         $first = $handle->getValue($transport);
@@ -222,7 +231,7 @@ final class HttpTransportTest extends TestCase
     {
         $server = $this->server([self::INFO_PATH => self::info(), 'default' => $response]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
 
         $this->expectException($exception);
         $transport->call(Operation::Receipt, 'x', 1);
@@ -274,7 +283,7 @@ final class HttpTransportTest extends TestCase
         $server->stop();
 
         $this->expectException(ServerProcessException::class);
-        (new HttpTransport($url, timeoutSeconds: 3))->open(null);
+        (new HttpTransport($url, timeoutSeconds: 3))->open(new Config());
     }
 
     public function testARefusedTokenIsAnArgumentErrorAtCreate(): void
@@ -283,7 +292,7 @@ final class HttpTransportTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('token');
-        (new HttpTransport($server->url, 'wrong'))->open(null);
+        (new HttpTransport($server->url, 'wrong'))->open(new Config());
     }
 
     public function testAServerThatIsNotAprvFailsCreate(): void
@@ -296,7 +305,7 @@ final class HttpTransportTest extends TestCase
         ] as [$info]) {
             $server = $this->server([self::INFO_PATH => $info]);
             try {
-                (new HttpTransport($server->url))->open(null);
+                (new HttpTransport($server->url))->open(new Config());
                 self::fail('create must refuse ' . json_encode($info));
             } catch (RuntimeException $e) {
                 // An ABI or shape problem is a RuntimeException, not caller misuse.
@@ -311,7 +320,7 @@ final class HttpTransportTest extends TestCase
         $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@2.0.0')]);
 
         try {
-            (new HttpTransport($server->url))->open(null);
+            (new HttpTransport($server->url))->open(new Config());
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
@@ -354,13 +363,13 @@ final class HttpTransportTest extends TestCase
         $transport = new HttpTransport($server->url);
 
         if ($accepted) {
-            $transport->open($roots);
+            $transport->open(new Config(roots: $roots));
             $this->addToAssertionCount(1);
 
             return;
         }
         try {
-            $transport->open($roots);
+            $transport->open(new Config(roots: $roots));
             self::fail('a server that trusts other roots than the Config names must be refused');
         } catch (InvalidArgumentException | RuntimeException $e) {
             // Refusing a mismatch is caller misuse where the server said what it trusts, a shape fault where it did not.
@@ -368,14 +377,83 @@ final class HttpTransportTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{Config, array<string, mixed>, bool}> */
+    public static function revocationProvider(): iterable
+    {
+        $l1 = "\x30\x01\x01";
+        $l2 = "\x30\x01\x02";
+        $i1 = "\x30\x01\x03";
+        $i2 = "\x30\x01\x04";
+        [$h1, $h2, $hi1, $hi2] = array_map(static fn (string $b): string => hash('sha256', $b), [$l1, $l2, $i1, $i2]);
+        $sorted = [$h1, $h2];
+        sort($sorted);
+        $entry = new RevokedCertificate('AB', '01');
+        $served = static fn (array $members): array => self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, $members);
+
+        yield 'nothing on either side' => [new Config(), self::info(), true];
+        yield 'the same lists in another order' => [new Config(revocationLists: [$l2, $l1]), $served(['revocation_lists' => $sorted]), true];
+        yield 'a list the server lacks' => [new Config(revocationLists: [$l1, $l2]), $served(['revocation_lists' => [$h1]]), false];
+        yield 'a list only the server holds' => [new Config(), $served(['revocation_lists' => [$h1]]), false];
+        yield 'the same issuers in order' => [new Config(revocationIssuers: [$i1, $i2]), $served(['revocation_issuers' => [$hi1, $hi2]]), true];
+        yield 'the issuers in another order' => [new Config(revocationIssuers: [$i2, $i1]), $served(['revocation_issuers' => [$hi1, $hi2]]), false];
+        yield 'the same distrust entry' => [new Config(distrust: [$entry]), $served(['distrust' => [['issuer' => 'AB', 'serial' => '01']]]), true];
+        yield 'a distrust entry written otherwise' => [new Config(distrust: [$entry]), $served(['distrust' => [['issuer' => 'ab', 'serial' => '1']]]), false];
+        yield 'a distrust entry only the server holds' => [new Config(), $served(['distrust' => [['issuer' => 'AB', 'serial' => '01']]]), false];
+    }
+
+    /** @param array<string, mixed> $info */
+    #[DataProvider('revocationProvider')]
+    public function testTheServersRevocationSettingsMustBeExactlyTheConfigs(Config $config, array $info, bool $accepted): void
+    {
+        $server = $this->server([self::INFO_PATH => $info]);
+        $transport = new HttpTransport($server->url);
+
+        if ($accepted) {
+            $transport->open($config);
+            $this->addToAssertionCount(1);
+
+            return;
+        }
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('other revocation settings');
+        $transport->open($config);
+    }
+
+    /** The revocation state is the server's init answer, passed on; a server that states none is older than this package. */
+    public function testTheRevocationStateIsTheServersAndAServerWithoutOneFailsCreate(): void
+    {
+        $server = $this->server([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, [
+            'revocation_urls' => ['http://crl.apple.com/root.crl', 'http://crl.apple.com/wwdrg6.crl'],
+            'revocation_valid_until_ms' => 1796083200123,
+        ])]);
+        $verifier = Verifier::create(new Config(), new HttpTransport($server->url));
+        self::assertSame(['http://crl.apple.com/root.crl', 'http://crl.apple.com/wwdrg6.crl'], $verifier->revocationUrls());
+        self::assertSame('2026-12-01T00:00:00.123+00:00', $verifier->revocationValidUntil()?->format('Y-m-d\TH:i:s.vP'));
+
+        foreach ([
+            ['revocation_urls' => null],
+            ['revocation_valid_until_ms' => '1'],
+            ['revocation_lists' => null],
+            ['distrust' => 'none'],
+        ] as $broken) {
+            $server->respond([self::INFO_PATH => self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, $broken)]);
+            try {
+                (new HttpTransport($server->url))->open(new Config());
+                self::fail('create must refuse a server stating ' . json_encode($broken));
+            } catch (RuntimeException $e) {
+                self::assertStringContainsString('revocation', $e->getMessage());
+            }
+        }
+    }
+
     public function testATransportServesOneVerifier(): void
     {
         $server = $this->server([self::INFO_PATH => self::info()]);
         $transport = new HttpTransport($server->url);
-        $transport->open(null);
+        $transport->open(new Config());
 
         $this->expectException(LogicException::class);
-        $transport->open(null);
+        $transport->open(new Config());
     }
 
     /**

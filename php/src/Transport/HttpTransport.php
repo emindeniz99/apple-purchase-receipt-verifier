@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
 use CurlHandle;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Info;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Internal\Text;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
 use InvalidArgumentException;
 use LogicException;
 use RuntimeException;
@@ -20,7 +22,12 @@ use RuntimeException;
  * The roots live in the server (`aprv serve --roots FILE`, or the built-in
  * ones), not in the call. {@see open()} therefore compares the SHA-256 of
  * each root of the `Config` with what `GET /v1/info` says the server runs,
- * and refuses a server that trusts anything else. The server speaks plain
+ * and refuses a server that trusts anything else. The revocation settings
+ * live there too (`--revocation-list`, `--revocation-issuer`,
+ * `--distrust`), and are compared the same way: the SHA-256 of each list
+ * (in any order), of each issuer (in order), and the distrust entries as
+ * written (in order). The revocation URLs and validity come from the
+ * server's `init` answer, which `GET /v1/info` passes on. The server speaks plain
  * HTTP and is meant for loopback or a private network; terminate TLS in
  * front of it when the path is not one. No proxy is used.
  *
@@ -69,7 +76,7 @@ final class HttpTransport implements Transport
         $this->baseUrl = rtrim($baseUrl, '/');
     }
 
-    public function open(?array $roots): void
+    public function open(Config $config): RevocationState
     {
         if ($this->opened) {
             throw new LogicException('a transport serves one Verifier');
@@ -84,7 +91,10 @@ final class HttpTransport implements Transport
         }
         $info = Info::decode($body, 'the server');
         $this->maxInputBytes = Info::maxInputBytes($info, 'the server');
-        $this->checkRoots($info, $roots);
+        $this->checkRoots($info, $config->roots);
+        $this->checkRevocation($info, $config);
+
+        return Info::revocationState($info, 'the server');
     }
 
     public function call(Operation $operation, string $input, int $nowMs): string
@@ -139,6 +149,46 @@ final class HttpTransport implements Transport
         if ($source !== 'configured' || $expected !== $actual) {
             throw new InvalidArgumentException(
                 'the server trusts other roots than the Config names: start it with --roots for exactly these roots',
+            );
+        }
+    }
+
+    /**
+     * The server's `revocation_lists`, `revocation_issuers` and `distrust`
+     * against the `Config`'s. A list's order does not matter to the module;
+     * an issuer's does (the first whose key verifies a list owns it), and a
+     * distrust entry is compared as written, the server's flags being
+     * passed to the module unchanged.
+     *
+     * @param array<array-key, mixed> $info
+     */
+    private function checkRevocation(array $info, Config $config): void
+    {
+        $lists = $info['revocation_lists'] ?? null;
+        $issuers = $info['revocation_issuers'] ?? null;
+        $distrust = $info['distrust'] ?? null;
+        if (!is_array($lists) || !is_array($issuers) || !is_array($distrust)) {
+            throw new RuntimeException(
+                'the server did not report its revocation settings: install the aprv binary that belongs to this package version',
+            );
+        }
+        $hash = static fn (string $bytes): string => hash('sha256', $bytes);
+        $expectedLists = array_map($hash, $config->revocationLists);
+        $actualLists = array_values($lists);
+        sort($expectedLists);
+        sort($actualLists);
+        $expectedDistrust = array_map(
+            static fn (RevokedCertificate $entry): array => ['issuer' => $entry->issuer, 'serial' => $entry->serial],
+            $config->distrust,
+        );
+        if (
+            $expectedLists !== $actualLists
+            || array_map($hash, $config->revocationIssuers) !== array_values($issuers)
+            || $expectedDistrust !== array_values($distrust)
+        ) {
+            throw new InvalidArgumentException(
+                'the server runs other revocation settings than the Config names: start it with --revocation-list, '
+                . '--revocation-issuer and --distrust for exactly these',
             );
         }
     }

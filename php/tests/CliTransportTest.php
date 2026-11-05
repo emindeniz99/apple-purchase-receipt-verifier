@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Aprv;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeCli;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
@@ -53,7 +54,7 @@ final class CliTransportTest extends TestCase
     private function opened(int $timeoutSeconds = 30): CliTransport
     {
         $transport = $this->transport($timeoutSeconds);
-        $transport->open(null);
+        $transport->open(new Config());
         file_put_contents($this->cli->directory . '/log.jsonl', '');
 
         return $transport;
@@ -106,9 +107,9 @@ final class CliTransportTest extends TestCase
 
     public function testTheCutIsTheLengthAprvInfoStatedNotAConstant(): void
     {
-        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":5}}']);
+        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":5},"revocation_urls":[],"revocation_valid_until_ms":null}']);
         $transport = $this->transport();
-        $transport->open(null);
+        $transport->open(new Config());
 
         $transport->call(Operation::SignedData, 'abcdefgh', 1);
         $transport->call(Operation::SignedData, 'abc', 1);
@@ -130,7 +131,7 @@ final class CliTransportTest extends TestCase
         ] as $info) {
             $this->cli->behave(['info' => $info]);
             try {
-                $this->transport()->open(null);
+                $this->transport()->open(new Config());
                 self::fail("aprv info answered {$info}: create must refuse it");
             } catch (RuntimeException $e) {
                 self::assertStringContainsString('max_input_bytes', $e->getMessage(), $info);
@@ -219,29 +220,95 @@ final class CliTransportTest extends TestCase
 
     // --- open ------------------------------------------------------------
 
-    public function testOpenRunsInfoAndACustomRootsProbeWithARootsFileOnlyWhenRootsAreGiven(): void
+    public function testOpenRunsInfoOnceWithARootsFileOnlyWhenRootsAreGiven(): void
     {
-        $this->transport()->open(null);
+        $this->transport()->open(new Config());
         self::assertSame([['info']], array_column($this->cli->log(), 'argv'));
 
         $this->cli->remove();
         $this->cli = new FakeCli();
         $roots = ["\x30\x03\x02\x01\x01", "\xff\x00binary"];
         $transport = $this->transport();
-        $transport->open($roots);
+        $transport->open(new Config(roots: $roots));
 
         $log = $this->cli->log();
-        self::assertSame(['info'], $log[0]['argv']);
-        self::assertSame('verify-signed-data', $log[1]['argv'][0], 'the probe verifies nothing: it makes aprv read the roots');
-        self::assertSame(0, $log[1]['stdin_length']);
-        self::assertSame('--roots', $log[1]['argv'][1]);
-        self::assertSame(base64_encode($roots[0]) . "\n" . base64_encode($roots[1]) . "\n", $log[1]['roots_file_content']);
+        self::assertCount(1, $log, 'aprv info runs init on the roots: no probe call');
+        self::assertSame(['info', '--roots'], array_slice($log[0]['argv'], 0, 2));
+        self::assertSame(0, $log[0]['stdin_length']);
+        self::assertSame(base64_encode($roots[0]) . "\n" . base64_encode($roots[1]) . "\n", $log[0]['roots_file_content']);
+    }
+
+    /**
+     * Each list goes to aprv as a file of its bytes, the issuers as one
+     * file of base64 lines like the roots, and each distrust entry as one
+     * `--distrust=` argument, as written; `aprv info` gets them at open and
+     * every call gets them again, and the revocation state open() returns
+     * is what `aprv info` stated.
+     */
+    public function testRevocationSettingsReachEveryProcessAndTheStateIsAprvInfos(): void
+    {
+        $this->cli->behave(['info' => '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729},'
+            . '"revocation_urls":["http://crl.example.test/a.crl"],"revocation_valid_until_ms":1796083200000}']);
+        $lists = ["\x30\x01\x00", "\x30\x01\xff"];
+        $issuer = "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----\n";
+        $transport = $this->transport();
+        $state = $transport->open(new Config(
+            revocationLists: $lists,
+            revocationIssuers: [$issuer],
+            distrust: [new RevokedCertificate('AB', '-1'), new RevokedCertificate('cd', '0080')],
+        ));
+        $transport->call(Operation::SignedData, 'x', 7);
+
+        self::assertSame(['http://crl.example.test/a.crl'], $state->revocationUrls);
+        self::assertSame(1796083200000, $state->revocationValidUntilMs);
+        $log = $this->cli->log();
+        self::assertCount(2, $log);
+        foreach ($log as $entry) {
+            self::assertSame(array_map('base64_encode', $lists), $entry['lists'], 'each list as its bytes, in order');
+            self::assertSame(base64_encode($issuer) . "\n", $entry['issuers_file_content']);
+            self::assertSame(['--distrust=AB:-1', '--distrust=cd:0080'], array_slice($entry['argv'], -2), 'with =, so a dash stays a value');
+            self::assertNotContains('--roots', $entry['argv'], 'no roots given, no roots file');
+        }
+        self::assertSame(['verify-signed-data', '--now-ms', '7', '--revocation-list'], array_slice($log[1]['argv'], 0, 4));
+
+        $files = array_values(array_filter($log[0]['argv'], static fn (string $a): bool => is_file($a)));
+        self::assertCount(3, $files, 'two lists and one issuers file');
+        unset($transport);
+        foreach ($files as $file) {
+            self::assertFileDoesNotExist($file, 'deleted with the transport');
+        }
+    }
+
+    public function testADistrustEntryWithANulByteIsAnArgumentError(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('distrust[1] holds a NUL byte');
+        $this->transport()->open(new Config(distrust: [new RevokedCertificate('a', 'b'), new RevokedCertificate("a\0", 'b')]));
+    }
+
+    /** A binary that states no revocation state is older than this package: create refuses it. */
+    public function testABinaryThatStatesNoRevocationStateFailsCreate(): void
+    {
+        foreach ([
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729}}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729},"revocation_urls":[]}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729},"revocation_urls":[1],"revocation_valid_until_ms":null}',
+            '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729},"revocation_urls":[],"revocation_valid_until_ms":"1"}',
+        ] as $info) {
+            $this->cli->behave(['info' => $info]);
+            try {
+                $this->transport()->open(new Config());
+                self::fail("aprv info answered {$info}: create must refuse it");
+            } catch (RuntimeException $e) {
+                self::assertStringContainsString('revocation_urls', $e->getMessage(), $info);
+            }
+        }
     }
 
     public function testTheRootsFileIsOwnerOnlyOnEveryCallAndDeletedWithTheTransport(): void
     {
         $transport = $this->transport();
-        $transport->open(["\x30\x00"]);
+        $transport->open(new Config(roots: ["\x30\x00"]));
         $transport->call(Operation::Receipt, 'x', 1);
         $transport->call(Operation::EndpointProduction, 'x', 1);
 
@@ -251,7 +318,7 @@ final class CliTransportTest extends TestCase
         self::assertSame(['0600'], array_values(array_unique(array_filter(array_column($log, 'roots_file_mode')))));
         $file = (string) $files[0];
         self::assertFileExists($file);
-        self::assertSame(['--roots', $file], array_slice($log[3]['argv'], -2), 'every call passes it');
+        self::assertSame(['--roots', $file], array_slice($log[2]['argv'], -2), 'every call passes it');
 
         unset($transport);
         self::assertFileDoesNotExist($file, 'deleted when the transport is destroyed');
@@ -263,7 +330,7 @@ final class CliTransportTest extends TestCase
             new Config(roots: ["\x30\x00"]),
             $this->transport(),
         );
-        $file = (string) $this->cli->log()[1]['roots_file'];
+        $file = (string) $this->cli->log()[0]['roots_file'];
         self::assertFileExists($file);
 
         unset($verifier);
@@ -272,13 +339,13 @@ final class CliTransportTest extends TestCase
 
     public function testAFailedOpenStillCleansUpTheRootsFile(): void
     {
-        $this->cli->behave(['exit' => 2, 'stderr' => 'aprv: the component refused the roots configuration']);
+        $this->cli->behave(['info_exit' => 2, 'info_stderr' => 'aprv: the component refused the configuration']);
         $transport = $this->transport();
         try {
-            $transport->open(["\x30\x00"]);
+            $transport->open(new Config(roots: ["\x30\x00"]));
             self::fail('a refused root must fail open');
         } catch (InvalidArgumentException) {
-            $file = (string) $this->cli->log()[1]['roots_file'];
+            $file = (string) $this->cli->log()[0]['roots_file'];
         }
         unset($transport);
         self::assertFileDoesNotExist($file);
@@ -286,13 +353,13 @@ final class CliTransportTest extends TestCase
 
     public function testARootTheModuleRefusesIsAnArgumentErrorAtCreate(): void
     {
-        $this->cli->behave(['exit' => 2, 'stderr' => "aprv: the component refused the roots configuration: roots[0]: trust anchor is not a certificate\n"]);
+        $this->cli->behave(['info_exit' => 2, 'info_stderr' => "aprv: the component refused the configuration: roots[0]: trust anchor is not a certificate\n"]);
 
         try {
             Verifier::create(new Config(roots: ['not a certificate']), $this->transport());
             self::fail('create must refuse it');
         } catch (InvalidArgumentException $e) {
-            self::assertStringContainsString('refused the roots', $e->getMessage());
+            self::assertStringContainsString('refused the configuration', $e->getMessage());
             self::assertStringContainsString('trust anchor is not a certificate', $e->getMessage());
         }
     }
@@ -304,7 +371,7 @@ final class CliTransportTest extends TestCase
             new CliTransport($this->cli->directory . '/mode.json'),
         ] as $transport) {
             try {
-                $transport->open(null);
+                $transport->open(new Config());
                 self::fail('no binary, no verifier');
             } catch (RuntimeException $e) {
                 self::assertStringContainsString('aprv-install', $e->getMessage());
@@ -318,7 +385,7 @@ final class CliTransportTest extends TestCase
         $this->cli->behave(['info' => '{"abi":"aprv:verifier@2.0.0"}']);
 
         try {
-            $this->transport()->open(null);
+            $this->transport()->open(new Config());
             self::fail('an ABI mismatch is a hard failure');
         } catch (RuntimeException $e) {
             self::assertStringContainsString('aprv:verifier@2.0.0', $e->getMessage());
@@ -331,7 +398,7 @@ final class CliTransportTest extends TestCase
         foreach (['not json', '{"abi":42}', '[]'] as $info) {
             $this->cli->behave(['info' => $info]);
             try {
-                $this->transport()->open(null);
+                $this->transport()->open(new Config());
                 self::fail("aprv info answered {$info}: create must refuse it");
             } catch (RuntimeException) {
                 $this->addToAssertionCount(1);
@@ -342,10 +409,10 @@ final class CliTransportTest extends TestCase
     public function testATransportServesOneVerifier(): void
     {
         $transport = $this->transport();
-        $transport->open(null);
+        $transport->open(new Config());
 
         $this->expectException(LogicException::class);
-        $transport->open(null);
+        $transport->open(new Config());
     }
 
     /**
@@ -403,7 +470,7 @@ final class CliTransportTest extends TestCase
         chdir($this->cli->directory);
         try {
             $transport = new CliTransport('aprv');
-            $transport->open(null);
+            $transport->open(new Config());
             $transport->call(Operation::Receipt, 'x', 1);
         } finally {
             chdir($cwd);
@@ -440,7 +507,7 @@ final class CliTransportTest extends TestCase
     public function testARootTheRealModuleRefusesIsAnArgumentErrorAtCreate(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/refused the roots/');
+        $this->expectExceptionMessageMatches('/refused the configuration/');
         Verifier::create(new Config(roots: ['not a certificate']), new CliTransport(Aprv::binary()));
     }
 
@@ -465,5 +532,23 @@ final class CliTransportTest extends TestCase
         );
         // Not a receipt, so a verdict of the module's, and a JSON object with an integer status at the endpoint.
         self::assertSame('{"status":21002}', $verifier->verifyReceiptEndpoint(Environment::Sandbox, 'not json'));
+        // The built-in roots expect Apple's four lists, and none is held.
+        self::assertSame(
+            [
+                'http://crl.apple.com/root.crl',
+                'http://crl.apple.com/applerootcag3.crl',
+                'http://crl.apple.com/wwdrg5.crl',
+                'http://crl.apple.com/wwdrg6.crl',
+            ],
+            $verifier->revocationUrls(),
+        );
+        self::assertNull($verifier->revocationValidUntil());
+    }
+
+    public function testADistrustEntryTheRealModuleRefusesIsAnArgumentErrorAtCreate(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/refused the configuration.*distrust\[0\]/');
+        Verifier::create(new Config(distrust: [new RevokedCertificate('ab', '01')]), new CliTransport(Aprv::binary()));
     }
 }

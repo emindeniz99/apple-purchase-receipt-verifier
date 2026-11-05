@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support;
 
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -51,11 +52,14 @@ final class Aprv
      * Starts `aprv serve` on a free loopback port.
      *
      * @param string|null $rootsFile base64 DER lines, or null for the built-in roots
+     * @param list<string> $flags more flags: the revocation settings
+     *
+     * @throws InvalidArgumentException when the server exits 2: a configuration init refused
      */
-    public static function startServer(?string $rootsFile = null, ?string $token = null): ServerProcess
+    public static function startServer(?string $rootsFile = null, ?string $token = null, array $flags = []): ServerProcess
     {
         $tokenFile = null;
-        $arguments = [self::binary(), 'serve', '--listen', '127.0.0.1:0'];
+        $arguments = [self::binary(), 'serve', '--listen', '127.0.0.1:0', ...$flags];
         if ($rootsFile !== null) {
             array_push($arguments, '--roots', $rootsFile);
         }
@@ -72,8 +76,10 @@ final class Aprv
         $line = fgets($pipes[1]);
         if (!is_string($line) || preg_match('/^APRV_LISTEN=(127\.0\.0\.1:\d+)$/', trim($line), $match) !== 1) {
             $error = stream_get_contents($pipes[2]);
-            proc_terminate($process);
-            proc_close($process);
+            $code = proc_close($process);
+            if ($code === 2) {
+                throw new InvalidArgumentException('aprv serve refused its configuration: ' . $error);
+            }
             throw new RuntimeException('aprv serve did not start: ' . $error);
         }
 

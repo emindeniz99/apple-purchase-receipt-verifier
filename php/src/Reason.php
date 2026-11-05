@@ -38,4 +38,7 @@ enum Reason: string
 
     /** The library itself failed before it could decide: the module trapped, `aprv` did not answer, or the clock threw. `Failure::$cause` says which when this library produced it. Deterministic: alert, do not retry. */
     case InternalError = 'INTERNAL_ERROR';
+
+    /** A certificate on the verified path is revoked: on the built-in list, named by `distrust`, or on a revocation list the `Config` passed (docs/design/revocation.md §3). Decided after the signature, before the payload is read. */
+    case CertificateRevoked = 'CERTIFICATE_REVOKED';
 }
