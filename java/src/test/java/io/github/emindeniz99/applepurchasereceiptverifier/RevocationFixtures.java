@@ -31,9 +31,11 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DERNull;
+import org.bouncycastle.asn1.DERPrintableString;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERTaggedObject;
+import org.bouncycastle.asn1.DERUTF8String;
 import org.bouncycastle.asn1.cms.AttributeTable;
 import org.bouncycastle.asn1.cms.CMSAttributes;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -646,6 +648,106 @@ public final class RevocationFixtures {
                         .entry(new Entry(BigInteger.valueOf(0x1A)).reason(CRLReason.keyCompromise))
                         .build());
 
+        // --- added after the first release of these fixtures ---------------------
+        // Everything below uses no randomness (existing keys, RSA signatures), so the
+        // files above keep their bytes.
+
+        // Extensions that appear twice, or whose value does not read (§4): a CRL Number that is
+        // repeated, negative or not an INTEGER puts the list outside the profile; a reasonCode that is
+        // repeated or not an ENUMERATED does not read, so the entry revokes, even where the value
+        // spells removeFromCRL; an unknown non-critical extension, repeated, changes nothing.
+        write(
+                "crl-ignored-repeated-crl-number-revokes.der",
+                list(inter, interKeys)
+                        .number(31)
+                        .raw(extension(Extension.cRLNumber, false, new ASN1Integer(32)))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        write(
+                "crl-ignored-negative-crl-number-revokes.der",
+                list(inter, interKeys)
+                        .raw(extension(Extension.cRLNumber, false, new ASN1Integer(-1)))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        write(
+                "crl-ignored-unreadable-crl-number-revokes.der",
+                list(inter, interKeys)
+                        .raw(extension(Extension.cRLNumber, false, new DERUTF8String("33")))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        write(
+                "crl-reason-code-integer-revokes.der",
+                list(inter, interKeys)
+                        .number(34)
+                        .entry(new Entry(jwsSerial)
+                                .raw(extension(Extension.reasonCode, false, new ASN1Integer(CRLReason.removeFromCRL))))
+                        .build());
+        write(
+                "crl-repeated-reason-code-revokes.der",
+                list(inter, interKeys)
+                        .number(35)
+                        .entry(new Entry(jwsSerial)
+                                .reason(CRLReason.removeFromCRL)
+                                .raw(extension(Extension.reasonCode, false, CRLReason.lookup(CRLReason.removeFromCRL))))
+                        .build());
+        write(
+                "crl-repeated-unknown-extension-revokes.der",
+                list(inter, interKeys)
+                        .number(36)
+                        .raw(extension(new ASN1ObjectIdentifier(UNKNOWN_OID_CRL), false, DERNull.INSTANCE))
+                        .raw(extension(new ASN1ObjectIdentifier(UNKNOWN_OID_CRL), false, DERNull.INSTANCE))
+                        .entry(new Entry(jwsSerial)
+                                .reason(CRLReason.keyCompromise)
+                                .raw(extension(new ASN1ObjectIdentifier(UNKNOWN_OID_ENTRY), false, DERNull.INSTANCE))
+                                .raw(extension(new ASN1ObjectIdentifier(UNKNOWN_OID_ENTRY), false, DERNull.INSTANCE)))
+                        .build());
+
+        // The root's list naming the revoked issuer (1C) on hold, or removed (§6: with no clock, a hold
+        // counts against an issuer; removeFromCRL does not).
+        write(
+                "root-crl-holds-revoked-issuer.der",
+                list(root, rootKeys)
+                        .number(4)
+                        .times(FRESH_THIS, ROOT_NEXT)
+                        .entry(new Entry(revokedIssuer.getSerialNumber()).reason(CRLReason.certificateHold))
+                        .build());
+        write(
+                "root-crl-removes-revoked-issuer.der",
+                list(root, rootKeys)
+                        .number(5)
+                        .times(FRESH_THIS, ROOT_NEXT)
+                        .entry(new Entry(revokedIssuer.getSerialNumber()).reason(CRLReason.removeFromCRL))
+                        .build());
+
+        // An issuer the root signed whose issuer Name spells the root's subject with PrintableString
+        // where the root's subject has UTF8String: the same name to a canonical comparison, other
+        // bytes (§6 compares them byte for byte). It reuses the second issuer's key.
+        X509Certificate otherSpelling = ca(
+                "CN=APRV Revocation Test WWDR CA Other Issuer Spelling,O=APRV Test",
+                secondKeys,
+                0x24,
+                root,
+                rootKeys,
+                true,
+                true,
+                true,
+                URL_ROOT_HTTP);
+        byte[] printableRootName = new DERSequence(new ASN1Encodable[] {
+                    new DERSet(new DERSequence(
+                            new ASN1Encodable[] {BCStyle.CN, new DERPrintableString("APRV Revocation Test Root")})),
+                    new DERSet(new DERSequence(new ASN1Encodable[] {BCStyle.O, new DERPrintableString("APRV Test")}))
+                })
+                .getEncoded("DER");
+        if (Arrays.equals(printableRootName, root.getSubjectX500Principal().getEncoded())) {
+            throw new IllegalStateException("the root's subject is already PrintableString");
+        }
+        X509Certificate otherSpellingResigned = cert(resign(
+                replaceTbsField(otherSpelling.getEncoded(), ISSUER, printableRootName),
+                rootKeys.getPrivate(),
+                "SHA256withRSA"));
+        otherSpellingResigned.verify(rootKeys.getPublic());
+        write("intermediate-issuer-name-other-spelling.der", otherSpellingResigned.getEncoded());
+
         System.out.println("issuer id, root: " + issuerId(root.getEncoded()));
         System.out.println("issuer id, intermediate: " + issuerId(inter.getEncoded()));
         System.out.println("issuer id, twin: " + issuerId(twin.getEncoded()));
@@ -825,6 +927,7 @@ public final class RevocationFixtures {
         boolean invalidity;
         boolean criticalUnknown;
         X500Name certificateIssuer;
+        final List<ASN1Encodable> raw = new ArrayList<ASN1Encodable>();
 
         Entry(BigInteger serial) {
             this.serial = serial;
@@ -851,6 +954,12 @@ public final class RevocationFixtures {
             return this;
         }
 
+        /** An Extension written as given, after the others, so an OID can repeat. */
+        Entry raw(ASN1Encodable extension) {
+            raw.add(extension);
+            return this;
+        }
+
         ASN1Encodable encode() throws Exception {
             ASN1EncodableVector entry = new ASN1EncodableVector();
             entry.add(new ASN1Integer(serial));
@@ -870,8 +979,8 @@ public final class RevocationFixtures {
                 extensions.addExtension(
                         Extension.certificateIssuer, true, new GeneralNames(new GeneralName(certificateIssuer)));
             }
-            if (!extensions.isEmpty()) {
-                entry.add(extensions.generate());
+            if (!extensions.isEmpty() || !raw.isEmpty()) {
+                entry.add(withRaw(extensions, raw));
             }
             return new DERSequence(entry);
         }
@@ -896,6 +1005,7 @@ public final class RevocationFixtures {
         boolean breakSignature;
         final List<Entry> entries = new ArrayList<Entry>();
         final ExtensionsGenerator extra = new ExtensionsGenerator();
+        final List<ASN1Encodable> raw = new ArrayList<ASN1Encodable>();
 
         CrlSpec(X509Certificate issuer, PrivateKey key) {
             this.issuer = issuer;
@@ -943,6 +1053,12 @@ public final class RevocationFixtures {
             return this;
         }
 
+        /** An Extension written as given, after the others, so an OID can repeat. */
+        CrlSpec raw(ASN1Encodable extension) {
+            raw.add(extension);
+            return this;
+        }
+
         CrlSpec extension(ASN1ObjectIdentifier oid, boolean critical, ASN1Encodable value) throws Exception {
             extra.addExtension(oid, critical, value);
             return this;
@@ -987,8 +1103,8 @@ public final class RevocationFixtures {
                         extensions.addExtension(added.getExtension(oid));
                     }
                 }
-                if (!extensions.isEmpty()) {
-                    tbs.add(new DERTaggedObject(true, 0, extensions.generate()));
+                if (!extensions.isEmpty() || !raw.isEmpty()) {
+                    tbs.add(new DERTaggedObject(true, 0, withRaw(extensions, raw)));
                 }
             }
             byte[] tbsDer = new DERSequence(tbs).getEncoded("DER");
@@ -1005,14 +1121,23 @@ public final class RevocationFixtures {
             list.add(signature);
             list.add(new DERBitString(value));
             byte[] der = new DERSequence(list).getEncoded("DER");
-            X509CRL parsed =
-                    (X509CRL) CertificateFactory.getInstance("X.509").generateCRL(new ByteArrayInputStream(der));
             boolean verifies;
-            try {
-                parsed.verify(issuer.getPublicKey());
-                verifies = true;
-            } catch (java.security.SignatureException e) {
-                verifies = false;
+            if (raw.isEmpty() && entries.stream().allMatch(entry -> entry.raw.isEmpty())) {
+                X509CRL parsed =
+                        (X509CRL) CertificateFactory.getInstance("X.509").generateCRL(new ByteArrayInputStream(der));
+                try {
+                    parsed.verify(issuer.getPublicKey());
+                    verifies = true;
+                } catch (java.security.SignatureException e) {
+                    verifies = false;
+                }
+            } else {
+                // A list with an extension written as given may repeat one, which a CRL parser can
+                // refuse: check the signature over the TBSCertList directly.
+                Signature check = Signature.getInstance(algorithm);
+                check.initVerify(issuer.getPublicKey());
+                check.update(tbsDer);
+                verifies = check.verify(value);
             }
             if (verifies == breakSignature) {
                 throw new IllegalStateException("signature check gave " + verifies + " for a list meant to "
@@ -1023,6 +1148,27 @@ public final class RevocationFixtures {
     }
 
     // --- DER plumbing -------------------------------------------------------
+
+    /** One Extension, encoded as given: an INTEGER where an ENUMERATED belongs, a negative number. */
+    private static ASN1Encodable extension(ASN1ObjectIdentifier oid, boolean critical, ASN1Encodable value)
+            throws Exception {
+        return new Extension(oid, critical, value.toASN1Primitive().getEncoded("DER"));
+    }
+
+    /** The generated Extensions followed by {@code raw}, as one SEQUENCE that may repeat an OID. */
+    private static DERSequence withRaw(ExtensionsGenerator generated, List<ASN1Encodable> raw) {
+        ASN1EncodableVector all = new ASN1EncodableVector();
+        if (!generated.isEmpty()) {
+            for (ASN1Encodable extension : org.bouncycastle.asn1.ASN1Sequence.getInstance(
+                    generated.generate().toASN1Primitive())) {
+                all.add(extension);
+            }
+        }
+        for (ASN1Encodable extension : raw) {
+            all.add(extension);
+        }
+        return new DERSequence(all);
+    }
 
     /** [start, contentStart, end) of the element at {@code at}. */
     private static int[] element(byte[] der, int at) {

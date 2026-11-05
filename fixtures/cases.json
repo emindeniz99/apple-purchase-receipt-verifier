@@ -2883,6 +2883,60 @@
       "codec": "raw",
       "contentSha256": "21a27f3b242fbb73f64227a9c208ea138812f0ac310f1c52d10b3ffdca5760a1"
     },
+    "revocation-crl-ignored-repeated-crl-number-revokes": {
+      "path": "generated-0.7/revocation/crl-ignored-repeated-crl-number-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "af122e5425f4a5f39d84daea2346b7ad7939415f804f8fe304958a44573006b2"
+    },
+    "revocation-crl-ignored-negative-crl-number-revokes": {
+      "path": "generated-0.7/revocation/crl-ignored-negative-crl-number-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "adcb669c9b47db07696194ddd078f7bd0e87475deb9d3b159a726c892dc65626"
+    },
+    "revocation-crl-ignored-unreadable-crl-number-revokes": {
+      "path": "generated-0.7/revocation/crl-ignored-unreadable-crl-number-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "0302b8e94caa8dd276072085be676c15cccd691f541ca150772fb681c668bc2e"
+    },
+    "revocation-crl-reason-code-integer-revokes": {
+      "path": "generated-0.7/revocation/crl-reason-code-integer-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "e2405e2eba4e394add28f65d42e9d8432b9d63ca5336262e14047c7c3e4ff08a"
+    },
+    "revocation-crl-repeated-reason-code-revokes": {
+      "path": "generated-0.7/revocation/crl-repeated-reason-code-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "c741d78613fe90516091a6f085f7ee1dc3ff51031f91ffb917297a2fce6c3a2a"
+    },
+    "revocation-crl-repeated-unknown-extension-revokes": {
+      "path": "generated-0.7/revocation/crl-repeated-unknown-extension-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "9490574a95d03c7d2ab8350a1d5392dd4f54ee4a66ee95ccd65143558fbadadb"
+    },
+    "revocation-root-crl-holds-revoked-issuer": {
+      "path": "generated-0.7/revocation/root-crl-holds-revoked-issuer.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "20d89b0d52f28ab0b4ffb36e69f7475ff9fd73b16e62f4bf6df2e893ff0dff7d"
+    },
+    "revocation-root-crl-removes-revoked-issuer": {
+      "path": "generated-0.7/revocation/root-crl-removes-revoked-issuer.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "26918902e3d250f76125bb30b6c202674f49cd9af921a03a2c9eef8cbfa81d2d"
+    },
+    "revocation-intermediate-issuer-name-other-spelling": {
+      "path": "generated-0.7/revocation/intermediate-issuer-name-other-spelling.der",
+      "role": "revocation-issuer",
+      "codec": "raw",
+      "contentSha256": "637114e0d0eeeff8f3aaca560597de8ed5b77f3c9af3c61200c0550279e4ef6b"
+    },
     "apple-crl-appleca-root-2025-03-10": {
       "path": "apple-crls/appleca-root-2025-03-10.crl",
       "role": "revocation-list",
@@ -18008,6 +18062,49 @@
       ]
     },
     {
+      "id": "revocation/latest-this-update-is-kept-without-crl-numbers-whatever-the-order",
+      "description": "The same two lists as latest-this-update-is-kept-without-crl-numbers, the later empty one given first. The latest thisUpdate is kept, not the last given: not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-no-number-later-empty",
+            "revocation-crl-no-number-earlier-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "list-selection",
+        "new-in-0-14"
+      ]
+    },
+    {
       "id": "revocation/latest-this-update-is-kept-when-one-list-lacks-a-number",
       "description": "CRL Number 30 (thisUpdate 2026-10-01) revokes the JWS leaf; a list without a number (thisUpdate 2026-11-02) is empty. One lacks a number, so thisUpdate decides: not revoked.",
       "operation": "verifySignedData",
@@ -18068,6 +18165,49 @@
           "lists": [
             "revocation-crl-tie-empty",
             "revocation-crl-tie-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "list-selection",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/tie-keeps-the-list-whose-der-sorts-first-whatever-the-order",
+      "description": "The same two lists as tie-keeps-the-list-whose-der-sorts-first, the one that revokes given first. The kept list is the one whose DER sorts first byte by byte (the empty one), not the first given: not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-tie-revokes",
+            "revocation-crl-tie-empty"
           ],
           "issuers": [
             "revocation-intermediate"
@@ -18870,6 +19010,489 @@
       ]
     },
     {
+      "id": "revocation/ignored-list-repeated-crl-number-does-not-revoke",
+      "description": "A genuine list of the intermediate with two CRL Number extensions (31 and 32), revoking the JWS leaf. A CRL Number that is repeated, negative or does not read puts the list outside the profile: it is ignored, not refused (\u00a74), so the configuration builds and the leaf is not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-ignored-repeated-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-repeated-crl-number-counts-as-missing",
+      "description": "The root's fresh list (nextUpdate 2027-01-01) and the intermediate's list with two CRL Number extensions (31 and 32). The configuration builds; the ignored list counts as missing, so revocationValidUntil is null (\u00a74, \u00a77).",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-ignored-repeated-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-negative-crl-number-does-not-revoke",
+      "description": "A genuine list of the intermediate with a CRL Number of -1, revoking the JWS leaf. A CRL Number that is repeated, negative or does not read puts the list outside the profile: it is ignored, not refused (\u00a74), so the configuration builds and the leaf is not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-ignored-negative-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-negative-crl-number-counts-as-missing",
+      "description": "The root's fresh list (nextUpdate 2027-01-01) and the intermediate's list with a CRL Number of -1. The configuration builds; the ignored list counts as missing, so revocationValidUntil is null (\u00a74, \u00a77).",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-ignored-negative-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-unreadable-crl-number-does-not-revoke",
+      "description": "A genuine list of the intermediate with a CRL Number extension whose value is a UTF8String, not an INTEGER, revoking the JWS leaf. A CRL Number that is repeated, negative or does not read puts the list outside the profile: it is ignored, not refused (\u00a74), so the configuration builds and the leaf is not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-ignored-unreadable-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-unreadable-crl-number-counts-as-missing",
+      "description": "The root's fresh list (nextUpdate 2027-01-01) and the intermediate's list with a CRL Number extension whose value is a UTF8String, not an INTEGER. The configuration builds; the ignored list counts as missing, so revocationValidUntil is null (\u00a74, \u00a77).",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-ignored-unreadable-crl-number-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "ignored-list",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/reason-code-that-does-not-read-revokes",
+      "description": "A fresh list of the intermediate with an entry for the JWS leaf whose reasonCode is encoded as an INTEGER holding 8 (removeFromCRL) instead of an ENUMERATED. A reasonCode that does not read, a repeated one included, revokes; it is not read as removeFromCRL (\u00a74).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-reason-code-integer-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "leaf-revoked-by-list",
+      "tags": [
+        "revocation",
+        "jws",
+        "negative",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/reason-code-that-does-not-read-list-counts",
+      "description": "The root's fresh list and the intermediate's list with an entry whose reasonCode is encoded as an INTEGER holding 8 (removeFromCRL) instead of an ENUMERATED. A reasonCode that does not read does not put the list outside the profile: the configuration builds and the list counts, so revocationValidUntil is its nextUpdate.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-reason-code-integer-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": "2026-12-01T00:00:00Z"
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/repeated-reason-code-revokes",
+      "description": "A fresh list of the intermediate with an entry for the JWS leaf with two reasonCode extensions, both removeFromCRL. A reasonCode that does not read, a repeated one included, revokes; it is not read as removeFromCRL (\u00a74).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-repeated-reason-code-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "leaf-revoked-by-list",
+      "tags": [
+        "revocation",
+        "jws",
+        "negative",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/repeated-reason-code-list-counts",
+      "description": "The root's fresh list and the intermediate's list with an entry with two reasonCode extensions, both removeFromCRL. A reasonCode that does not read does not put the list outside the profile: the configuration builds and the list counts, so revocationValidUntil is its nextUpdate.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-repeated-reason-code-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": "2026-12-01T00:00:00Z"
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/repeated-unknown-extension-revokes",
+      "description": "A fresh list of the intermediate that repeats an unknown non-critical extension, on the list and on the entry, keyCompromise for the JWS leaf. A repeated extension the profile does not read changes nothing: the list is held and revokes (\u00a74).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-repeated-unknown-extension-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "leaf-revoked-by-list",
+      "tags": [
+        "revocation",
+        "jws",
+        "negative",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/repeated-unknown-extension-list-counts",
+      "description": "The root's fresh list and the intermediate's list that repeats an unknown non-critical extension, on the list and on the entry, keyCompromise. The list is inside the profile: the configuration builds and the list counts, so revocationValidUntil is its nextUpdate.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-repeated-unknown-extension-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": "2026-12-01T00:00:00Z"
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
       "id": "revocation/refuse-list-not-a-crl",
       "description": "The \"list\" is the intermediate's certificate: DER, but not a CertificateList. Building the configuration fails.",
       "operation": "buildConfig",
@@ -19449,6 +20072,113 @@
         "status": "error"
       },
       "fault": "issuer-revoked-by-distrust",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "issuer",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-issuer-held-by-the-root-list",
+      "description": "An added issuer (serial 1C) that the root's list, also passed, holds (certificateHold). The configuration has no clock, so a hold counts against an issuer (\u00a76). Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-holds-revoked-issuer"
+          ],
+          "issuers": [
+            "revocation-intermediate-revoked"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "issuer-held-by-list",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "issuer",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/issuer-removed-from-the-root-list-builds",
+      "description": "An added issuer (serial 1C) that the root's list, also passed, names with removeFromCRL. removeFromCRL does not count against an issuer (\u00a76): the configuration builds. The issuer has no list of its own here, so revocationValidUntil is null.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-removes-revoked-issuer"
+          ],
+          "issuers": [
+            "revocation-intermediate-revoked"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "issuer",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-issuer-whose-issuer-name-is-another-spelling-of-the-root",
+      "description": "An added issuer signed by the root's key whose issuer Name spells the root's subject with PrintableString where the root has UTF8String. A canonical comparison calls the names equal; \u00a76 compares the bytes, so the issuer does not chain to the root. Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "issuers": [
+            "revocation-intermediate-issuer-name-other-spelling"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "issuer-name-not-the-root-subject",
       "tags": [
         "revocation",
         "build-config",
