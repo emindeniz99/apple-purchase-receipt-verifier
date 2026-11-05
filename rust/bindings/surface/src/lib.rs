@@ -88,20 +88,47 @@ pub use core_api::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 
 /// Each of `entries` read as the core reads a root, DER or PEM, every
 /// certificate of a PEM bundle in its place; the first that is not a
-/// certificate is named as `member[index]`.
+/// certificate is named as `member[index]`. Beside them, for each
+/// certificate, the index of the entry it came from and its place in that
+/// entry, so a refusal the core makes by certificate can name the entry.
 fn certificates(
     member: &str,
     entries: &[Vec<u8>],
-) -> Result<Vec<core_api::TrustAnchor>, ConfigError> {
+) -> Result<(Vec<core_api::TrustAnchor>, Vec<(usize, usize)>), ConfigError> {
     let mut read = Vec::with_capacity(entries.len());
+    let mut origin = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
-        read.extend(
-            core_api::TrustAnchor::from_der_or_pem(entry).map_err(|err| ConfigError {
-                message: format!("{member}[{index}]: {}", err.detail()),
-            })?,
-        );
+        let anchors = core_api::TrustAnchor::from_der_or_pem(entry).map_err(|err| ConfigError {
+            message: format!("{member}[{index}]: {}", err.detail()),
+        })?;
+        origin.extend((0..anchors.len()).map(|place| (index, place)));
+        read.extend(anchors);
     }
-    Ok(read)
+    Ok((read, origin))
+}
+
+/// The core's refusal, with a `revocation_issuers[i]` index, which counts
+/// certificates, turned into the index of the entry given (and the
+/// certificate's place when that entry is a PEM bundle of several).
+fn entry_named(detail: &str, origin: &[(usize, usize)], counts: &[usize]) -> String {
+    const PREFIX: &str = "revocation_issuers[";
+    let Some(rest) = detail.strip_prefix(PREFIX) else {
+        return detail.to_owned();
+    };
+    let Some((digits, tail)) = rest.split_once(']') else {
+        return detail.to_owned();
+    };
+    let Some(&(index, place)) = digits.parse::<usize>().ok().and_then(|i| origin.get(i)) else {
+        return detail.to_owned();
+    };
+    if counts.get(index).copied().unwrap_or(1) > 1 {
+        format!(
+            "{PREFIX}{index}] (certificate {} of its PEM text){tail}",
+            place + 1
+        )
+    } else {
+        format!("{PREFIX}{index}]{tail}")
+    }
 }
 
 /// A configuration that cannot make a verifier: a root that is not a
@@ -186,15 +213,22 @@ impl Verifier {
         // core's `_at` methods, which never read it.
         let mut builder = core_api::Config::builder();
         if !roots.is_empty() {
-            builder = builder.roots(certificates("roots", roots)?);
+            builder = builder.roots(certificates("roots", roots)?.0);
+        }
+        let (issuers, origin) = certificates("revocation_issuers", &revocation.issuers)?;
+        let mut counts = vec![0_usize; revocation.issuers.len()];
+        for &(index, _) in &origin {
+            if let Some(count) = counts.get_mut(index) {
+                *count += 1;
+            }
         }
         let config = builder
             .revocation_lists(revocation.lists.iter().cloned())
-            .revocation_issuers(certificates("revocation_issuers", &revocation.issuers)?)
+            .revocation_issuers(issuers)
             .distrust(revocation.distrust.iter().cloned())
             .build()
             .map_err(|err| ConfigError {
-                message: err.detail().to_owned(),
+                message: entry_named(err.detail(), &origin, &counts),
             })?;
         Ok(Verifier {
             inner: core_api::Verifier::new(config),
@@ -377,6 +411,40 @@ mod tests {
         let empty = b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----".to_vec();
         let error = Verifier::new(&[pems[0].clone(), empty]).unwrap_err();
         assert!(error.message.starts_with("roots[1]: "), "{}", error.message);
+    }
+
+    #[test]
+    fn a_refused_issuer_is_named_by_the_entry_given_not_the_certificate() {
+        // The core counts certificates; a PEM bundle is one entry holding
+        // several, so its index must be mapped back to the entry.
+        let read = |name: &str| fixture(&format!("generated-0.7/revocation/{name}.der"));
+        let roots = [read("root")];
+        let refused = |issuers: Vec<Vec<u8>>| {
+            let revocation = super::Revocation {
+                issuers,
+                ..super::Revocation::default()
+            };
+            Verifier::with_revocation(&roots, &revocation)
+                .unwrap_err()
+                .message
+        };
+        let bundle = [
+            pem(&read("intermediate")),
+            pem(&read("intermediate-second")),
+        ]
+        .concat();
+        let message = refused(vec![bundle, read("intermediate-without-crl-sign")]);
+        assert!(message.starts_with("revocation_issuers[1]: "), "{message}");
+        let bundle = [
+            pem(&read("intermediate")),
+            pem(&read("intermediate-without-crl-sign")),
+        ]
+        .concat();
+        let message = refused(vec![read("intermediate-second"), bundle]);
+        assert!(
+            message.starts_with("revocation_issuers[1] (certificate 2 of its PEM text): "),
+            "{message}"
+        );
     }
 
     #[test]

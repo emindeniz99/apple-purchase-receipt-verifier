@@ -246,8 +246,9 @@ impl InitConfig {
 /// A message naming what is wrong: not UTF-8, not JSON, not an object, a
 /// member more than once, a member other than the four, a member that is
 /// not a list, `roots` an empty list, an entry that is not a string or not
-/// base64, or a `distrust` entry that is not such an object (by its
-/// index), the first of these that applies.
+/// base64, or a `distrust` entry that is not such an object or names one
+/// of its two members twice (by its index), the first of these that
+/// applies.
 pub fn read_init_config(config: &[u8]) -> Result<InitConfig, String> {
     let text =
         core::str::from_utf8(config).map_err(|_| "the configuration is not UTF-8".to_owned())?;
@@ -299,6 +300,17 @@ pub fn read_init_config(config: &[u8]) -> Result<InitConfig, String> {
         .transpose()?
         .unwrap_or_default();
     let distrust = take(3).map(distrust_list).transpose()?.unwrap_or_default();
+    if !distrust.is_empty() {
+        // The map above keeps the last of a repeated key; read the entries
+        // again, as serde reads a map, to refuse one.
+        let again: DistrustOnce =
+            serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
+        if let Some(index) = again.distrust.0 {
+            return Err(format!(
+                "distrust[{index}] names \"issuer\" or \"serial\" more than once"
+            ));
+        }
+    }
     Ok(InitConfig {
         roots,
         revocation: Revocation {
@@ -331,6 +343,73 @@ fn base64_list(member: &str, value: serde_json::Value) -> Result<Vec<Vec<u8>>, S
 /// `distrust`: a list of `{"issuer":"...","serial":"..."}`, both strings,
 /// nothing else. Whether the strings are an issuer id and a hex serial is
 /// the core's question.
+/// The `distrust` member read only to find an entry that names a member
+/// more than once, which `serde_json`'s map would hide. Read after
+/// [`distrust_list`] accepted the member, so it is a list of objects.
+#[derive(Deserialize)]
+struct DistrustOnce {
+    distrust: RepeatedEntry,
+}
+
+/// The index of the first entry that names a member twice, if any.
+struct RepeatedEntry(Option<usize>);
+
+impl<'de> Deserialize<'de> for RepeatedEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Entries;
+        impl<'de> serde::de::Visitor<'de> for Entries {
+            type Value = RepeatedEntry;
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str("a list of objects")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut entries: A,
+            ) -> Result<RepeatedEntry, A::Error> {
+                let mut first = None;
+                let mut index = 0_usize;
+                while let Some(EntryKeys(repeated)) = entries.next_element()? {
+                    if repeated && first.is_none() {
+                        first = Some(index);
+                    }
+                    index += 1;
+                }
+                Ok(RepeatedEntry(first))
+            }
+        }
+        deserializer.deserialize_seq(Entries)
+    }
+}
+
+/// Whether one object names a member more than once.
+struct EntryKeys(bool);
+
+impl<'de> Deserialize<'de> for EntryKeys {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Keys;
+        impl<'de> serde::de::Visitor<'de> for Keys {
+            type Value = EntryKeys;
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut members: A,
+            ) -> Result<EntryKeys, A::Error> {
+                let mut seen: Vec<String> = Vec::new();
+                let mut repeated = false;
+                while let Some(key) = members.next_key::<String>()? {
+                    members.next_value::<serde::de::IgnoredAny>()?;
+                    repeated |= seen.contains(&key);
+                    seen.push(key);
+                }
+                Ok(EntryKeys(repeated))
+            }
+        }
+        deserializer.deserialize_map(Keys)
+    }
+}
+
 fn distrust_list(value: serde_json::Value) -> Result<Vec<(String, String)>, String> {
     let serde_json::Value::Array(entries) = value else {
         return Err("distrust is not a list".to_owned());
@@ -644,7 +723,7 @@ mod tests {
         );
         let other = "the configuration has a member other than \"roots\", \"revocation_lists\", \
                      \"revocation_issuers\" and \"distrust\"";
-        let refused: [(&[u8], &str); 24] = [
+        let refused: [(&[u8], &str); 26] = [
             // One spelling for the Apple roots, `{}`: an empty list is a
             // root set that came up empty, the core's `Config` refusal.
             (b"{\"roots\":[]}", "roots must not be empty"),
@@ -711,6 +790,16 @@ mod tests {
             (
                 br#"{"distrust":[{"issuer":"ab","serial":"01","note":""}]}"#,
                 "distrust[0] is not {\"issuer\":\"...\",\"serial\":\"...\"}",
+            ),
+            // serde_json's map keeps the last of a repeated key, so this
+            // would otherwise distrust "cd" without a word.
+            (
+                br#"{"distrust":[{"issuer":"ab","serial":"01"},{"issuer":"ab","issuer":"cd","serial":"01"}]}"#,
+                "distrust[1] names \"issuer\" or \"serial\" more than once",
+            ),
+            (
+                br#"{"distrust":[{"serial":"02","issuer":"ab","serial":"01"}]}"#,
+                "distrust[0] names \"issuer\" or \"serial\" more than once",
             ),
         ];
         for (config, message) in refused {
