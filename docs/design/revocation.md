@@ -42,7 +42,7 @@ every CRL signature on every call); platform trust stores; refund, cancellation 
 - **Serial**: the certificate's serial number as an unsigned integer, written as uppercase hex with an even number of
   digits and no leading `00` pair unless the value is zero (`"00"`): `2` is `"02"`, `0x80` is `"80"`, zero is `"00"`
   (neither `BN_bn2hex` nor `BigInteger.toString(16)` gives that by itself; both implementations normalise). A
-  negative serial is never matched. A CRL Number is written the same way (G6's 2135 is `"0857"`). Inputs (`distrust`) accept either letter case and an odd digit count and are normalised.
+  negative serial is never matched. A CRL Number is written the same way (G6's 2135 is `"0857"`). Inputs (`distrust`) accept either letter case and an odd digit count and are normalised; the issuer id of a `distrust` entry is accepted in either letter case and lowercased. An empty serial, a `0x` prefix, a sign or whitespace is refused.
 - A certificate's **revocation key** is (issuer id of the certificate above it on the verified path, serial).
 
 ## 3. The check
@@ -70,8 +70,9 @@ Time: a certificate's validity window is judged at the payload's date, as before
 key chooses the payload's date, so "signed before the revocation" cannot be trusted. The anchor is never checked:
 removing a root is done with `roots`.
 
-`CERTIFICATE_REVOKED` is the ninth reason. Its message names the layer ("revoked: built-in list", "revoked:
-distrust", "revoked: Apple's list") and the serial, and nothing from the input beyond that. The endpoint emulation
+`CERTIFICATE_REVOKED` is the ninth reason. Its message names the layer (built-in list, distrust, Apple's list) and
+the serial, and nothing from the input beyond that. The wording is not part of the contract: the core writes
+"revoked: built-in list, serial …", Java "… certificate with serial … is revoked: built-in list". The endpoint emulation
 answers 21003 for it, as for the other certificate failures; no new endpoint status exists.
 
 ## 4. Configuration
@@ -85,7 +86,9 @@ answers 21003 for it, as for the other certificate failures; no new endpoint sta
 Building the configuration (the `Config` builder, the module's `init`, `aprv-server` start-up) fails, naming the
 first problem and its index, when:
 
-The checks run in this order, per list in input order: size and count bounds, DER parse, issuer, signature, age.
+Which problem is named when there are several is not part of the contract: the core checks the lists (count, then
+each list's size, DER and running entry total, then each list's issuer, signature and age), then added issuers, then
+`distrust`; Java checks `distrust` first. Only whether the configuration builds is pinned (DECISIONS.md R47).
 
 - a list is not a DER CRL, is over 1 MiB, or there are more than 16 lists or more than 100,000 entries in all (Apple's
   frozen 2.3 MB WWDR G1 list, still linked from the PKI page, is refused here);
@@ -106,7 +109,11 @@ The checks run in this order, per list in input order: size and count bounds, DE
 A list that is genuine but uses something this profile does not support is **ignored**, not refused, so a format
 change at Apple cannot stop a host from building a verifier: version 1, no `nextUpdate`, an
 IssuingDistributionPoint, a DeltaCRLIndicator, a FreshestCRL, an indirect entry (certificateIssuer), any other
-critical CRL or entry extension, a duplicate serial. An ignored list counts as missing in `revocationValidUntil`.
+critical CRL or entry extension, a duplicate serial, a CRL Number that is negative or does not read. "Other" means:
+critical is allowed only on the AuthorityKeyIdentifier and the CRL Number of a list, and on the reasonCode and the
+invalidityDate of an entry. An ignored list counts as missing in `revocationValidUntil` and takes no part in choosing
+the list kept for its issuer; it is still refused when it is older than `newest`. An entry whose reasonCode is unknown
+(7, or above 10) or does not read revokes.
 
 Several lists for one issuer: the one kept has the highest CRL Number; if any of them lacks a number, the latest
 `thisUpdate`; on a tie, the one whose DER sorts first byte by byte. Lists are never merged.
@@ -115,8 +122,8 @@ Several lists for one issuer: the one kept has the highest CRL Number; if any of
 
 `certs/revocations.json` is the source; `rust/certs/revocations.json` is the compiled copy
 (`tools/check-cert-copies.mjs` diffs every file of `certs/`); `rust/src/roots.rs` pins its SHA-256 the way it pins
-the roots; Java keeps the same JSON as a resource or constant pinned by `AppleRootCertsTest`-style test to
-`certs/revocations.json`. Format:
+the roots; Java keeps the same JSON as a constant (`AppleRevocations`, one string per line, with the WWDR G5 and G6
+certificates as base64), pinned byte for byte to `certs/` by `RevocationTest`. Format:
 
 ```json
 {
@@ -133,6 +140,8 @@ the roots; Java keeps the same JSON as a resource or constant pinned by `AppleRo
 }
 ```
 
+- An entry may also carry `"delisted": {"crlNumber": ..., "thisUpdate": ...}`, naming the first list of its issuer
+  that no longer lists it. The tool writes it; the entry still revokes, and both implementations ignore the member.
 - `issuers` holds Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6 (the four whose lists exist and can sit on an
   APRV path). `certificate` is null for a root (the root's file in `certs/` is used). `list` is the URL of the list
   that issuer signs.
@@ -140,17 +149,23 @@ the roots; Java keeps the same JSON as a resource or constant pinned by `AppleRo
   has no `expiredCertsOnCRL`, so an expired, revoked certificate may disappear from it). `certificateHold` and
   `removeFromCRL` entries are not added.
 - `tools/refresh-apple-revocations.mjs` writes it: it downloads each issuer's `list` over HTTPS (HTTP when Apple does
-  not serve HTTPS; the signature, not the transport, authenticates it), verifies it with `openssl crl -verify`
-  against the issuer certificate from `certs/`, refuses anything outside the §4 profile, and appends new entries and
-  `newest`. A weekly workflow runs it read-only and fails, so the owner is notified, when a new or vanished entry, a
-  changed reason, or a WWDR intermediate not in `issuers` appears on Apple's PKI page
-  (https://www.apple.com/certificateauthority/); a newer list alone is reported in the job summary, not a failure
-  (WWDR G6's list is reissued daily). The owner runs the tool and opens the pull request; a release ships it.
+  not serve HTTPS, which on 2026-11-05 is all four: `crl.apple.com` answers 404 over HTTPS; the signature, not the
+  transport, authenticates it), verifies it with `openssl crl -verify` against the issuer certificate from `certs/`,
+  refuses anything outside the §4 profile, and appends new entries and `newest`. A weekly workflow
+  (`apple-revocation-watch.yml`) runs it with `--check` and fails, so the owner is notified, when a new entry, a
+  vanished entry not yet marked `delisted`, a reappearing entry, a changed reason, a refused list, or a WWDR
+  intermediate not in `issuers` appears on Apple's PKI page (https://www.apple.com/certificateauthority/); a newer
+  list alone is reported in the job summary, not a failure (WWDR G6's list is reissued daily), and so are
+  `certificateHold` and `removeFromCRL` entries. WWDR G3 and G4 carry the marker but have no list (their URLs answer
+  404); the tool names them as known exclusions. The owner runs the tool and opens the pull request; a release ships
+  it.
 - `rust/certs/` mirrors `certs/` recursively (`revocation-issuers/`, `revocations.json`); `tools/check-cert-copies.mjs`
   walks subdirectories; tests that list root certificates (`rust/server/src/roots.rs` `DEFAULT_ROOT_SHA256`) read
   only the top-level `.cer` files.
-- Shipped content on 2026-11-05: nineteen entries (one on Apple Root CA's list, eighteen on WWDR G6's, all for
-  certificates that cannot pass APRV's marker checks); no receipt- or JWS-signing certificate is on any list today.
+- Shipped content on 2026-11-05: nineteen entries (one on Apple Root CA's list, eighteen on WWDR G6's). None is a
+  certificate seen on a genuine App Store chain: the Apple Root CA entry is not a WWDR intermediate on an APRV path,
+  and the current JWS signing leaf and the receipt signers in `fixtures/` are not listed. A list carries only
+  serials, so what the WWDR G6 certificates were is not known.
 
 ## 6. Issuers of lists
 
@@ -163,7 +178,8 @@ configured root's key and its `issuer` Name matches that root's `subject`; it is
 keyUsage, when present, has `cRLSign`; it carries the WWDR intermediate marker `1.2.840.113635.100.6.2.1`. Its
 validity dates are not judged here: a list it signed is used only for certificates it issued on a path that was
 already judged at its payload's date. An issuer whose own revocation key (§2, under the root that signed it) is in
-the built-in list, in `distrust`, or on a held list of that root is not accepted. A built-in issuer that does not
+the built-in list, in `distrust`, or on a held list of that root (any reason except `removeFromCRL`; with no clock, a
+`certificateHold` counts) is not accepted. A built-in issuer that does not
 chain to the configured roots (custom roots, a test PKI), or is revoked, is dropped silently; an added one is
 refused (§4).
 
@@ -174,9 +190,11 @@ refused (§4).
   roots: `http://crl.apple.com/root.crl`, `http://crl.apple.com/applerootcag3.crl`,
   `http://crl.apple.com/wwdrg5.crl`, `http://crl.apple.com/wwdrg6.crl`. An added issuer's own list URL cannot be
   known (Apple names it only on the leaves it signs); the README says to add it by hand.
-- `revocationValidUntil()`: the earliest `nextUpdate` among the lists held for the expected issuers (the built-in
-  issuers that chain to the configured roots, plus added issuers), or null when any expected issuer has no list held
-  (none passed, ignored, or refused). Null means "live revocation is not fully in force"; a date in the past means a
+- `revocationValidUntil()`: the earliest `nextUpdate` among the lists held for the expected issuers (the issuers of
+  `certs/revocations.json` that are, or chain to, a configured root, plus added issuers), or null when any expected
+  issuer has no list held (none passed, ignored, or refused). A caller's own root is a candidate signer of lists but
+  never an expected issuer, so under custom roots with nothing added there is none to expect and the value is null
+  (and `revocationUrls()` is empty). Null means "live revocation is not fully in force"; a date in the past means a
   list is stale. Monitoring alerts on either.
 
 ## 8. Wire format (no WIT type change)
@@ -191,16 +209,21 @@ The reason travels as `"CERTIFICATE_REVOKED"`.
 (repeatable); in `--managed` mode the configuration line is one JSON object with the same members as `init`
 (`Roots::from_config_json` reads them), and its cap rises from 1 MiB to 32 MiB (base64 of 16 lists of 1 MiB, plus
 roots and issuers). `read_init_config` accepts the new members. `GET /v1/info` adds
-`revocation_urls`, `revocation_valid_until_ms` and `revocation_lists` (the SHA-256 of each list held, sorted), so the
-Java `-wasm` artifact's server mode and PHP can refuse a server whose revocation state differs from their `Config`, as
-they already do for roots. A server picks up new lists by restarting (or by a new managed child).
+`revocation_urls`, `revocation_valid_until_ms`, `revocation_lists` (the SHA-256 of each list given, sorted: `init`'s
+answer does not say which lists the core kept, so ignored ones are included), `revocation_issuers` (the SHA-256 of
+each added issuer's DER, in order) and `distrust` (the entries as given, in order), so the Java `-wasm` artifact's
+server mode and PHP can refuse a server whose revocation settings differ from their `Config`, as they already do for
+roots. `aprv info` takes `--roots` and the three revocation flags and prints the same members, which is how PHP's
+one-process-per-call transport reads the two reported values. A server picks up new lists by restarting (or by a new
+managed child). The C ABI gains only the reason (code 17); it has no way to pass revocation settings.
 
 ## 9. Packages
 
 Each package adds the three settings to its `Config` in its own idiom, the two read-only properties on its
 `Verifier`, and the ninth reason. `revocationIssuers` takes the same type as that package's `roots` (Go
 `[]*x509.Certificate`, .NET and Java certificates, bytes elsewhere); `distrust` takes a small value type or pair of
-strings; `revocationValidUntil` is nullable in the package's idiom (Go: `(time.Time, bool)`). Refresh is: build a
+strings; `revocationValidUntil` is nullable in the package's idiom (Go: `(time.Time, bool)`; .NET:
+`long? RevocationValidUntilMs`, epoch milliseconds like the package's other dates). Refresh is: build a
 new `Verifier` and swap the reference; no package adds a setter, a timer or an HTTP client.
 
 ## 10. Tests
@@ -226,6 +249,12 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
   (`revocationValidUntil` in the past, verify ok); an added issuer that is revoked (refused); serial zero and a
   serial whose DER is `00 80`.
 - Every package runs every case. Rust tests inject a built-in list through a test-only constructor; Java the same.
+- Not shared cases, because the inputs would be too large for `fixtures/` or need an injected built-in list: the
+  1 MiB list size, the 100,000-entry total, more than 1,000 `distrust` entries, and a test list older than `newest`.
+  Each is a unit test in Rust (`rust/tests/revocation.rs`) and Java (`RevocationTest`); the shared cases cover the
+  16-list count and Apple's real stale list.
+- The non-DER name case puts the name on a trust anchor: BouncyCastle re-encodes a TBSCertificate before checking its
+  signature, so Java cannot verify a certificate below the anchor whose Name is not DER (DECISIONS.md R47).
 - The parity corpus must not flip a verdict (no corpus input is on a list).
 
 ## 11. Limits, stated
@@ -234,6 +263,6 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
 - `distrust` helps only a consumer who learns of a revocation.
 - With stale lists passing, a network attacker who keeps feeding an old (but newer-than-`newest`) list reduces the
   live layer to the built-in list; only `revocationValidUntil` monitoring sees it. Fetch over HTTPS where Apple serves
-  it.
+  it (on 2026-11-05 it serves none of the four lists over HTTPS).
 - Apple's lists come from a CDN that answers with `Cache-Control: max-age=3600`; a revocation reaches a host about a
   day after Apple lists it, at the earliest.
