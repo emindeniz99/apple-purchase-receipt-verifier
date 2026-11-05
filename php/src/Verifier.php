@@ -97,14 +97,26 @@ final class Verifier
             self::requireBytes($issuer, 'every revocation issuer must be a non-empty string of DER or PEM bytes');
         }
         foreach ($config->distrust as $entry) {
-            if (!$entry instanceof RevokedCertificate) {
-                throw new InvalidArgumentException('every distrust entry must be a RevokedCertificate');
-            }
+            self::requireRevokedCertificate($entry);
         }
         $transport ??= new CliTransport();
         $revocation = $transport->open($config);
 
         return new self($transport, $config, $revocation);
+    }
+
+    /**
+     * PHP does not check an array's element types, so a caller can hand
+     * `Config` any value as a distrust entry; it is judged here, as the
+     * roots are by requireBytes().
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function requireRevokedCertificate(mixed $entry): void
+    {
+        if (!$entry instanceof RevokedCertificate) {
+            throw new InvalidArgumentException('every distrust entry must be a RevokedCertificate');
+        }
     }
 
     /** @throws InvalidArgumentException */
@@ -148,7 +160,7 @@ final class Verifier
         $seconds = intdiv($ms - $remainder, 1000);
         $at = DateTimeImmutable::createFromFormat(
             'U.u',
-            sprintf('%d.%06d', $seconds, $remainder * 1000),
+            $seconds . '.' . str_pad((string) ($remainder * 1000), 6, '0', STR_PAD_LEFT),
             new DateTimeZone('UTC'),
         );
         if ($at === false) {

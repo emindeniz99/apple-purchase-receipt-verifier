@@ -388,6 +388,7 @@ final class HttpTransportTest extends TestCase
         $sorted = [$h1, $h2];
         sort($sorted);
         $entry = new RevokedCertificate('AB', '01');
+        /** @param array<string, mixed> $members */
         $served = static fn (array $members): array => self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, $members);
 
         yield 'nothing on either side' => [new Config(), self::info(), true];

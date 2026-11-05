@@ -379,8 +379,8 @@ final class FacadeTest extends TestCase
     {
         $wire = '{"verified":false,"reason":"CERTIFICATE_REVOKED","message":"revoked: distrust, serial 02"}';
         $failure = Verifier::create(new Config(), FakeTransport::answering($wire))->verifySignedData('x')->failure;
-        self::assertSame(Reason::CertificateRevoked, $failure?->reason);
-        self::assertNull($failure?->cause);
+        self::assertSame(Reason::CertificateRevoked, $failure->reason);
+        self::assertNull($failure->cause);
     }
 
     /**

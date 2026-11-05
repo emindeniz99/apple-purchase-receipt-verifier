@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Tests;
 
 use Closure;
-use InvalidArgumentException;
 use DateTimeImmutable;
 use DateTimeZone;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
@@ -21,6 +20,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\JsonPointer;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Shape;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
@@ -359,7 +359,9 @@ abstract class ConformanceBase extends TestCase
     {
         $id = Shape::asString($case['id'], 'id');
         $expected = Shape::asArray($case['expected'], 'expected');
-        $config = self::config(Shape::asArray($case['input'], 'input'), self::caseClock($case));
+        /** @var array<string, mixed> $input */
+        $input = Shape::asArray($case['input'], 'input');
+        $config = self::config($input, self::caseClock($case));
         if ($expected['status'] === 'error') {
             try {
                 $factory($config);
