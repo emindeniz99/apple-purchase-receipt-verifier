@@ -4,8 +4,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The module's {@code init} answered {@code {"ok":false}}: it refused the
- * configuration, which carries only the roots, so one of them is not a
- * certificate the core accepts. A caller's mistake: {@link Verifier#create}
+ * configuration, a root, a revocation list or issuer, or a distrust entry,
+ * and its message names which. A caller's mistake: {@link Verifier#create}
  * turns it into {@link IllegalArgumentException}.
  */
 final class InitRefused extends RuntimeException {

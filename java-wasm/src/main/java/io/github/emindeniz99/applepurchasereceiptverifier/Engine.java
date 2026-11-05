@@ -54,8 +54,9 @@ public abstract class Engine {
      * on (the default), {@link Verifier#create(Config, Engine)} resolves the
      * sources and throws {@link IllegalStateException} with each source's
      * reason when none works, and {@link IllegalArgumentException} when the
-     * module refuses one of the config's roots, as on Endive; with it off,
-     * the first call does, and answers {@link Reason#INTERNAL_ERROR} instead.
+     * module refuses the config's roots or revocation settings, as on
+     * Endive; with it off, the first call does, and answers
+     * {@link Reason#INTERNAL_ERROR} instead.
      *
      * @throws NullPointerException if {@code sources} or one of them is null
      */

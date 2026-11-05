@@ -95,10 +95,21 @@ class WireTest {
         }
     }
 
+    private static final String REVOCATION = ",\"revocation_urls\":[],\"revocation_valid_until_ms\":null";
+
     @Test
     void initAnswers() {
-        assertEquals(3_145_729, Wire.initAnswer("{\"ok\":true,\"max_input_bytes\":3145729}"));
-        assertEquals(1, Wire.initAnswer("{\"max_input_bytes\":1,\"ok\":true}"));
+        assertEquals(
+                3_145_729,
+                Wire.initAnswer("{\"ok\":true,\"max_input_bytes\":3145729" + REVOCATION + "}").maxInputBytes);
+        InitAnswer reordered = Wire.initAnswer("{\"revocation_valid_until_ms\":1796083200123,\"max_input_bytes\":1,"
+                + "\"revocation_urls\":[\"http://crl.apple.com/root.crl\"],\"ok\":true}");
+        assertEquals(1, reordered.maxInputBytes);
+        assertEquals(java.util.Collections.singletonList("http://crl.apple.com/root.crl"), reordered.revocationUrls);
+        assertEquals(java.time.Instant.parse("2026-12-01T00:00:00.123Z"), reordered.revocationValidUntil());
+        InitAnswer none = Wire.initAnswer("{\"ok\":true,\"max_input_bytes\":1" + REVOCATION + "}");
+        assertEquals(java.util.Collections.emptyList(), none.revocationUrls);
+        assertEquals(null, none.revocationValidUntil());
         InitRefused refused =
                 assertThrows(InitRefused.class, () -> Wire.initAnswer("{\"ok\":false,\"message\":\"no root\"}"));
         assertEquals("no root", refused.getMessage());
@@ -107,12 +118,18 @@ class WireTest {
             "{}",
             "{\"ok\":1}",
             "{\"ok\":true}", // a module older than this library
+            "{\"ok\":true,\"max_input_bytes\":3145729}", // the 0.13 module, without the revocation state
             "{\"ok\":true,\"x\":1}",
-            "{\"ok\":true,\"max_input_bytes\":0}",
-            "{\"ok\":true,\"max_input_bytes\":-1}",
-            "{\"ok\":true,\"max_input_bytes\":\"3145729\"}",
-            "{\"ok\":true,\"max_input_bytes\":2147483648}",
-            "{\"ok\":true,\"max_input_bytes\":3145729,\"x\":1}",
+            "{\"ok\":true,\"max_input_bytes\":0" + REVOCATION + "}",
+            "{\"ok\":true,\"max_input_bytes\":-1" + REVOCATION + "}",
+            "{\"ok\":true,\"max_input_bytes\":\"3145729\"" + REVOCATION + "}",
+            "{\"ok\":true,\"max_input_bytes\":2147483648" + REVOCATION + "}",
+            "{\"ok\":true,\"max_input_bytes\":3145729" + REVOCATION + ",\"x\":1}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[]}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[1],\"revocation_valid_until_ms\":null}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":null,\"revocation_valid_until_ms\":null}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[],\"revocation_valid_until_ms\":\"1\"}",
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[],\"revocation_valid_until_ms\":1.5}",
             "{\"ok\":false}",
             "[true]"
         }) {
