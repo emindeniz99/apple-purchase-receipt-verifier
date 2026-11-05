@@ -16,6 +16,7 @@ import tempfile
 import threading
 import unittest
 import weakref
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -28,6 +29,7 @@ from apple_purchase_receipt_verifier import (
     JsonPayload,
     Reason,
     ReceiptPayload,
+    RevokedCertificate,
     Verifier,
     _host,
     _wire,
@@ -227,6 +229,24 @@ def double_wat(replacements: "dict[str, str]") -> bytes:
     return bytes(wasmtime.wat2wasm(text))
 
 
+#: The double's init answer, as double.wat writes it.
+DOUBLE_INIT = (
+    '{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":null}'
+)
+
+
+def double_answering_init(answer: str) -> bytes:
+    """The double with ``answer``, ASCII, as its init answer."""
+    return double_wat(
+        {
+            json.dumps(DOUBLE_INIT): json.dumps(answer),
+            f"(i32.const 512) (i32.const {len(DOUBLE_INIT)})": (
+                f"(i32.const 512) (i32.const {len(answer)})"
+            ),
+        }
+    )
+
+
 class AbiMismatchTest(unittest.TestCase):
     """A module of another ABI version, or one that wants more than
     ``random-get``, is a hard failure at ``create`` naming what was expected;
@@ -281,22 +301,24 @@ class AbiMismatchTest(unittest.TestCase):
 
     def test_an_init_answer_without_max_input_bytes_is_a_runtime_error_at_create(self) -> None:
         # {"ok":true} alone, or a number that is no length, is a module of
-        # another ABI version: never a cap of the wrapper's own.
+        # another ABI version: never a cap of the wrapper's own. So is an
+        # answer without the revocation state, which a 0.13.0 module gives.
+        revocation = ',"revocation_urls":[],"revocation_valid_until_ms":null'
         for stated in (
-            "",
-            ',"max_input_bytes":0',
-            ',"max_input_bytes":true',
-            ',"max_input_bytes":1.5',
+            revocation,
+            ',"max_input_bytes":0' + revocation,
+            ',"max_input_bytes":true' + revocation,
+            ',"max_input_bytes":1.5' + revocation,
+            ',"max_input_bytes":3145729',
+            ',"max_input_bytes":3145729,"revocation_urls":[]',
+            ',"max_input_bytes":3145729,"revocation_valid_until_ms":null',
+            ',"max_input_bytes":3145729,"revocation_urls":[1],"revocation_valid_until_ms":null',
+            ',"max_input_bytes":3145729,"revocation_urls":"u","revocation_valid_until_ms":null',
+            ',"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":1.5',
+            ',"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":true',
         ):
             with self.subTest(stated=stated):
-                answer = '{"ok":true' + stated + "}"
-                wasm = double_wat(
-                    {
-                        '"{\\"ok\\":true,\\"max_input_bytes\\":3145729}"': json.dumps(
-                            answer.ljust(37)
-                        ),
-                    }
-                )
+                wasm = double_answering_init('{"ok":true' + stated + "}")
                 with self.assertRaises(RuntimeError) as caught:
                     self.create(wasm)
                 self.assertNotIsInstance(caught.exception, _host.AbiMismatchError)
@@ -635,6 +657,112 @@ class InputTest(unittest.TestCase):
         self.assertEqual(Reason.INTERNAL_ERROR, failure.reason)
 
 
+class RevocationTest(unittest.TestCase):
+    """The revocation settings travel to ``init`` as bytes and strings, and
+    the two values the verifier reports are ``init``'s answer, read once
+    (docs/design/revocation.md sections 4, 7 and 8). Which lists, issuers
+    and entries the module accepts is its own business (test_conformance.py)."""
+
+    def sent_to_init(self, config: Config) -> "dict[str, Any]":
+        seen: list[bytes] = []
+        real = _host.Pool
+
+        def spy(runtime: Any, config_json: bytes, *rest: Any) -> Any:
+            seen.append(config_json)
+            return real(runtime, config_json, *rest)
+
+        with mock.patch.object(_host, "Pool", spy):
+            Verifier.__new__(Verifier)._setup(config, double_runtime)
+        self.assertEqual(1, len(seen))
+        document: dict[str, Any] = json.loads(seen[0])
+        return document
+
+    def test_the_settings_reach_init_in_order_and_only_when_set(self) -> None:
+        self.assertEqual({"roots": ["MAA="]}, self.sent_to_init(Config(roots=[ROOT])))
+        config = Config(
+            roots=[ROOT],
+            revocation_lists=[b"\x01", bytearray(b"\x02"), b"\x01"],
+            revocation_issuers=[memoryview(b"\x03")],
+            distrust=[RevokedCertificate("AB" * 32, "0080"), ("ab", "2")],
+        )
+        self.assertEqual(
+            {
+                "roots": ["MAA="],
+                "revocation_lists": ["AQ==", "Ag==", "AQ=="],
+                "revocation_issuers": ["Aw=="],
+                # The strings as given: the module checks and normalises them.
+                "distrust": [
+                    {"issuer": "AB" * 32, "serial": "0080"},
+                    {"issuer": "ab", "serial": "2"},
+                ],
+            },
+            self.sent_to_init(config),
+        )
+
+    def test_config_keeps_the_settings_as_tuples_and_refuses_other_types(self) -> None:
+        config = Config(
+            revocation_lists=[bytearray(b"l")],
+            revocation_issuers=[b"i"],
+            distrust=[("ab", "01")],
+        )
+        self.assertEqual((b"l",), config.revocation_lists)
+        self.assertEqual((b"i",), config.revocation_issuers)
+        self.assertEqual((RevokedCertificate("ab", "01"),), config.distrust)
+        self.assertEqual("ab", config.distrust[0].issuer)
+        default = Config()
+        self.assertEqual(
+            ((), (), ()), (default.revocation_lists, default.revocation_issuers, default.distrust)
+        )
+        for bad in (
+            {"revocation_lists": ["MIIB"]},
+            {"revocation_issuers": [None]},
+            {"distrust": ["ab"]},
+            {"distrust": [("ab",)]},
+            {"distrust": [("ab", 1)]},
+            {"distrust": [["ab", "01"]]},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(TypeError):
+                Config(**bad)
+
+    def verifier_answering(self, answer: str) -> Verifier:
+        """A ``Verifier`` over the double, with ``answer`` as init's answer."""
+        runtime = _host.Runtime(double_answering_init(answer))
+        verifier = Verifier.__new__(Verifier)
+        verifier._setup(Config(roots=[ROOT]), lambda: runtime)
+        return verifier
+
+    def test_the_verifier_reports_what_init_answered(self) -> None:
+        for answer, urls, until in (
+            (DOUBLE_INIT, (), None),
+            (
+                '{"ok":true,"max_input_bytes":3145729,"revocation_urls":["http://a","https://b"],'
+                '"revocation_valid_until_ms":1796083200000}',
+                ("http://a", "https://b"),
+                datetime(2026, 12, 1, tzinfo=UTC),
+            ),
+            (
+                '{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],'
+                '"revocation_valid_until_ms":-1}',
+                (),
+                datetime(1969, 12, 31, 23, 59, 59, 999000, tzinfo=UTC),
+            ),
+        ):
+            with self.subTest(answer=answer):
+                verifier = self.verifier_answering(answer)
+                self.assertEqual(urls, verifier.revocation_urls)
+                self.assertEqual(until, verifier.revocation_valid_until)
+
+    def test_a_refusal_names_the_configuration(self) -> None:
+        # The double refuses a first root whose base64 starts with "R"; the
+        # module names the setting and index itself (revocation_lists[0]: ...).
+        with self.assertRaises(ValueError) as caught:
+            double_verifier(roots=(b"D" * 30,))
+        self.assertEqual(
+            "the module refused the configuration: the double refuses this root",
+            str(caught.exception),
+        )
+
+
 class PoolTest(unittest.TestCase):
     def test_init_runs_once_per_instance_however_many_calls_follow(self) -> None:
         # The double traps on a second init, so a pool that inits twice fails.
@@ -725,8 +853,8 @@ class PoolTest(unittest.TestCase):
 
     def test_an_input_is_cut_to_the_length_the_instances_init_stated(self) -> None:
         # The double states 5; an 'E' input answers the rest of what it got.
-        stated = '{"ok":true,"max_input_bytes":5}'.ljust(37)
-        wasm = double_wat({'"{\\"ok\\":true,\\"max_input_bytes\\":3145729}"': json.dumps(stated)})
+        stated = '{"ok":true,"max_input_bytes":5}'
+        wasm = double_answering_init(stated)
         pool = _host.Pool(_host.Runtime(wasm), _wire.init_config([ROOT]), 1, _wire.init_accepted)
         self.assertEqual(stated, pool.init_answer)
         self.assertEqual("abcd", pool.run("verify-receipt", (1,), b"Eabcdefgh", str))

@@ -8,6 +8,7 @@ module, never a verdict.
 import base64
 import json
 from collections.abc import Callable, Iterable
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from .environment import Environment
@@ -22,14 +23,34 @@ class ResultShapeError(Exception):
     """The module's answer is not the JSON the contract describes."""
 
 
-def init_config(roots: "Iterable[bytes] | None") -> bytes:
+def _base64(values: "Iterable[bytes]") -> "list[str]":
+    return [base64.b64encode(value).decode("ascii") for value in values]
+
+
+def init_config(
+    roots: "Iterable[bytes] | None",
+    revocation_lists: "Iterable[bytes]" = (),
+    revocation_issuers: "Iterable[bytes]" = (),
+    distrust: "Iterable[tuple[str, str]]" = (),
+) -> bytes:
     """``init``'s argument: ``{"roots":["<base64>", ...]}``, each root's DER or
-    PEM bytes, or ``{}`` for ``None``, the Apple roots compiled into the
-    module."""
-    if roots is None:
-        return b"{}"
-    encoded = [base64.b64encode(der).decode("ascii") for der in roots]
-    return json.dumps({"roots": encoded}, separators=(",", ":")).encode("ascii")
+    PEM bytes, with no ``roots`` member for ``None``, the Apple roots compiled
+    into the module; then each revocation setting that is not empty:
+    ``revocation_lists`` and ``revocation_issuers`` as base64,
+    ``distrust`` as ``[{"issuer":...,"serial":...}]`` with the strings as
+    given. With nothing set it is ``{}``."""
+    config: dict[str, object] = {}
+    if roots is not None:
+        config["roots"] = _base64(roots)
+    lists, issuers = _base64(revocation_lists), _base64(revocation_issuers)
+    entries = [{"issuer": issuer, "serial": serial} for issuer, serial in distrust]
+    if lists:
+        config["revocation_lists"] = lists
+    if issuers:
+        config["revocation_issuers"] = issuers
+    if entries:
+        config["distrust"] = entries
+    return json.dumps(config, separators=(",", ":")).encode("ascii")
 
 
 def _max_input_bytes(value: "dict[str, Any]") -> int:
@@ -51,6 +72,35 @@ def check_init(answer: str) -> "str | None":
     if value.get("ok") is False and isinstance(value.get("message"), str):
         return str(value["message"])
     raise ResultShapeError("init answered neither ok nor a refusal")
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def init_revocation(answer: str) -> "tuple[tuple[str, ...], datetime | None]":
+    """The revocation state an accepting ``init`` answer states:
+    ``revocation_urls``, a list of strings, and ``revocation_valid_until_ms``,
+    epoch milliseconds or ``null``, as a UTC ``datetime`` or ``None``. An
+    accepting answer without both comes from a module of another version."""
+    value = _object(answer)
+    if value.get("ok") is not True:
+        raise ResultShapeError("init did not accept the configuration")
+    urls = value.get("revocation_urls")
+    if not isinstance(urls, list) or not all(isinstance(url, str) for url in urls):
+        raise ResultShapeError("init accepted the configuration but stated no revocation_urls")
+    until = value.get("revocation_valid_until_ms")
+    stated = "revocation_valid_until_ms" in value
+    if not stated or (
+        until is not None and (not isinstance(until, int) or isinstance(until, bool))
+    ):
+        raise ResultShapeError(
+            "init accepted the configuration but stated no revocation_valid_until_ms"
+        )
+    try:
+        valid_until = None if until is None else _EPOCH + timedelta(milliseconds=until)
+    except OverflowError as error:
+        raise ResultShapeError("revocation_valid_until_ms is outside the datetime range") from error
+    return tuple(urls), valid_until
 
 
 def init_accepted(answer: str) -> "int | None":
@@ -191,7 +241,7 @@ def _failure(value: "dict[str, Any]") -> Failure:
     try:
         reason = Reason(token)
     except ValueError as error:
-        raise ResultShapeError("a reason outside the eight of 0.7") from error
+        raise ResultShapeError("a reason this package does not know") from error
     return Failure(reason, message)
 
 

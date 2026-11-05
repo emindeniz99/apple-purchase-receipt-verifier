@@ -115,8 +115,8 @@ verifier = Verifier(Config(roots=[*apple, Path("my-test-root.cer").read_bytes()]
 ```
 
 `Verifier` fails at construction, never later, for an empty root set (an
-explicitly empty collection, not `None`), a root the
-module refuses, or a module it cannot run (an ABI mismatch is a `RuntimeError`
+explicitly empty collection, not `None`), a root or a
+[revocation](#revocation) setting the module refuses, or a module it cannot run (an ABI mismatch is a `RuntimeError`
 naming the version expected). The `verify_*` methods never raise. A trap inside
 the module, an answer the wrapper cannot read, and a `Config.clock` that
 raises or answers anything but epoch milliseconds are all
@@ -152,6 +152,85 @@ code. The rules:
 
 A `Verifier` made before a `fork` keeps answering in the children, and one made
 after it reuses the process's compiled module.
+
+## Revocation
+
+A `Verifier` refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked inside the module
+with no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this package | always on; cannot be turned off |
+| `Config(distrust=...)` | you | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with
+`Reason.CERTIFICATE_REVOKED` (21003 at the endpoint), whatever date the
+payload states: whoever holds a leaked key chooses that date. A missing or
+stale list never fails a call.
+
+```python
+from apple_purchase_receipt_verifier import Config, RevokedCertificate, Verifier
+
+config = Config(
+    revocation_lists=[crl_bytes],  # CRL files exactly as downloaded (DER)
+    revocation_issuers=[ca_bytes],  # optional: a CA that signs lists, DER or PEM, as a root
+    distrust=[RevokedCertificate(issuer_id, "7D3920094EBEF3F8EFCA6C10EA8E4303")],
+)
+```
+
+The package downloads nothing and runs no timer. Refresh on your own
+schedule, with your own HTTP client: download the lists the current
+`Verifier` names, build a new `Verifier`, and swap the reference.
+
+```python
+import urllib.request
+
+verifier = Verifier(Config())
+
+
+def refresh_revocation() -> None:
+    global verifier
+    lists = []
+    for url in verifier.revocation_urls:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            lists.append(response.read())
+    # A list the module refuses raises ValueError here, and the old
+    # verifier keeps serving.
+    verifier = Verifier(Config(revocation_lists=lists))
+```
+
+- **Take the URLs from `revocation_urls`, never from Apple's PKI page.** The
+  page also links an old copy of Apple Root CA's list and a list signed under
+  a retired root name, which `Verifier` refuses, and a 2.3 MB WWDR G1 list
+  over the 1 MiB cap. With Apple's roots the URLs are the lists of Apple Root
+  CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are `http://`: the module
+  authenticates each list by its signature, not by the transport.
+- **Monitor `revocation_valid_until`.** It is the earliest `nextUpdate` of
+  the lists held, as a UTC `datetime`. `None` means some issuer the verifier
+  expects a list from has none (none passed, or the list was ignored); a time
+  in the past means a list is stale. Alert on both. Apple reissues WWDR G6's
+  list daily.
+- **`Verifier` raises `ValueError`** naming the first problem and its index
+  when a list is not a CRL, is over 1 MiB, is signed by no issuer the
+  verifier knows, or is older than the list this release was built with;
+  when there are more than 16 lists; when a `revocation_issuers` certificate
+  does not chain to your roots or is itself revoked; or when a `distrust`
+  entry is malformed or there are more than 1,000. A genuine list in a form
+  the module does not support is ignored instead, and counts as missing.
+- **`distrust`** takes `RevokedCertificate(issuer, serial)` entries, or
+  tuples of two strings: `issuer` is the SHA-256, in hex, of the issuing
+  certificate's subject Name followed by its subjectPublicKeyInfo, both as
+  encoded in that certificate; `serial` is the revoked certificate's serial
+  number in hex. Either letter case.
+- **With your own roots** `revocation_urls` is empty until you add
+  `revocation_issuers`; it then names the lists those issuers may appear on.
+  The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
 
 ## Integrating: from verified payload to entitlement
 
@@ -303,7 +382,7 @@ Like Apple's own endpoint, it checks no bundle id: compare
 |---|---|
 | 0 | Valid. `environment` and `receipt` are present in the response. |
 | 21002 | `receipt-data` is missing, not a string, too large, or the body isn't valid JSON. |
-| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
+| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired, wrong-purpose or revoked certificate). |
 | 21007 | A sandbox receipt was sent to `Environment.PRODUCTION`. |
 | 21008 | A production receipt was sent to `Environment.SANDBOX`. |
 | 21009 | Internal data access error: the receipt authenticated but its signed content, or one of its in-app purchases, does not parse, or the library itself failed. Deterministic; alert, don't retry. |
