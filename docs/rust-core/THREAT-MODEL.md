@@ -54,9 +54,10 @@ second opinion (R33).
 
 **In every class, the instance.** A compromised instance that does not
 trap keeps its state. Where an instance serves more than one call (the
-in-process pools, and `aprv-server` with `--lifecycle pool`), a later
-call on that instance runs in the attacker's state. `aprv-server`'s
-default, a fresh instance per request, removes that carry-over (R23).
+in-process pools, and `aprv-server` in its default pool lifecycle), a
+later call on that instance runs in the attacker's state.
+`aprv serve --lifecycle fresh` gives every request a new instance and
+`init`, which removes that carry-over (R23, amended 2026-11-04).
 
 Beyond that, per class:
 
@@ -133,7 +134,7 @@ several times more.
 
 | Host | Memory | CPU and time | Concurrency |
 |---|---|---|---|
-| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413 |
+| `aprv-server` | `StoreLimits`: 256 MiB of linear memory, one instance, `trap_on_grow_failure` | 10 s of guest time per call by default (`--time-limit-ms`), by epoch interruption (rust/server/README.md, "Limits") | a semaphore of N workers, N = CPU count; the 3 MiB body cap, answered with 413; at most 512 open connections by default (`--max-connections`), each closed when it has sent no complete request head 30 s by default (`--header-timeout-ms`) after accept or after its last response, or when a response write has sent nothing for that long |
 | wasmtime-py, the Ruby gem, Wasmtime .NET | Wasmtime's store limits, available in each binding; Phase 5 sets the server's 256 MiB and tests it | epoch interruption and fuel are Wasmtime features; not exercised in the evidence | one instance per call; the pool bounds the count |
 | wazero (Go) | wazero's memory page limit; Phase 4 sets and tests it | context cancellation; not exercised in the evidence | the pool |
 | JS engines | the engine's limit for a 32-bit memory; workerd's 128 MB isolate, measured in Phase 4 | the platform's own CPU limits | one instance |
@@ -156,6 +157,21 @@ Wasmi bindings ran ([final Python round §4][pyfinal]).
 - **Token.** With a token configured, a request without the right
   `X-Aprv-Token` gets 401 ([aprv-server §1][server]). A server bound
   beyond loopback should always have one.
+- **Connections before the token.** The token is checked once a request
+  head has arrived, so the bounds on a connection without one are the
+  connection cap (512 by default), the request-head deadline (30 s by
+  default, from accept or from the last response) and a write deadline
+  of the same length (a response write that sends nothing for that long
+  closes the connection). The head deadline restarts after every
+  response, and any request gets one, `GET /healthz` or a 401, so a peer
+  that sends a request before each deadline keeps its connection and its
+  place under the cap without reconnecting; enough such peers hold the
+  server at its cap. The cap keeps the process within its descriptor
+  limit (`ulimit -n`) only while that limit leaves room for the cap plus
+  the listener, stdio and the other open descriptors. Below that, accept
+  fails with EMFILE, which the server reports and retries every second,
+  and the cap is never reached; the server does not raise its own limit
+  (rust/server/README.md, "Limits").
 - **Managed mode** (the Java 8 child): the child binds `127.0.0.1:0`
   whatever `APRV_LISTEN` says, and reports its port on stdout. The parent
   sends a fresh 256-bit `SecureRandom` token as the first stdin line, not

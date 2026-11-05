@@ -299,11 +299,11 @@ rejected alternatives with their measured reasons.
   instance model: `Verifier.create(config)` owns a small pool, each
   instance gets `init` once with the roots, one call at a time per
   instance, a trapped instance is discarded, no handles cross the API.
-  Node holds one instance. `aprv-server` makes a fresh instance per
-  request; `--lifecycle pool` keeps them, and the `init` measurement of
-  2026-09-29 met R23's rule for making the pool the default. **Amended
-  in 0.13.0** by R46: `aprv:verifier@0.2.0` takes the environment as the
-  enum `environment` and `now-ms` as an `s64`.
+  Node holds one instance. `aprv-server` keeps a pool by default: the
+  `init` measurement of 2026-09-29 met R23's rule for making the pool the
+  default (OD-15), and `--lifecycle fresh` makes a fresh instance per
+  request. **Amended in 0.13.0** by R46: `aprv:verifier@0.2.0` takes the
+  environment as the enum `environment` and `now-ms` as an `s64`.
 - **D20 — Time crosses as `now-ms` on every call; the module has no clock**
   (owner, 2026-09-28; R24, superseding R10). The wrapper reads its
   `Config` clock once per call and passes the value. The core uses it

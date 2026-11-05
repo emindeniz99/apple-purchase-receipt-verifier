@@ -16,8 +16,8 @@ install-failure test builds this source tree with it).
 
 ## 1. Test matrix (job `python`, replaces the current one)
 
-CPython 3.11, 3.12, 3.13 and 3.14 on each of these, so the 3.11 floor and
-the platform claims are legs and not sentences:
+CPython 3.11, 3.12, 3.13, 3.14 and 3.15 on each of these, so the 3.11
+floor and the platform claims are legs and not sentences:
 
 | Leg | Runner | Why |
 |---|---|---|

@@ -98,6 +98,30 @@ namespace ApplePurchaseReceiptVerifier.Internal
             }
         }
 
+        /// <summary>
+        /// The input's UTF-8 bytes, or enough of them for
+        /// <see cref="AprvInstance.Lower"/> to cut to <paramref name="maxBytes"/>.
+        /// Every char encodes to at least one byte, so the first
+        /// <c>maxBytes + 1</c> chars give more than <paramref name="maxBytes"/>
+        /// bytes, and the first <paramref name="maxBytes"/> of those are the
+        /// whole input's: a surrogate pair split at the end of the prefix only
+        /// changes bytes past the cut. The module therefore gets the same bytes,
+        /// and gives the same answer, as for the whole input, while a string of
+        /// any length costs at most <c>3 * (maxBytes + 1)</c> bytes here.
+        /// <see langword="null"/> <paramref name="maxBytes"/> encodes the whole
+        /// input, as <see cref="AprvInstance.Lower"/> then passes it whole.
+        /// </summary>
+        internal static byte[] InputBytes(string? input, int? maxBytes)
+        {
+            string text = input ?? string.Empty;
+            if (maxBytes is int max && text.Length - 1 > max)
+            {
+                text = text.Substring(0, max + 1);
+            }
+
+            return Utf8.GetBytes(text);
+        }
+
         private TResult Run<TResult>(
             Func<AprvInstance, long, byte[], string> call,
             string? input,
@@ -132,7 +156,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string answer;
             try
             {
-                answer = call(instance, now, Utf8.GetBytes(input ?? string.Empty));
+                answer = call(instance, now, InputBytes(input, instance.MaxInputBytes));
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {

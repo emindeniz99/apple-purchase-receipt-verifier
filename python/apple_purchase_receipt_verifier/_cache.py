@@ -30,7 +30,25 @@ ENV_VAR = "APRV_WASM_CACHE_DIR"
 _APP = "apple-purchase-receipt-verifier"
 
 
+def _home_is_unusable() -> bool:
+    """Whether the default directory would hang off a ``HOME`` that is set
+    but not absolute (``~nouser`` included). platformdirs before 4.14 built
+    the path on such a HOME or raised; 4.14 treats it as unset and takes the
+    account's home from the password database instead. Either way the cache
+    stays off, so a HOME set wrong never moves native code somewhere the user
+    did not name. An empty HOME was always read as unset, and an absolute
+    ``XDG_CACHE_HOME`` names the directory without HOME, so neither counts."""
+    if os.name == "nt":
+        return False
+    home = os.environ.get("HOME")
+    if not home or os.path.isabs(home):
+        return False
+    return not os.path.isabs(os.environ.get("XDG_CACHE_HOME", "").strip())
+
+
 def _default_directory() -> "str | None":
+    if _home_is_unusable():
+        return None
     # appauthor=False and opinion=False keep Windows at
     # %LOCALAPPDATA%\<app>, without the <author>\<app>\Cache levels
     # platformdirs adds there by default; Linux and macOS ignore both.
@@ -106,12 +124,25 @@ def usable_directory() -> "str | None":
         return None
 
 
+def _toml_can_carry(directory: str) -> bool:
+    """Whether a UTF-8 TOML literal string can name ``directory``: no quote,
+    no line break, and no byte that is not UTF-8 (POSIX hands such a byte to
+    Python as a lone surrogate, which UTF-8 cannot encode)."""
+    if any(c in directory for c in "'\r\n"):
+        return False
+    try:
+        directory.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def enable(config: "wasmtime.Config") -> bool:
     """Turns ``config``'s cache on when the rules allow it; ``True`` if it
     is on. Wasmtime takes its cache directory from a TOML file, so one is
     written into the (already vetted) directory and removed again."""
     directory = usable_directory()
-    if directory is None or any(c in directory for c in "'\r\n"):
+    if directory is None or not _toml_can_carry(directory):
         return False
     name = None
     try:

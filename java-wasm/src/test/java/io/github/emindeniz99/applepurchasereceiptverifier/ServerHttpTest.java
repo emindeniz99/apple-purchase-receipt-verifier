@@ -34,6 +34,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -263,6 +266,47 @@ class ServerHttpTest {
             ServerConnection connection = ServerConnection.fixed(target(server.port(), false), "test");
             assertThrows(ServerProcessFailure.class, () -> connection.send("POST", "/v1/x", new byte[] {1}, 0L));
             assertEquals(3, server.requests.get(), "requests the server read");
+        }
+    }
+
+    /**
+     * A burst of concurrent calls opens one connection per caller. Once it
+     * is over, {@code maxIdle} of them stay open for reuse and the rest are
+     * closed; kept unbounded, every caller of the burst would leave a
+     * loopback socket open on both sides for the verifier's life.
+     */
+    @Test
+    void idleConnectionsPastTheCapAreClosed() throws Exception {
+        int callers = 5;
+        int maxIdle = 2;
+        try (KeepAliveServer server = new KeepAliveServer(callers)) {
+            ServerConnection connection = ServerConnection.fixed(target(server.port(), false), "test", maxIdle);
+            ExecutorService threads = Executors.newFixedThreadPool(callers);
+            try {
+                List<Future<HttpConn.Response>> calls = new ArrayList<>();
+                for (int i = 0; i < callers; i++) {
+                    calls.add(threads.submit(() -> connection.send("POST", "/v1/x", new byte[] {1}, 0L)));
+                }
+                for (Future<HttpConn.Response> call : calls) {
+                    assertEquals("{}", call.get(30, TimeUnit.SECONDS).text());
+                }
+            } finally {
+                threads.shutdownNow();
+            }
+            assertEquals(callers, server.connections.get(), "one connection per concurrent caller");
+            assertEquals(maxIdle, connection.idle(), "connections kept");
+            assertTrue(
+                    server.closedByClient.tryAcquire(callers - maxIdle, 10, TimeUnit.SECONDS),
+                    "the connections past the cap were closed");
+            assertEquals(
+                    "{}", connection.send("POST", "/v1/x", new byte[] {1}, 0L).text());
+            assertEquals(callers, server.connections.get(), "a kept connection served the next call");
+            assertEquals(0, server.closedByClient.availablePermits(), "a kept connection was closed");
+            connection.close();
+            assertTrue(
+                    server.closedByClient.tryAcquire(maxIdle, 10, TimeUnit.SECONDS),
+                    "close() closed the kept connections");
+            assertEquals(0, connection.idle());
         }
     }
 
@@ -655,6 +699,74 @@ class ServerHttpTest {
         /** The heads of the requests read so far. */
         String received() {
             return received.toString();
+        }
+
+        @Override
+        public void close() throws IOException {
+            socket.close();
+            synchronized (open) {
+                for (Socket client : open) {
+                    client.close();
+                }
+            }
+        }
+    }
+
+    /**
+     * A keep-alive server that answers every request on a connection with
+     * {@code {}}, holding the answers back until {@code burst} requests have
+     * arrived, so that many callers are in flight at once. Counts the
+     * connections it accepted, and releases {@link #closedByClient} for each
+     * one the client closed.
+     */
+    private static final class KeepAliveServer implements AutoCloseable {
+        final ServerSocket socket;
+        final AtomicInteger connections = new AtomicInteger();
+        final Semaphore closedByClient = new Semaphore(0);
+        private final CountDownLatch burst;
+        private final List<Socket> open = new ArrayList<>();
+
+        KeepAliveServer(int burst) throws IOException {
+            this.burst = new CountDownLatch(burst);
+            socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+            Thread thread = new Thread(() -> {
+                while (true) {
+                    Socket client;
+                    try {
+                        client = socket.accept();
+                    } catch (IOException e) {
+                        return;
+                    }
+                    connections.incrementAndGet();
+                    synchronized (open) {
+                        open.add(client);
+                    }
+                    Thread serve = new Thread(() -> serve(client));
+                    serve.setDaemon(true);
+                    serve.start();
+                }
+            });
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        private void serve(Socket client) {
+            try {
+                while (readRequest(client.getInputStream()) != null) {
+                    burst.countDown();
+                    burst.await(10, TimeUnit.SECONDS);
+                    client.getOutputStream()
+                            .write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+                                    .getBytes(StandardCharsets.US_ASCII));
+                }
+                closedByClient.release();
+            } catch (IOException | InterruptedException e) {
+                // the server was closed
+            }
+        }
+
+        int port() {
+            return socket.getLocalPort();
         }
 
         @Override

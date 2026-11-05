@@ -350,8 +350,8 @@ node tools/gen-cases-manifest.mjs rust/ffi/target/manifest
 cd rust/ffi/examples/elixir && mix compile && mix test && mix run example.exs
 ```
 
-It needs Elixir 1.18 on OTP 27 or newer. CI runs that floor and a current
-pair; `examples/elixir/README.md` says what each proves.
+It needs Elixir 1.18 on OTP 27 or newer. CI runs that floor and Elixir
+1.20 on OTP 28 and 29; `examples/elixir/README.md` says what each proves.
 
 ```
 apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
