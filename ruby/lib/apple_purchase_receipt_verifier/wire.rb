@@ -20,29 +20,56 @@ module ApplePurchaseReceiptVerifier
       "Production" => Environment::PRODUCTION, "Sandbox" => Environment::SANDBOX, nil => nil
     }.freeze
 
+    # What an accepting `init` answer states: the input length, and the
+    # revocation state the module worked out for the configuration (the
+    # list URLs it expects, and the earliest `nextUpdate` of the lists it
+    # holds, epoch milliseconds, or nil).
+    InitState = Data.define(:max_input_bytes, :revocation_urls, :revocation_valid_until_ms)
+
     class << self
-      # `init`'s answer: `{"ok":true,"max_input_bytes":N}` or
+      # `init`'s argument for a {Config}: `roots` (base64) only when the
+      # caller chose them, then `revocation_lists` and `revocation_issuers`
+      # (base64 of the bytes as given) and `distrust` (the two Strings as
+      # given), each only when not empty. The default Config sends `{}`.
+      # Nothing here reads a certificate or a list.
+      #
+      # @param config [Config]
+      # @return [String]
+      def init_config(config)
+        init = {} #: Hash[String, untyped]
+        init["roots"] = base64_all(config.roots) if config.custom_roots?
+        lists = config.revocation_lists
+        issuers = config.revocation_issuers
+        distrust = config.distrust
+        init["revocation_lists"] = base64_all(lists) unless lists.empty?
+        init["revocation_issuers"] = base64_all(issuers) unless issuers.empty?
+        unless distrust.empty?
+          init["distrust"] = distrust.map { |entry| { "issuer" => entry.issuer, "serial" => entry.serial } }
+        end
+        JSON.generate(init)
+      end
+
+      # `init`'s answer: `{"ok":true,"max_input_bytes":N,
+      # "revocation_urls":[...],"revocation_valid_until_ms":M|null}` or
       # `{"ok":false,"message":"..."}`. `N` is the most bytes of one input
       # the module needs (docs/rust-core/DECISIONS.md R42): a longer input is
       # cut to it, and the module answers TOO_LARGE for that. An accepting
-      # answer without a positive integer there comes from a module of
-      # another ABI version, and is a {TrapError} like any unusable answer.
+      # answer without a positive integer there, or without the two
+      # revocation members, comes from a module of another version, and is a
+      # {TrapError} like any unusable answer.
       #
       # @param text [String]
-      # @return [Integer] `max_input_bytes`
+      # @return [InitState]
       # @raise [RootsRejected] the module refused the configuration
       # @raise [TrapError] the answer is not an `init` answer
       def init_answer(text)
         answer = object(text, "init")
         case answer["ok"]
         when true
-          max = answer["max_input_bytes"]
-          return max if max.is_a?(Integer) && max.positive?
-
-          raise TrapError, "init accepted the configuration but states no max_input_bytes: " \
-                           "the module is of another ABI version"
+          InitState.new(max_input_bytes: max_input_bytes(answer), revocation_urls: revocation_urls(answer),
+                        revocation_valid_until_ms: revocation_valid_until_ms(answer))
         when false
-          raise RootsRejected, string(answer, "message") || "the roots were refused"
+          raise RootsRejected, string(answer, "message") || "the configuration was refused"
         else
           raise TrapError, "init answered neither ok:true nor ok:false"
         end
@@ -65,6 +92,34 @@ module ApplePurchaseReceiptVerifier
       end
 
       private
+
+      def base64_all(strings)
+        strings.map { |bytes| [bytes].pack("m0") }
+      end
+
+      def max_input_bytes(answer)
+        max = answer["max_input_bytes"]
+        return max if max.is_a?(Integer) && max.positive?
+
+        raise TrapError, "init accepted the configuration but states no max_input_bytes: " \
+                         "the module is of another ABI version"
+      end
+
+      def revocation_urls(answer)
+        urls = answer["revocation_urls"]
+        return urls.map(&:freeze).freeze if urls.is_a?(Array) && urls.all?(String)
+
+        raise TrapError, "init accepted the configuration but states no revocation_urls: " \
+                         "the module is of another version"
+      end
+
+      def revocation_valid_until_ms(answer)
+        value = answer["revocation_valid_until_ms"]
+        return value if answer.key?("revocation_valid_until_ms") && (value.nil? || value.is_a?(Integer))
+
+        raise TrapError, "init accepted the configuration but states no revocation_valid_until_ms: " \
+                         "the module is of another version"
+      end
 
       def result(text, operation)
         answer = object(text, operation)

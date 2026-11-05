@@ -22,6 +22,7 @@ module ApplePurchaseReceiptVerifier
     INVALID_CERTIFICATE_PURPOSE: Symbol
     UNREADABLE_PAYLOAD: Symbol
     INTERNAL_ERROR: Symbol
+    CERTIFICATE_REVOKED: Symbol
     ALL: Array[Symbol]
   end
 
@@ -57,13 +58,25 @@ module ApplePurchaseReceiptVerifier
   class TrapError < StandardError
   end
 
+  class RevokedCertificate
+    attr_reader issuer: String
+    attr_reader serial: String
+    def initialize: (issuer: String, serial: String) -> void
+  end
+
+  type distrust_entry = RevokedCertificate | [String, String]
+
   class Config
     SYSTEM_CLOCK: clock
 
     attr_reader roots: Array[String]
     attr_reader clock: clock
+    attr_reader revocation_lists: Array[String]
+    attr_reader revocation_issuers: Array[String]
+    attr_reader distrust: Array[RevokedCertificate]
 
-    def initialize: (?roots: roots?, ?clock: clock?) -> void
+    def initialize: (?roots: roots?, ?clock: clock?, ?revocation_lists: Array[String]?,
+                     ?revocation_issuers: roots?, ?distrust: Array[distrust_entry]?) -> void
     def custom_roots?: () -> bool
   end
 
@@ -89,6 +102,8 @@ module ApplePurchaseReceiptVerifier
     def verify_receipt: (String base64) -> VerificationResult
     def verify_signed_data: (String jws) -> VerificationResult
     def verify_receipt_endpoint: (String environment, String request_json) -> String
+    attr_reader revocation_urls: Array[String]
+    def revocation_valid_until: () -> Time?
   end
 
   class JsonPayload

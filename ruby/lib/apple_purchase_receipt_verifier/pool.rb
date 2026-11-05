@@ -3,7 +3,7 @@
 module ApplePurchaseReceiptVerifier
   # The instances behind one {Verifier}: a small pool of {Guest}s made from
   # one compiled module, each with `init` already called with the {Config}'s
-  # roots.
+  # roots and revocation settings.
   #
   # A call takes an idle instance or, when there is none, makes another, so
   # one instance serves one call at a time and a busy pool grows to the
@@ -29,8 +29,16 @@ module ApplePurchaseReceiptVerifier
       @runtime = runtime
       @config_json = config_json
       @idle = Thread::Queue.new
-      @idle << Guest.new(runtime, config_json)
+      first = Guest.new(runtime, config_json)
+      @init_state = first.init_state || raise(TrapError, "init did not answer")
+      @idle << first
     end
+
+    # What the first instance's `init` answered. Every instance runs `init`
+    # with the same configuration, so it is read once.
+    #
+    # @return [Wire::InitState]
+    attr_reader :init_state
 
     # Runs the block with an instance to itself. The instance goes back to
     # the pool only when the block returns normally and the instance is not

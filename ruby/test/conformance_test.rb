@@ -8,12 +8,15 @@ require_relative "helper"
 #
 # The adapter below knows nothing about any individual case. It loads the
 # file, resolves fixture ids to bytes and checks their recorded digest,
-# builds a {Verifier} from the generic config, dispatches on "operation",
-# evaluates the JSON the verified payload (or the endpoint response) prints
-# and the environment the payload states, and reads the reason off a
-# failure. There is no skip list, no case id anywhere, and no per-case
-# fixup: a vector that disagrees with the library is a bug report against
-# one of the two, never something to special-case here.
+# builds a {Verifier} from the generic config (its roots, revocation
+# settings and clock), dispatches on "operation", evaluates the JSON the
+# verified payload (or the endpoint response) prints and the environment
+# the payload states, and reads the reason off a failure. A buildConfig
+# case builds its configuration and checks that {Verifier.create} refuses
+# it, or the two revocation values the verifier reports. There is no skip
+# list, no case id anywhere, and no per-case fixup: a vector that
+# disagrees with the library is a bug report against one of the two, never
+# something to special-case here.
 class ConformanceTest < Minitest::Test
   APRV = ApplePurchaseReceiptVerifier
   CASES = TestSupport.cases
@@ -114,17 +117,32 @@ class ConformanceTest < Minitest::Test
     spec["fixtures"].map { |id| TestSupport.fixture_bytes(id) }
   end
 
+  # A config's (or a buildConfig input's) revocation member as Config
+  # keywords: lists and issuers as their fixtures' bytes, in order and with
+  # repeats; distrust entries as the two strings exactly as written.
+  def revocation_settings(spec)
+    return {} if spec.nil?
+
+    {
+      revocation_lists: (spec["lists"] || []).map { |id| TestSupport.fixture_bytes(id) },
+      revocation_issuers: (spec["issuers"] || []).map { |id| TestSupport.fixture_bytes(id) },
+      distrust: (spec["distrust"] || []).map { |entry| APRV::RevokedCertificate.new(**entry.transform_keys(&:to_sym)) }
+    }
+  end
+
+  def build_config(config_spec, clock_spec)
+    clock = clock_spec.nil? ? nil : -> { (Time.iso8601(clock_spec["now"]).to_r * 1000).to_i }
+    APRV::Config.new(roots: trusted_roots(config_spec["trustedRoots"]), clock: clock,
+                     **revocation_settings(config_spec["revocation"]))
+  end
+
   # One verifier per distinct configuration, shared by the cases that use it
   # the way a service shares one: it holds a pool of wasm instances, each
   # with 2 MiB or more of linear memory, and 311 of them would be gigabytes
   # for the collector to find.
   def build_verifier(config_spec, clock_spec)
-    key = [config_spec["trustedRoots"], clock_spec&.fetch("now")]
-    VERIFIERS[key] ||= begin
-      clock = clock_spec.nil? ? nil : -> { (Time.iso8601(clock_spec["now"]).to_r * 1000).to_i }
-      config = APRV::Config.new(roots: trusted_roots(config_spec["trustedRoots"]), clock: clock)
-      APRV::Verifier.create(config)
-    end
+    key = [config_spec["trustedRoots"], config_spec["revocation"], clock_spec&.fetch("now")]
+    VERIFIERS[key] ||= APRV::Verifier.create(build_config(config_spec, clock_spec))
   end
 
   # --- dispatch --------------------------------------------------------------
@@ -171,6 +189,7 @@ class ConformanceTest < Minitest::Test
   def run_case(kase)
     return run_decode_base64(kase) if kase["operation"] == "decodeBase64"
     return run_endpoint_case(kase) if kase["operation"] == "verifyReceiptEndpoint"
+    return run_build_config(kase) if kase["operation"] == "buildConfig"
 
     expected = kase["expected"]
     result = measured(kase) { dispatch(kase) }
@@ -200,6 +219,33 @@ class ConformanceTest < Minitest::Test
 
     # Same value, not same bytes (docs/design/0.7-api.md, "Our JSON").
     assert_equal JSON.parse(expected["toJson"]), actual, "#{kase["id"]}: toJson value"
+  end
+
+  # Builds the case's configuration into a verifier, never cached: an error
+  # case must be refused by {Verifier.create} with an ArgumentError (the
+  # message is not checked); an ok case must report the case's
+  # revocationUrls, in order, and revocationValidUntil.
+  def run_build_config(kase)
+    id = kase["id"]
+    expected = kase["expected"]
+    config = build_config(kase["input"], kase["clock"])
+    if expected["status"] == "error"
+      assert_raises(ArgumentError, "#{id}: the configuration built, want it refused") do
+        APRV::Verifier.create(config)
+      end
+      return
+    end
+
+    raise "harness error: #{id}: status #{expected["status"].inspect}" unless expected["status"] == "ok"
+
+    verifier = APRV::Verifier.create(config)
+    assert_equal expected.fetch("revocationUrls"), verifier.revocation_urls, "#{id}: revocation_urls"
+    want = expected.fetch("revocationValidUntil")
+    if want.nil?
+      assert_nil verifier.revocation_valid_until, "#{id}: revocation_valid_until"
+    else
+      assert_equal Time.iso8601(want), verifier.revocation_valid_until, "#{id}: revocation_valid_until"
+    end
   end
 
   # Runs the case's operation, measuring the SECOND call (after one
