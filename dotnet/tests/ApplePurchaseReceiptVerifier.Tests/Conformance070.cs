@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using ApplePurchaseReceiptVerifier.Internal;
@@ -100,6 +101,12 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         {
             List<string> failures = DecodeBase64Failures(kase);
             Assert.True(failures.Count == 0, string.Join("\n", failures));
+            return;
+        }
+
+        if (operation == "buildConfig")
+        {
+            EvaluateBuildConfig(kase);
             return;
         }
 
@@ -407,7 +414,7 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
     private static object RunCase(string operation, JsonMap kase)
     {
         JsonMap configSpec = AsMap(kase["config"]);
-        IVerifier verifier = Verifier.Create(new Config(Roots(configSpec), Clock(kase)));
+        IVerifier verifier = Verifier.Create(BuildConfig(configSpec, kase));
 
         switch (operation)
         {
@@ -457,6 +464,99 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         }
     }
 
+    /// <summary>
+    /// A <c>buildConfig</c> case (schema version 3): builds the case's
+    /// configuration into a verifier. An error case must be refused by
+    /// <see cref="Verifier.Create"/> with an <see cref="ArgumentException"/>
+    /// (the message is not checked); an ok case must build and report the
+    /// revocation URLs, in order, and the valid-until instant, or
+    /// <see langword="null"/>.
+    /// </summary>
+    private static void EvaluateBuildConfig(JsonMap kase)
+    {
+        string id = Str(kase, "id");
+        JsonMap expected = AsMap(kase["expected"]);
+        Config config = BuildConfig(AsMap(kase["input"]), kase);
+        if (Str(expected, "status") == "error")
+        {
+            Assert.Throws<ArgumentException>(() => Verifier.Create(config));
+            return;
+        }
+
+        Assert.True(Str(expected, "status") == "ok", $"harness error: {id}: unknown expected.status");
+        IVerifier verifier = Verifier.Create(config);
+        List<object?> urls = expected["revocationUrls"] as List<object?>
+            ?? throw new InvalidOperationException($"harness error: {id}: revocationUrls is not a list");
+        Assert.Equal(urls.Select(url => (string)url!), verifier.RevocationUrls);
+        long? want = expected["revocationValidUntil"] is string instant ? Instant(instant) : null;
+        Assert.True(
+            want == verifier.RevocationValidUntilMs,
+            $"{id}: revocationValidUntil: want {want?.ToString(CultureInfo.InvariantCulture) ?? "null"}, "
+            + $"got {verifier.RevocationValidUntilMs?.ToString(CultureInfo.InvariantCulture) ?? "null"}");
+    }
+
+    /// <summary>
+    /// A case's configuration (a verify case's <c>config</c>, a buildConfig
+    /// case's <c>input</c>): the trust anchors, the case's clock, and the
+    /// optional <c>revocation</c> object, its fixture ids as bytes and its
+    /// distrust strings exactly as written.
+    /// </summary>
+    private static Config BuildConfig(JsonMap spec, JsonMap kase)
+    {
+        IReadOnlyList<X509Certificate2>? roots = Roots(spec);
+        if (!spec.TryGetValue("revocation", out object? member))
+        {
+            return new Config(roots, Clock(kase));
+        }
+
+        JsonMap revocation = AsMap(member);
+        List<byte[]> lists = new();
+        foreach (string id in FixtureIds(revocation, "lists"))
+        {
+            lists.Add(Fixtures070.Bytes(id));
+        }
+
+        List<X509Certificate2> issuers = new();
+        foreach (string id in FixtureIds(revocation, "issuers"))
+        {
+            issuers.Add(Certificate(id));
+        }
+
+        List<RevokedCertificate> distrust = new();
+        if (revocation.TryGetValue("distrust", out object? entries))
+        {
+            foreach (object? entry in entries as List<object?>
+                ?? throw new InvalidOperationException("harness error: revocation.distrust is not a list"))
+            {
+                JsonMap map = AsMap(entry);
+                distrust.Add(new RevokedCertificate(Str(map, "issuer"), Str(map, "serial")));
+            }
+        }
+
+        return new Config(roots, Clock(kase), lists, issuers, distrust);
+    }
+
+    /// <summary>The fixture ids a revocation member names, in order; none when it is absent.</summary>
+    private static IEnumerable<string> FixtureIds(JsonMap revocation, string member)
+    {
+        if (!revocation.TryGetValue(member, out object? ids))
+        {
+            return Array.Empty<string>();
+        }
+
+        return (ids as List<object?>
+            ?? throw new InvalidOperationException($"harness error: revocation.{member} is not a list")).Select(id => (string)id!);
+    }
+
+    /// <summary>An ISO-8601 instant as epoch milliseconds.</summary>
+    private static long Instant(string text)
+    {
+        Assert.True(
+            DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out DateTimeOffset instant),
+            $"harness error: unparseable instant \"{text}\"");
+        return instant.ToUnixTimeMilliseconds();
+    }
+
     /// <summary>The registered trust anchors, or <see langword="null"/> for the defaults (the module's built-in Apple roots).</summary>
     private static IReadOnlyList<X509Certificate2>? Roots(JsonMap config)
     {
@@ -470,12 +570,16 @@ public class Conformance070 : IClassFixture<Conformance070.Coverage>
         foreach (object? id in spec["fixtures"] as List<object?>
             ?? throw new InvalidOperationException("harness error: trustedRoots.fixtures is not a list"))
         {
-            X509Certificate2? certificate = Certificates.TryLoad(Fixtures070.Bytes((string)id!));
-            roots.Add(certificate ?? throw new InvalidOperationException($"harness error: trust-anchor fixture \"{id}\" does not decode"));
+            roots.Add(Certificate((string)id!));
         }
 
         return roots;
     }
+
+    /// <summary>A registered certificate fixture, in the type the library takes roots and revocation issuers in.</summary>
+    private static X509Certificate2 Certificate(string id) =>
+        Certificates.TryLoad(Fixtures070.Bytes(id))
+        ?? throw new InvalidOperationException($"harness error: certificate fixture \"{id}\" does not decode");
 
     private static Func<long> Clock(JsonMap kase)
     {

@@ -10,9 +10,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
     /// instead, with everything in it.
     /// </summary>
     /// <remarks>
-    /// Every instance is given <c>init</c> once, with the verifier's roots,
-    /// before anybody uses it. There is nothing to close: instances die with
-    /// the verifier, and an abandoned store is released by its finalizer.
+    /// Every instance is given <c>init</c> once, with the verifier's
+    /// configuration, before anybody uses it; what the first one's answer
+    /// states is <see cref="Stated"/>. There is nothing to close: instances die
+    /// with the verifier, and an abandoned store is released by its finalizer.
     /// </remarks>
     internal sealed class InstancePool
     {
@@ -27,16 +28,24 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
         /// <summary>
         /// Builds the pool and its first instance, so a module that does not
-        /// fit this library, or a root <c>init</c> refuses, fails here.
+        /// fit this library, or a configuration <c>init</c> refuses, fails here.
         /// </summary>
-        /// <exception cref="ArgumentException"><c>init</c> refused the roots.</exception>
+        /// <exception cref="ArgumentException"><c>init</c> refused the configuration.</exception>
         /// <exception cref="InvalidOperationException">The module cannot be hosted.</exception>
         internal InstancePool(AprvRuntime runtime, byte[] configJson)
         {
             _runtime = runtime;
             _configJson = configJson;
-            Return(Create());
+            AprvInstance first = Create();
+            Stated = first.Stated!;
+            Return(first);
         }
+
+        /// <summary>
+        /// What the first instance's <c>init</c> answer stated. Every instance
+        /// runs <c>init</c> with the same configuration, so it is read once.
+        /// </summary>
+        internal ModuleAnswers.InitAnswer Stated { get; }
 
         /// <summary>An idle instance, or a new one.</summary>
         internal AprvInstance Rent()

@@ -95,17 +95,30 @@ namespace ApplePurchaseReceiptVerifier.Internal
         internal int? MaxInputBytes { get; private set; }
 
         /// <summary>
-        /// <c>init</c>, once per instance: <c>{"ok":true,"max_input_bytes":N}</c>
+        /// What this instance's <c>init</c> answer stated, the revocation state
+        /// of the configuration included. <see langword="null"/> before
+        /// <see cref="Start"/>.
+        /// </summary>
+        internal ModuleAnswers.InitAnswer? Stated { get; private set; }
+
+        /// <summary>
+        /// <c>init</c>, once per instance: <c>{"ok":true,"max_input_bytes":N,...}</c>
         /// or <c>{"ok":false,"message":"..."}</c>.
         /// </summary>
         internal string Init(byte[] configJson) => Call("init", configJson);
 
         /// <summary>
-        /// <c>init</c>, keeping the input length its answer states.
+        /// <c>init</c>, keeping the input length and the revocation state its
+        /// answer states.
         /// </summary>
-        /// <exception cref="ArgumentException"><c>init</c> refused the roots.</exception>
-        /// <exception cref="ModuleAnswers.AnswerException">The answer is not init's, or states no input length.</exception>
-        internal void Start(byte[] configJson) => MaxInputBytes = ModuleAnswers.CheckInit(Init(configJson));
+        /// <exception cref="ArgumentException"><c>init</c> refused the configuration.</exception>
+        /// <exception cref="ModuleAnswers.AnswerException">The answer is not init's, or states no input length or no revocation state.</exception>
+        internal void Start(byte[] configJson)
+        {
+            ModuleAnswers.InitAnswer answer = ModuleAnswers.CheckInit(Init(configJson));
+            MaxInputBytes = answer.MaxInputBytes;
+            Stated = answer;
+        }
 
         /// <summary><c>verify-receipt</c>: the module's JSON answer.</summary>
         internal string VerifyReceipt(long nowMs, byte[] receiptBase64) => Call("verify-receipt", nowMs, receiptBase64);

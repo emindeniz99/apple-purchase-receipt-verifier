@@ -34,7 +34,8 @@ internal sealed class StubModule
     private const int AnswerStride = 4096;
     private const int NotUtf8 = AnswerBase + (4 * AnswerStride);
 
-    internal string InitAnswer { get; set; } = "{\"ok\":true,\"max_input_bytes\":3145729}";
+    internal string InitAnswer { get; set; } =
+        "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[],\"revocation_valid_until_ms\":null}";
 
     internal string ReceiptAnswer { get; set; } = "{\"verified\":false,\"reason\":\"MALFORMED\",\"message\":\"stub receipt\"}";
 
