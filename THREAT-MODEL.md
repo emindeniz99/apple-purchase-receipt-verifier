@@ -34,14 +34,19 @@ attacker:
 | The `x5c` chain, and the certificates in a receipt's CMS `SignedData` | reached from the above |
 | A whole `verifyReceipt` JSON request body | `Verifier.verifyReceiptEndpoint(environment, requestJson)` |
 | Any request to an `aprv-server` a client can reach | its HTTP routes, bounded by the token when one is set (§9) |
+| Revocation lists the host downloaded: anyone on the network path can replace, replay or withhold them | `Config` `revocationLists`, read when the verifier is built (§3.10) |
 
 Trusted input comes from the integrator, not the network: the three pinned
 Apple roots in [`certs/`](./certs) (PLAN.md D15), compiled into the Rust
 core from its copy in `rust/certs/` and into the Java implementation as
 constants, never read from disk at call time; or roots the caller puts in
-its `Config` instead at their own risk (PLAN.md D12); and the `Config` clock,
-used for the chain instant only when the payload carries no usable date of
-its own, and for `request_date` at the endpoint. Nothing trusted derives
+its `Config` instead at their own risk (PLAN.md D12); the built-in
+revocation list (`certs/revocations.json`) and the two WWDR certificates
+that sign Apple's intermediate lists, compiled in the same way and pinned
+by SHA-256; the caller's `distrust` entries and added revocation issuers;
+and the `Config` clock, used for the chain instant only when the payload
+carries no usable date of its own, for `request_date` at the endpoint, and
+to judge a `certificateHold` entry's list fresh (§3.10). Nothing trusted derives
 from anything attacker-controlled. The third certificate in `x5c` in
 particular is parsed but never trusted: only the intermediate being signed
 by a pinned anchor counts (PLAN.md §2.1 step 4).
@@ -259,8 +264,10 @@ be replay protection either.
 
 The module has no clock of its own. A wrapper reads the `Config` clock once
 per call, before it looks at the input, and passes the value as `now-ms`;
-the module uses it only where the rule above says, so a caller still cannot
-move the validity instant of an input that carries its own date. A clock
+the module uses it only where the rule above says, and to decide whether a
+list holding a matching `certificateHold` entry is still fresh (§3.10), so a
+caller still cannot move the validity instant of an input that carries its
+own date. A clock
 that throws, or answers a time before 1970, is `INTERNAL_ERROR`.
 
 *Proof.* Signing-time validity, accepted then rejected:
@@ -309,7 +316,8 @@ of its own, within the input caps (DECISIONS.md R40). The core also bounds
 ASN.1 nesting at 32, the envelope and each attribute SET at
 100,000 values, and constructed strings at six levels. Java's ASN.1
 nesting bound is BouncyCastle's, 64 by default, which counts chunk
-levels too; it never decodes a CRL (DECISIONS.md R20). Readers refuse bytes after
+levels too; it never decodes a CRL carried inside a receipt (DECISIONS.md
+R20). Readers refuse bytes after
 the outermost value. Before the signer is trusted only attribute 12 of the
 payload is used (§3.3): the core parses the top-level SET once, under its
 value budget, into types and raw values, and Java decodes every top-level
@@ -564,7 +572,108 @@ Anchors themselves ship pinned with each release and are never fetched, since
 a runtime download would convert pinned trust into trust-the-network
 (PLAN.md D12). The scheduled
 [`apple-root-watch`](./.github/workflows/apple-root-watch.yml) workflow diffs
-Apple's published certificates weekly and fails on change.
+Apple's published certificates weekly and fails on change, and
+[`apple-revocation-watch`](./.github/workflows/apple-revocation-watch.yml)
+does the same for Apple's revocation lists against the built-in one
+(§3.10).
+
+### 3.10 Revocation: a built-in list, `distrust`, and Apple's lists
+
+Since 0.14.0 a certificate on the verified path that Apple has revoked
+fails as `CERTIFICATE_REVOKED` (21003 at the endpoint). The contract is
+[docs/design/revocation.md](./docs/design/revocation.md); the decision
+is docs/rust-core/DECISIONS.md R47; what Apple publishes is in
+[the revocation survey](./docs/evidence/2026-11-05-apple-revocation-survey.md).
+Three layers, all offline and all inside the core and Java:
+
+- **The built-in list**, `certs/revocations.json`, compiled in and pinned
+  like the roots. It cannot be replaced or turned off. It is append-only:
+  an entry stays when Apple drops it from a later list.
+- **`distrust`**: revocation keys (issuer id and serial) the caller adds
+  in `Config`.
+- **Apple's lists**, which the host downloads from the URLs the verifier
+  reports (`revocationUrls`) and passes in `Config` as `revocationLists`.
+  The library opens no socket: a host refreshes by building a new
+  verifier.
+
+The check runs after the path, the markers and the signature, and before
+the payload is read, so a payload signed with a revoked key cannot steer
+the verdict to `UNREADABLE_PAYLOAD`. It covers every certificate on the
+path except the anchor; a root is removed with `roots`. It ignores dates:
+whoever holds a leaked key chooses the payload's date, so a listed serial
+is revoked whatever its `revocationDate`. A `certificateHold` entry
+counts only while its list is fresh at the clock, and a `removeFromCRL`
+entry never does.
+
+A list is authenticated by its signature, never by its transport. Only a
+configured root, a built-in WWDR issuer or an added issuer that chains to
+a configured root can sign one, and an issuer is a name and a key
+together, so Apple's retired "Apple Root Certificate Authority", which
+shares Apple Root CA's key, cannot speak for it. A list that no such
+issuer signed, or that is older than the newest list the built-in file
+records for its issuer, is refused when the verifier is built. A forged
+list therefore cannot unrevoke anything, and an old list cannot undo a
+revocation the built-in list already carries. A list's bytes are parsed
+before its signature is checked, so they are bounded first: at most 16
+lists of 1 MiB each and 100,000 entries in all.
+
+*What it does not do.* These limits are stated in the contract (§11) and
+hold for every package:
+
+- **The built-in list starts empty for APRV's chains.** On 2026-11-05 it
+  holds nineteen entries, one on Apple Root CA's list and eighteen on WWDR
+  G6's. None is a certificate APRV has seen on a genuine chain: the Apple
+  Root CA entry is not a WWDR intermediate, and neither the current JWS
+  signing leaf nor any receipt signer in `fixtures/` is listed. A list
+  carries only serials, so what the eighteen WWDR G6 certificates were is
+  not known here; they are keyCompromise entries from 2026. It protects
+  against what Apple revokes next, not against anything known to sign
+  App Store data today.
+- **It moves at the speed of releases.** A revocation reaches a consumer
+  through the weekly `apple-revocation-watch` workflow, a pull request, a
+  release and the consumer's upgrade. Apple's CDN caches each list for an
+  hour, so even a host that refreshes its lists sees a revocation about a
+  day after Apple lists it, at the earliest.
+- **`distrust` presumes knowledge.** It helps only a consumer who learns
+  of a revocation, with its issuer id and serial, before a release ships
+  it.
+- **A missing or stale list passes** (the owner chose no outage when
+  Apple's CDN fails). So a network attacker who withholds the lists, or
+  keeps feeding an old list that is still newer than the built-in
+  `newest`, reduces the live layer to the built-in list and `distrust`
+  without any call failing. Apple serves `crl.apple.com` over HTTP only
+  today (HTTPS answers 404), so the transport gives no protection.
+- **Monitoring is the caller's job.** `revocationValidUntil` is the
+  earliest `nextUpdate` of the lists in force, null when an expected
+  issuer has no list (or, under the caller's own roots with no added
+  issuer, when there is none to expect), and a date in the past when one
+  is stale. A host
+  that relies on the live layer alerts on null or on a past date; no
+  verifier fails a call for it.
+
+*Proof.* Leaf and intermediate revoked through a list, through
+`distrust` and through both: `revocation/jws-leaf-revoked-by-a-list`,
+`revocation/receipt-leaf-revoked-by-distrust`,
+`revocation/jws-intermediate-revoked-by-the-root-list` and their
+siblings; a genuine Apple chain revoked by `distrust`:
+`revocation/genuine-apple-signer-revoked-by-distrust` and
+`revocation/genuine-apple-intermediate-revoked-by-distrust`. Dates
+ignored and freshness: `revocation/stale-list-still-revokes`,
+`revocation/stale-list-passes-an-unlisted-chain`,
+`revocation/missing-list-passes`,
+`revocation/certificate-hold-on-a-stale-list-does-not-revoke`. The
+check's place: `revocation/revoked-leaf-signing-an-unreadable-payload`
+and `revocation/two-signers-first-revoked-second-genuine`. Lists that
+cannot speak: `revocation/refuse-list-bad-signature`,
+`revocation/refuse-list-unknown-issuer`,
+`revocation/refuse-list-same-key-other-name`,
+`revocation/refuse-apple-retired-root-name-list`, and Apple's real stale
+root list, `revocation/refuse-apple-stale-root-list`. Formats ignored, not
+refused: `revocation/ignored-list-*`. The bounds and the built-in list
+are unit tests in each implementation (`rust/tests/revocation.rs`,
+`java/src/test/.../RevocationTest.java`), and `RevocationTest` pins
+Java's copy of the built-in list to `certs/revocations.json` byte for
+byte.
 
 ## 4. Non-goals
 
@@ -581,19 +690,16 @@ Not defended against here, by decision rather than omission.
 - **Payload freshness.** No verifier rejects a payload for its age. How old a
   genuine payload may be is the caller's decision, made on its `signedDate`
   or the receipt creation date.
-- **Certificate revocation.** No OCSP, no CRL. Offline verification is the
-  point, and Apple handles compromised signing certs by rotating them
-  (PLAN.md §2.3).
+- **Online revocation checks.** No OCSP, and no library downloads a
+  revocation list: the host does (§3.10). Offline verification is the
+  point, and Apple's own libraries check revocation only with OCSP, online,
+  with the validity date moved to now.
 
-  What that leaves open: the chain is judged valid at the payload's own
-  date (`signedDate`, or the receipt's creation date), so if a historical
-  Apple leaf key ever leaked, a payload back-dated into that certificate's
-  validity window would verify, in both implementations. Apple's own
-  library does the same with its online checks off. A consumer's defence
-  today is the weekly `apple-root-watch` workflow and owning the root set
-  in `Config`. If that day comes, the answer is a per-certificate distrust
-  list in `Config`; it is deliberately not built (ROADMAP.md, "Later /
-  hardening").
+  What that leaves open is in §3.10: a key Apple revokes is refused only
+  once a release carries it, a host passes a list that names it, or the
+  caller adds it to `distrust`. Until one of those happens, a payload
+  back-dated into the leaked certificate's validity window verifies in
+  both implementations, as before 0.14.0.
 - **Observability.** No logging, metrics or callbacks: machine-readable reason
   codes and nothing else, with alert policy left to the integrator
   (PLAN.md D11).

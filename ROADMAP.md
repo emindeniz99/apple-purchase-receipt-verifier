@@ -407,7 +407,7 @@ Java implementation and settled on 2026-10-12, when the owner judged
 decision: the `ReceiptPayload` constructor (its callers name every field),
 `equals`/`hashCode` rendering JSON, `Endpoint`'s `default:` branch (an
 unknown `Reason` answers 21009, the safe side), ES256 high-S acceptance
-(java/README.md, "Revocation is not checked"), x5c entries through
+(java/README.md, "Trust anchors"), x5c entries through
 BouncyCastle's `CertificateFactory` (Apple's x5c is clean DER; no extra
 strictness), no `module-info` (a second compile pass on the Java 8 base
 for little gain), no `AuthenticatedCertificates` wrapper type. Still open:
@@ -659,22 +659,6 @@ Still worth filing as issues:
   neither is acceptable. A cache of successful signature checks (about
   345 µs per call instead of 755) waits too. 0.7 ms per call covers
   current loads; revisit when a user reports CPU pressure.
-- **Online revocation checks (OCSP or CRL).** Offline verification is the
-  point of the library, so this would be an opt-in at most. Not queued.
-  Apple publishes revocations only through the CRL (`crl.apple.com`) and
-  OCSP (`ocsp.apple.com`) addresses in its certificates. Apple's own
-  library runs OCSP behind `enableOnlineChecks` and then judges validity
-  at the current time instead of `signedDate`. The shape that keeps this
-  library offline: the host downloads the CRL on its own schedule (every
-  15 minutes, say) with its own HTTP client and hands the bytes to a
-  helper, which verifies the CRL's signature under the pinned root and
-  keeps the revoked serials in memory. `Config.builder().revocations(...)`
-  wires it in, and each call does an in-memory lookup. A revoked chain
-  fails as `INVALID_CERTIFICATE`. Open policy question for the host: accept
-  or reject when the CRL is stale because a download failed. The 0.7
-  design keeps room for this (docs/design/0.7-api.md).
-- **A per-certificate distrust list in `Config`**, for a leaked historical
-  Apple leaf key (THREAT-MODEL.md §4). Not built until that day comes.
 - Decide whether to support the ancient `transactionReceipt`
   (purchase-info) format at all (double-wrapped payloads are handled ✅).
 - **Dev-mode environments**: Apple's `SignedDataVerifier` deliberately
@@ -714,16 +698,6 @@ Still worth filing as issues:
   - A cache of parsed embedded certificates keyed by their DER: maybe 25%
     on a small receipt, but it is process-wide mutable state, which the
     thread-safety design and `ConcurrencyTest` avoid on purpose.
-- **Revocation, still offline.** Apple's library can ask Apple's OCSP
-  responder about the leaf and intermediate (`enableOnlineChecks`), caching
-  the answer for 15 minutes and returning `RETRYABLE_VERIFICATION_FAILURE`
-  when the network fails. We never check revocation, so a leaked Apple
-  signing key would be accepted until a release blocks it. The offline
-  shape worth building: a helper that downloads Apple's CRL, checks its
-  signature against the pinned root, and hands it to the verifier, which
-  stays offline; the caller refreshes it on a schedule. Optional OCSP (an
-  opt-in "online mode") stays a later choice for consumers who accept Apple
-  calls.
 - **Updating the pinned roots at run time: open for discussion.** Today the
   root fingerprints live in the code and change only through a reviewed
   release. Downloading roots over TLS from apple.com proves the bytes came
@@ -732,7 +706,12 @@ Still worth filing as issues:
   TLS-inspecting proxy with its own CA. A middle path: a release ships the
   fingerprints of roots Apple has announced, and the helper accepts a
   downloaded root only if it matches one of them. The owner leans towards
-  allowing downloads; decide before building the CRL helper above.
+  allowing downloads. Revocation no longer waits on this: 0.14.0 shipped
+  it without downloading any root (docs/design/revocation.md). The host
+  downloads Apple's revocation lists itself and passes them in `Config`,
+  and each list is authenticated by its signature under a pinned root or
+  one of the two WWDR intermediates compiled in beside the roots. A root
+  still changes only through a release or the caller's own `roots`.
 - **A verified-chain cache, measured first.** Apple's library caches a
   verified chain for 15 minutes, but only with online checks on, because
   only then is the validation date always "now". Offline, the date is each

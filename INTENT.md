@@ -87,6 +87,14 @@ for either one. Today's chains happen to end at Apple Inc. Root for legacy
 receipts and at Apple Root CA - G3 for JWS. The sourced rationale is PLAN.md
 D15; the security account is [THREAT-MODEL.md](./THREAT-MODEL.md).
 
+Since 0.14.0 a certificate Apple has revoked is refused too, still offline
+([docs/design/revocation.md](./docs/design/revocation.md)): against a
+revocation list compiled in beside the roots, against Apple's own CRL files
+when the caller downloads them and passes them in, and against the caller's
+`distrust` entries. Revocation lists are in scope because they are signed
+files the library can check with no network access. OCSP stays out: it is a
+live query to Apple for every check.
+
 ## What verification guarantees — and what it doesn't
 
 Verifying the signature proves **authenticity and integrity**: the payload
@@ -105,7 +113,10 @@ calls / webhooks; our aim is the offline trust primitive).
 
 ## Out of scope
 
-- Calling any Apple endpoint (`verifyReceipt`, App Store Server API, OCSP).
-- Refund / revocation / subscription-status tracking, webhooks.
+- Calling any Apple endpoint (`verifyReceipt`, App Store Server API, OCSP),
+  and downloading Apple's revocation lists: the caller fetches those and
+  passes the bytes in.
+- Refund / refund-revocation / subscription-status tracking, webhooks
+  (the transaction's `revocationDate`, not certificate revocation).
 - Entitlement storage, replay bookkeeping, fraud scoring.
 - Client-side (on-device) validation code.
