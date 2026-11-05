@@ -149,13 +149,14 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: npx --no-install wrangler deploy
 
-      # With the Worker's address set as the repository variable
-      # APRV_WORKER_URL, the deployed Worker must answer with the version
-      # just deployed. Without it the deploy is reported as is.
+      # The deployed Worker must answer with the version just deployed. Its
+      # address is the one the example's README documents; the repository
+      # variable APRV_WORKER_URL overrides it for a deploy to another
+      # account.
       - name: the Worker answers with this version
-        if: steps.secrets.outputs.ready == 'true' && vars.APRV_WORKER_URL != ''
+        if: steps.secrets.outputs.ready == 'true'
         env:
-          URL: ${{ vars.APRV_WORKER_URL }}
+          URL: ${{ vars.APRV_WORKER_URL || 'https://aprv-example.emindeniz99.workers.dev' }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail

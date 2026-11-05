@@ -220,8 +220,11 @@ Until that environment holds a token the job prints a notice and succeeds.
 release once post-publish-smoke has passed for it, and on a manual
 dispatch. It installs the released npm package over the example's
 lockfile, checks its registry signature and provenance with
-`npm audit signatures`, and runs `wrangler deploy`. Until the secrets
-below exist it skips the deploy with a notice.
+`npm audit signatures`, runs `wrangler deploy`, and checks that
+https://aprv-example.emindeniz99.workers.dev/v1/info answers with the
+version it deployed (the repository variable `APRV_WORKER_URL` points the
+check elsewhere). Until the secrets below exist it skips the deploy with a
+notice.
 
 1. In the Cloudflare dashboard, create an API token (My Profile → API
    Tokens) with the one permission Account → Workers Scripts → Edit,
@@ -229,11 +232,7 @@ below exist it skips the deploy with a notice.
    overview).
 2. In this repository's settings, create the environment `cloudflare` and
    add the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-3. Optional: set the repository variable `APRV_WORKER_URL` to the
-   Worker's address (`https://aprv-example.<subdomain>.workers.dev`). The
-   deploy then checks that `/v1/info` answers with the version it
-   deployed.
-4. Run deploy-worker once by hand (Actions → deploy-worker → Run
+3. Run deploy-worker once by hand (Actions → deploy-worker → Run
    workflow) to put the current release live; later releases deploy on
    their own.
 
