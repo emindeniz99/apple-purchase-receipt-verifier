@@ -81,6 +81,12 @@ function fixtureBytes(id) {
   return bytes;
 }
 
+test('cases.json is schema version 3, the one this runner reads', () => {
+  // Version 3 added the revocation config member and the buildConfig
+  // operation (docs/design/revocation.md §10).
+  assert.equal(CASES.schemaVersion, 3);
+});
+
 test('every fixture cases.json registers matches its recorded contentSha256', () => {
   const ids = Object.keys(CASES.fixtures);
   assert.ok(ids.length > 0, 'cases.json must register fixtures');
@@ -203,6 +209,31 @@ function trustedRootsOption(build, spec) {
   return spec.fixtures.map((id) => Buffer.from(fixtureBytes(id)));
 }
 
+// --- revocation (schema version 3) ----------------------------------------
+
+/**
+ * The createConfig options for a case's `revocation` object: lists and
+ * issuers are fixture ids (an id may repeat), passed as their bytes in
+ * order; distrust entries are passed exactly as written, malformed ones
+ * included, for the module to judge.
+ */
+function revocationOptions(spec) {
+  const opts = {};
+  if (spec === undefined) {
+    return opts;
+  }
+  if (spec.lists !== undefined) {
+    opts.revocationLists = spec.lists.map((id) => Buffer.from(fixtureBytes(id)));
+  }
+  if (spec.issuers !== undefined) {
+    opts.revocationIssuers = spec.issuers.map((id) => Buffer.from(fixtureBytes(id)));
+  }
+  if (spec.distrust !== undefined) {
+    opts.distrust = spec.distrust;
+  }
+  return opts;
+}
+
 // --- per-build adapter ---------------------------------------------------
 
 /**
@@ -247,8 +278,10 @@ function defineTargetTests(name, build, async_) {
   const ENV = { PRODUCTION: build.Environment.PRODUCTION, SANDBOX: build.Environment.SANDBOX };
 
   async function verifierForCase(kase) {
-    const opts = {};
-    const roots = trustedRootsOption(name, kase.config?.trustedRoots);
+    // A buildConfig case states its configuration as its input.
+    const spec = kase.operation === 'buildConfig' ? kase.input : kase.config;
+    const opts = revocationOptions(spec?.revocation);
+    const roots = trustedRootsOption(name, spec?.trustedRoots);
     if (roots !== undefined) {
       opts.roots = roots;
     }
@@ -367,6 +400,35 @@ function defineTargetTests(name, build, async_) {
     }
   }
 
+  // --- buildConfig ---------------------------------------------------------
+  //
+  // Building the configuration either fails, with the module's refusal
+  // surfacing as createVerifier's TypeError, or succeeds and reports the
+  // two revocation values (docs/design/revocation.md §4, §7).
+
+  async function runBuildConfigCase(kase) {
+    if (kase.expected.status === 'error') {
+      await assert.rejects(
+        verifierForCase(kase),
+        (error) => error instanceof TypeError && error.cause?.name === 'InitRefusedError',
+      );
+      return;
+    }
+    const verifier = await verifierForCase(kase);
+    assert.deepEqual(
+      await verifier.revocationUrls(),
+      kase.expected.revocationUrls,
+      'revocationUrls',
+    );
+    const until = await verifier.revocationValidUntil();
+    const want = kase.expected.revocationValidUntil;
+    assert.equal(
+      until === null ? null : until.getTime(),
+      want === null ? null : Date.parse(want),
+      `revocationValidUntil ${until?.toISOString()}, want ${want}`,
+    );
+  }
+
   // --- decodeBase64 -------------------------------------------------------
   //
   // The package has no base64 decoder of its own: the module decodes. So,
@@ -439,6 +501,10 @@ function defineTargetTests(name, build, async_) {
       RAN.add(kase.id);
       if (kase.operation === 'decodeBase64') {
         await runDecodeBase64Case(kase);
+        return;
+      }
+      if (kase.operation === 'buildConfig') {
+        await runBuildConfigCase(kase);
         return;
       }
       if (kase.maxMillis !== undefined) {

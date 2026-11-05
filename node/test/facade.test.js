@@ -48,9 +48,94 @@ test('a root the module refuses fails createVerifier, not a later call', () => {
     () => node.createVerifier(config),
     (error) =>
       error instanceof TypeError &&
-      /refused a configured root/.test(error.message) &&
+      error.message.startsWith('aprv.wasm refused the configuration: roots[0]') &&
       error.cause?.name === 'InitRefusedError',
   );
+});
+
+// --- revocation (docs/design/revocation.md §4, §7) ------------------------
+//
+// The module judges every list, issuer and distrust entry when init runs,
+// and states the two values the Verifier reports. The facade only carries
+// the settings in and the values out.
+
+const REVOCATION = (name) => new Uint8Array(repo(`fixtures/generated-0.7/revocation/${name}`));
+const TEST_ROOT = REVOCATION('root.der');
+const TEST_INTERMEDIATE = REVOCATION('intermediate.der');
+const TEST_JWS = repo('fixtures/generated-0.7/revocation/jws.jws').toString('utf8').trim();
+const TEST_INTERMEDIATE_ID = 'a604eb835029c0019e7904b7c007eca2a68f799e9dcba0012fdd34660cbcd9fb';
+const AT = Date.parse('2026-11-05T00:00:00Z');
+
+test('Apple roots report the four Apple list URLs and no list in force; own roots report none', async () => {
+  for (const build of [node, web]) {
+    const apple = build.createVerifier(await build.createConfig());
+    assert.deepEqual(await apple.revocationUrls(), [
+      'http://crl.apple.com/root.crl',
+      'http://crl.apple.com/applerootcag3.crl',
+      'http://crl.apple.com/wwdrg5.crl',
+      'http://crl.apple.com/wwdrg6.crl',
+    ]);
+    assert.equal(await apple.revocationValidUntil(), null);
+    const own = build.createVerifier(await build.createConfig({ roots: [TEST_ROOT] }));
+    assert.deepEqual(await own.revocationUrls(), []);
+    assert.equal(await own.revocationValidUntil(), null);
+  }
+});
+
+test('a list held for every expected issuer makes revocationValidUntil its nextUpdate', () => {
+  const verifier = node.createVerifier(
+    node.createConfig({
+      roots: [TEST_ROOT],
+      revocationLists: [REVOCATION('crl-fresh-empty.der'), REVOCATION('root-crl-empty.der')],
+      revocationIssuers: [TEST_INTERMEDIATE],
+    }),
+  );
+  assert.deepEqual(verifier.revocationUrls(), [
+    'http://crl.example.test/aprv-test-root.crl',
+    'https://crl.example.test/aprv-test-root.crl',
+  ]);
+  const until = verifier.revocationValidUntil();
+  assert.equal(until?.toISOString(), '2026-12-01T00:00:00.000Z');
+  until.setTime(0);
+  assert.equal(verifier.revocationValidUntil()?.toISOString(), '2026-12-01T00:00:00.000Z');
+});
+
+test('distrust and a list reach the module: the revoked leaf is CERTIFICATE_REVOKED', async () => {
+  for (const build of [node, web]) {
+    const control = build.createVerifier(
+      await build.createConfig({ roots: [TEST_ROOT], clock: () => AT }),
+    );
+    assert.equal((await control.verifySignedData(TEST_JWS)).verified, true);
+    for (const revocation of [
+      { distrust: [{ issuer: TEST_INTERMEDIATE_ID, serial: '2' }] },
+      {
+        revocationLists: [REVOCATION('crl-fresh-revokes-leaves.der')],
+        revocationIssuers: [TEST_INTERMEDIATE],
+      },
+    ]) {
+      const verifier = build.createVerifier(
+        await build.createConfig({ roots: [TEST_ROOT], clock: () => AT, ...revocation }),
+      );
+      const result = await verifier.verifySignedData(TEST_JWS);
+      assert.equal(result.failure?.reason, build.Reason.CERTIFICATE_REVOKED);
+    }
+  }
+});
+
+test('a revocation setting the module refuses fails createVerifier, naming it', () => {
+  for (const [setting, options] of [
+    ['revocation_lists[0]', { revocationLists: [REVOCATION('crl-refused-not-a-crl.der')] }],
+    ['distrust[0]', { distrust: [{ issuer: 'not hex', serial: '01' }] }],
+  ]) {
+    assert.throws(
+      () => node.createVerifier(node.createConfig({ roots: [TEST_ROOT], ...options })),
+      (error) =>
+        error instanceof TypeError &&
+        error.message.startsWith(`aprv.wasm refused the configuration: ${setting}`) &&
+        error.cause?.name === 'InitRefusedError',
+      setting,
+    );
+  }
 });
 
 test('the environment is one of the two values, or a TypeError', async () => {

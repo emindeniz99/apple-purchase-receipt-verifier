@@ -24,9 +24,17 @@ const DEFAULTS = initConfig();
 const now = () => BigInt(Date.now());
 
 // The receipt and request-body cap; init states one byte over it as the
-// most bytes of one input a host hands over (DECISIONS.md R42).
+// most bytes of one input a host hands over (DECISIONS.md R42). With
+// Apple's roots the answer names the four Apple list URLs; with an own
+// root and no revocation setting, none (docs/design/revocation.md §7).
 const CAP = 3_145_728;
-const INIT_OK = `{"ok":true,"max_input_bytes":${CAP + 1}}`;
+const APPLE_LISTS = ['root', 'applerootcag3', 'wwdrg5', 'wwdrg6']
+  .map((name) => `"http://crl.apple.com/${name}.crl"`)
+  .join(',');
+const INIT_OK =
+  `{"ok":true,"max_input_bytes":${CAP + 1},"revocation_urls":[${APPLE_LISTS}],` +
+  '"revocation_valid_until_ms":null}';
+const INIT_OK_OWN_ROOTS = `{"ok":true,"max_input_bytes":${CAP + 1},"revocation_urls":[],"revocation_valid_until_ms":null}`;
 
 /** Fresh bindings; `host` replaces the random-get import, `onCore` sees the core instance. */
 function bindings({ host = randomGet, onCore } = {}) {
@@ -46,10 +54,11 @@ function bindings({ host = randomGet, onCore } = {}) {
 
 function ready(config = DEFAULTS, options) {
   const b = bindings(options);
-  assert.equal(b.init(config), INIT_OK);
+  assert.equal(b.init(config), config === DEFAULTS ? INIT_OK : INIT_OK_OWN_ROOTS);
   return b;
 }
 
+const decode = (bytes) => new TextDecoder().decode(bytes);
 const traps = (fn) => assert.throws(fn, WebAssembly.RuntimeError);
 
 test('the shipped module passes the facade ABI check', () => {
@@ -144,18 +153,68 @@ test('the built-in roots are sent as {}, and an empty root list is refused', () 
   assert.equal(bindings().init(initConfig([])), '{"ok":false,"message":"roots must not be empty"}');
 });
 
-test("the facade reads init's answer: max_input_bytes, or the refusal", () => {
-  assert.equal(initAnswer(INIT_OK), CAP + 1);
-  assert.equal(initAnswer('{"max_input_bytes":7,"ok":true}'), 7);
+test('the revocation settings are sent only when set, distrust entries as exactly {issuer, serial}', () => {
+  assert.equal(decode(initConfig(undefined, { lists: [], issuers: [], distrust: [] })), '{}');
+  assert.equal(
+    decode(
+      initConfig(['AQID'], {
+        lists: ['BAU='],
+        issuers: ['Bgc='],
+        distrust: [{ issuer: 'ab', serial: '01', extra: true }],
+      }),
+    ),
+    '{"roots":["AQID"],"revocation_lists":["BAU="],"revocation_issuers":["Bgc="],' +
+      '"distrust":[{"issuer":"ab","serial":"01"}]}',
+  );
+  assert.equal(decode(initConfig(undefined, { lists: ['BAU='] })), '{"revocation_lists":["BAU="]}');
+});
+
+test('init refuses a revocation list that is not a CRL, naming it, and may be retried', () => {
+  const b = bindings();
+  const refused = JSON.parse(b.init(initConfig(undefined, { lists: ['AQID'] })));
+  assert.equal(refused.ok, false);
+  assert.match(refused.message, /^revocation_lists\[0\]/);
+  assert.equal(b.init(DEFAULTS), INIT_OK);
+});
+
+test("the facade reads init's answer: max_input_bytes and the revocation state, or the refusal", () => {
+  assert.deepEqual(initAnswer(INIT_OK), {
+    maxInputBytes: CAP + 1,
+    revocationUrls: [
+      'http://crl.apple.com/root.crl',
+      'http://crl.apple.com/applerootcag3.crl',
+      'http://crl.apple.com/wwdrg5.crl',
+      'http://crl.apple.com/wwdrg6.crl',
+    ],
+    revocationValidUntilMs: null,
+  });
+  assert.deepEqual(
+    initAnswer(
+      '{"revocation_valid_until_ms":1798761600000,"revocation_urls":["u"],"max_input_bytes":7,"ok":true}',
+    ),
+    { maxInputBytes: 7, revocationUrls: ['u'], revocationValidUntilMs: 1_798_761_600_000 },
+  );
   const refused = '{"ok":false,"message":"not a certificate"}';
   assert.throws(
     () => initAnswer(refused),
     (e) => e instanceof InitRefusedError && e.answer === refused,
   );
-  // An accepting answer without a positive integer comes from a module of
-  // another ABI version: no answer, never a cap of the facade's own.
+  // An accepting answer without a positive integer, or without the two
+  // revocation members, comes from a module of another version: no answer,
+  // never a cap or a revocation state of the facade's own.
+  const revocation = ',"revocation_urls":[],"revocation_valid_until_ms":null';
   for (const text of [
     '{"ok":true}',
+    `{"ok":true${revocation}}`,
+    `{"ok":true,"max_input_bytes":0${revocation}}`,
+    // the answer of a 0.13.0 module, which knows no revocation
+    '{"ok":true,"max_input_bytes":3145729}',
+    '{"ok":true,"max_input_bytes":7,"revocation_valid_until_ms":null}',
+    '{"ok":true,"max_input_bytes":7,"revocation_urls":[]}',
+    '{"ok":true,"max_input_bytes":7,"revocation_urls":[1],"revocation_valid_until_ms":null}',
+    '{"ok":true,"max_input_bytes":7,"revocation_urls":"u","revocation_valid_until_ms":null}',
+    '{"ok":true,"max_input_bytes":7,"revocation_urls":[],"revocation_valid_until_ms":1.5}',
+    '{"ok":true,"max_input_bytes":7,"revocation_urls":[],"revocation_valid_until_ms":"1"}',
     '{"ok":true,"max_input_bytes":0}',
     '{"ok":true,"max_input_bytes":-1}',
     '{"ok":true,"max_input_bytes":1.5}',
