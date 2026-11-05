@@ -4,24 +4,30 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
 import java.security.PublicKey;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.bouncycastle.asn1.ASN1BitString;
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Enumerated;
+import org.bouncycastle.asn1.ASN1GeneralizedTime;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.ASN1UTCTime;
+import org.bouncycastle.asn1.BERTags;
+import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
-import org.bouncycastle.asn1.x509.CertificateList;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.asn1.x509.TBSCertList;
+import org.bouncycastle.asn1.x509.Time;
 import org.bouncycastle.operator.ContentVerifier;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.jspecify.annotations.Nullable;
@@ -47,6 +53,9 @@ final class RevocationList {
 
     /** An entry with no reasonCode. */
     static final int NO_REASON = -1;
+
+    /** A reasonCode that is unknown, repeated or does not read: it revokes. */
+    static final int UNREADABLE_REASON = Integer.MAX_VALUE;
 
     /** The CRL extensions this profile interprets, so a critical one is understood. */
     private static final Set<ASN1ObjectIdentifier> SUPPORTED_CRITICAL =
@@ -114,58 +123,116 @@ final class RevocationList {
         this.algorithmsAgree =
                 Arrays.equals(tbsFields.get(i).bytes(der), outer.get(1).bytes(der));
 
-        CertificateList list;
+        // The structure is walked by hand rather than with BouncyCastle's
+        // CertificateList, TBSCertList and Extensions: those refuse a
+        // repeated extension and decode an extension's value eagerly, where
+        // the profile ignores the list or reads the value as one that does
+        // not read (§4), as the core does.
+        ASN1Sequence certificateList;
         try {
-            list = CertificateList.getInstance(ASN1Primitive.fromByteArray(der));
+            certificateList = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
         } catch (IOException e) {
             throw new IllegalArgumentException("not a CertificateList", e);
         }
-        TBSCertList fields = list.getTBSCertList();
-        this.signatureAlgorithm = list.getSignatureAlgorithm();
+        if (certificateList.size() != 3) {
+            throw new IllegalArgumentException("not a CertificateList");
+        }
+        ASN1Sequence fields = ASN1Sequence.getInstance(certificateList.getObjectAt(0));
+        this.signatureAlgorithm = AlgorithmIdentifier.getInstance(certificateList.getObjectAt(1));
         byte[] bits;
         try {
-            bits = list.getSignature().getOctets();
+            bits = ASN1BitString.getInstance(certificateList.getObjectAt(2)).getOctets();
         } catch (IllegalStateException e) {
             // A BIT STRING with pad bits holds no signature.
             bits = null;
         }
         this.signature = bits;
-        this.thisUpdate = fields.getThisUpdate().getDate().getTime();
-        this.nextUpdate = fields.getNextUpdate() == null
-                ? null
-                : fields.getNextUpdate().getDate().getTime();
 
+        int at = 0;
+        ASN1Integer version = null;
+        if (fields.size() > at && fields.getObjectAt(at) instanceof ASN1Integer) {
+            version = (ASN1Integer) fields.getObjectAt(at++);
+        }
+        AlgorithmIdentifier.getInstance(field(fields, at++));
+        X500Name.getInstance(field(fields, at++));
+        this.thisUpdate = Time.getInstance(field(fields, at++)).getDate().getTime();
         String unsupported = null;
-        ASN1Integer version = fields.getVersion();
-        if (version == null || !version.hasValue(1)) {
-            unsupported = "it is not a version 2 list";
-        } else if (nextUpdate == null) {
+        Long next = null;
+        if (at < fields.size()
+                && (fields.getObjectAt(at) instanceof ASN1UTCTime
+                        || fields.getObjectAt(at) instanceof ASN1GeneralizedTime)) {
+            try {
+                next = Time.getInstance(fields.getObjectAt(at)).getDate().getTime();
+            } catch (RuntimeException e) {
+                unsupported = "its nextUpdate does not read";
+            }
+            at++;
+        } else {
             unsupported = "it has no nextUpdate";
         }
+        this.nextUpdate = next;
+        ASN1Sequence revoked = null;
+        if (at < fields.size() && !(fields.getObjectAt(at) instanceof ASN1TaggedObject)) {
+            revoked = ASN1Sequence.getInstance(fields.getObjectAt(at++));
+        }
+        ASN1Sequence listExtensions = null;
+        if (at < fields.size()) {
+            ASN1TaggedObject tagged = ASN1TaggedObject.getInstance(fields.getObjectAt(at++));
+            if (tagged.getTagClass() != BERTags.CONTEXT_SPECIFIC || tagged.getTagNo() != 0) {
+                throw new IllegalArgumentException("not a TBSCertList");
+            }
+            listExtensions = ASN1Sequence.getInstance(tagged, true);
+        }
+        if (at != fields.size()) {
+            throw new IllegalArgumentException("not a TBSCertList");
+        }
 
-        Extensions extensions = fields.getExtensions();
+        if (version == null || !version.hasValue(1)) {
+            unsupported = "it is not a version 2 list";
+        }
+
         byte[] keyIdentifier = null;
         boolean hasAki = false;
         BigInteger number = null;
-        if (extensions != null) {
-            for (ASN1ObjectIdentifier oid : extensions.getExtensionOIDs()) {
-                Extension extension = extensions.getExtension(oid);
-                if (oid.equals(Extension.authorityKeyIdentifier)) {
-                    hasAki = true;
-                    keyIdentifier = AuthorityKeyIdentifier.getInstance(extension.getParsedValue())
-                            .getKeyIdentifier();
-                } else if (oid.equals(Extension.cRLNumber)) {
-                    number = ASN1Integer.getInstance(extension.getParsedValue()).getValue();
-                } else if (unsupported == null) {
-                    if (oid.equals(Extension.issuingDistributionPoint)) {
-                        unsupported = "it has an IssuingDistributionPoint";
-                    } else if (oid.equals(Extension.deltaCRLIndicator)) {
-                        unsupported = "it is a delta list";
-                    } else if (oid.equals(Extension.freshestCRL)) {
-                        unsupported = "it has a FreshestCRL";
-                    } else if (extension.isCritical() && !SUPPORTED_CRITICAL.contains(oid)) {
-                        unsupported = "it has an unsupported critical extension";
+        List<Extension> extensions = extensions(listExtensions);
+        for (Extension extension : extensions) {
+            ASN1ObjectIdentifier oid = extension.getExtnId();
+            if (oid.equals(Extension.authorityKeyIdentifier)) {
+                // A repeated or unreadable AuthorityKeyIdentifier refuses
+                // the list, as one without a keyIdentifier does.
+                if (hasAki) {
+                    throw new IllegalArgumentException("the AuthorityKeyIdentifier is repeated");
+                }
+                hasAki = true;
+                keyIdentifier = AuthorityKeyIdentifier.getInstance(extension.getParsedValue())
+                        .getKeyIdentifier();
+            } else if (oid.equals(Extension.cRLNumber)) {
+                // A CRL Number that is repeated, negative or does not read
+                // puts the list outside the profile, and the list then has
+                // no number for its age and for choosing the kept list.
+                if (count(extensions, oid) > 1) {
+                    unsupported = "its CRL Number is repeated";
+                } else {
+                    try {
+                        number = ASN1Integer.getInstance(extension.getParsedValue())
+                                .getValue();
+                    } catch (RuntimeException e) {
+                        unsupported = "its CRL Number does not read";
                     }
+                    if (number != null && number.signum() < 0) {
+                        number = null;
+                        unsupported = "its CRL Number is negative";
+                    }
+                }
+            } else if (unsupported == null) {
+                if (oid.equals(Extension.issuingDistributionPoint)) {
+                    unsupported = "it has an IssuingDistributionPoint";
+                } else if (oid.equals(Extension.deltaCRLIndicator)) {
+                    unsupported = "it is a delta list";
+                } else if (oid.equals(Extension.freshestCRL)) {
+                    unsupported = "it has a FreshestCRL";
+                } else if (extension.isCritical() && !SUPPORTED_CRITICAL.contains(oid)) {
+                    unsupported = "it has an unsupported critical extension";
                 }
             }
         }
@@ -176,32 +243,41 @@ final class RevocationList {
         Map<String, Integer> listed = new HashMap<>();
         Set<BigInteger> seen = new HashSet<>();
         int count = 0;
-        Enumeration<?> revoked = fields.getRevokedCertificateEnumeration();
-        while (revoked.hasMoreElements()) {
-            TBSCertList.CRLEntry entry = (TBSCertList.CRLEntry) revoked.nextElement();
+        for (ASN1Encodable element : revoked == null ? new ASN1Encodable[0] : revoked.toArray()) {
+            ASN1Sequence entry = ASN1Sequence.getInstance(element);
+            if (entry.size() < 2 || entry.size() > 3) {
+                throw new IllegalArgumentException("not a revokedCertificates entry");
+            }
             count++;
-            BigInteger serial = entry.getUserCertificate().getValue();
+            BigInteger serial = ASN1Integer.getInstance(entry.getObjectAt(0)).getValue();
+            Time.getInstance(entry.getObjectAt(1));
             if (!seen.add(serial) && unsupported == null) {
                 unsupported = "it lists a serial twice";
             }
             int reason = NO_REASON;
-            Extensions entryExtensions = entry.getExtensions();
-            if (entryExtensions != null) {
-                for (ASN1ObjectIdentifier oid : entryExtensions.getExtensionOIDs()) {
-                    Extension extension = entryExtensions.getExtension(oid);
-                    if (oid.equals(Extension.reasonCode)) {
-                        BigInteger code = ASN1Enumerated.getInstance(extension.getParsedValue())
-                                .getValue();
-                        // An unknown code revokes, as no reason does; only
-                        // 6 and 8 are treated apart, so a large value must
-                        // not wrap onto them.
-                        reason = code.signum() >= 0 && code.bitLength() < 31 ? code.intValue() : Integer.MAX_VALUE;
-                    } else if (unsupported == null) {
-                        if (oid.equals(Extension.certificateIssuer)) {
-                            unsupported = "it has an indirect entry";
-                        } else if (extension.isCritical() && !SUPPORTED_CRITICAL_ENTRY.contains(oid)) {
-                            unsupported = "an entry has an unsupported critical extension";
+            List<Extension> entryExtensions =
+                    extensions(entry.size() == 3 ? ASN1Sequence.getInstance(entry.getObjectAt(2)) : null);
+            for (Extension extension : entryExtensions) {
+                ASN1ObjectIdentifier oid = extension.getExtnId();
+                if (oid.equals(Extension.reasonCode)) {
+                    // A reasonCode that is repeated or does not read revokes,
+                    // as an unknown code and no reason do; only 6 and 8 are
+                    // treated apart, so a large value must not wrap onto them.
+                    reason = UNREADABLE_REASON;
+                    if (count(entryExtensions, oid) == 1) {
+                        try {
+                            BigInteger code = ASN1Enumerated.getInstance(extension.getParsedValue())
+                                    .getValue();
+                            reason = code.signum() >= 0 && code.bitLength() < 31 ? code.intValue() : UNREADABLE_REASON;
+                        } catch (RuntimeException e) {
+                            reason = UNREADABLE_REASON;
                         }
+                    }
+                } else if (unsupported == null) {
+                    if (oid.equals(Extension.certificateIssuer)) {
+                        unsupported = "it has an indirect entry";
+                    } else if (extension.isCritical() && !SUPPORTED_CRITICAL_ENTRY.contains(oid)) {
+                        unsupported = "an entry has an unsupported critical extension";
                     }
                 }
             }
@@ -213,6 +289,38 @@ final class RevocationList {
         this.unsupported = unsupported;
         this.entryCount = count;
         this.entries = Collections.unmodifiableMap(listed);
+    }
+
+    /** The TBSCertList field at {@code index}, which must be there. */
+    private static ASN1Encodable field(ASN1Sequence fields, int index) {
+        if (index >= fields.size()) {
+            throw new IllegalArgumentException("not a TBSCertList");
+        }
+        return fields.getObjectAt(index);
+    }
+
+    /**
+     * Each Extension of an Extensions SEQUENCE, in order, an OID that
+     * repeats included; none for {@code null}. A value is not decoded here.
+     */
+    private static List<Extension> extensions(@Nullable ASN1Sequence sequence) {
+        List<Extension> extensions = new ArrayList<>();
+        if (sequence != null) {
+            for (ASN1Encodable element : sequence) {
+                extensions.add(Extension.getInstance(element));
+            }
+        }
+        return extensions;
+    }
+
+    private static int count(List<Extension> extensions, ASN1ObjectIdentifier oid) {
+        int count = 0;
+        for (Extension extension : extensions) {
+            if (extension.getExtnId().equals(oid)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

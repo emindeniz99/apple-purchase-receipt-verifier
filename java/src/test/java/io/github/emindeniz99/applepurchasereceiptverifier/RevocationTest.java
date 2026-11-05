@@ -218,7 +218,7 @@ class RevocationTest {
         List<byte[]> over = new ArrayList<byte[]>(full);
         over.add(entries(1));
         String refused = refusal(Config.builder().revocationLists(over));
-        assertTrue(refused.contains("more than 100000 entries"), refused);
+        assertTrue(refused.contains("revocationLists[3] brings the entries in all to more than 100000"), refused);
     }
 
     /** More than 1,000 distrust entries are refused; 1,000 build. */
@@ -277,6 +277,91 @@ class RevocationTest {
                 IllegalArgumentException.class,
                 () -> new DefaultVerifier(fresh, builtIn("[" + String.format(issuer, "0B") + "]", "[]")));
         assertTrue(older.getMessage().contains("revocationLists[0] is older than the newest list"), older.getMessage());
+    }
+
+    /**
+     * A list whose CRL Number is negative is outside the profile (§4): it
+     * has no number, so its age against {@code newest} is judged by
+     * thisUpdate, as the core judges it, never by comparing -1 with the
+     * recorded number.
+     */
+    @Test
+    void aNegativeCrlNumberIsJudgedByThisUpdate() throws Exception {
+        String issuer = "{\"id\":\"" + TEST_INTERMEDIATE + "\",\"certificate\":\"intermediate\","
+                + "\"list\":\"http://crl.example.test/injected.crl\","
+                + "\"newest\":{\"crlNumber\":\"0A\",\"thisUpdate\":\"%s\"}}";
+        Config negative = testConfig()
+                .revocationLists(Collections.singletonList(testBytes("crl-ignored-negative-crl-number-revokes.der")))
+                .build();
+        // The list's thisUpdate is 2026-11-01: not older than newest's 2026-10-01, whatever the numbers.
+        DefaultVerifier built =
+                new DefaultVerifier(negative, builtIn("[" + String.format(issuer, "2026-10-01T00:00:00Z") + "]", "[]"));
+        assertNull(built.revocationValidUntil(), "an ignored list counts as missing");
+        assertTrue(built.verifySignedData(testText("jws.jws")).verified(), "an ignored list revokes nothing");
+        IllegalArgumentException older = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DefaultVerifier(
+                        negative, builtIn("[" + String.format(issuer, "2026-11-02T00:00:00Z") + "]", "[]")));
+        assertTrue(older.getMessage().contains("revocationLists[0] is older than the newest list"), older.getMessage());
+    }
+
+    /**
+     * An added issuer whose serial is negative is accepted, and no list or
+     * distrust entry can revoke it: a negative serial is never matched
+     * (§2). The core judges it the same way.
+     */
+    @Test
+    void anIssuerWithANegativeSerialIsAcceptedAndNeverRevoked() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair rootKey = generator.generateKeyPair();
+        KeyPair issuerKey = generator.generateKeyPair();
+        X500Name rootName = new X500Name("CN=APRV negative serial test root");
+        X509Certificate root = certificate(rootName, BigInteger.ONE, rootName, rootKey, rootKey, false);
+        X509Certificate issuer = certificate(
+                rootName,
+                BigInteger.valueOf(-1),
+                new X500Name("CN=APRV negative serial WWDR CA"),
+                issuerKey,
+                rootKey,
+                true);
+        assertEquals(-1, issuer.getSerialNumber().signum());
+        String rootId = Der.names(root).issuerId();
+        Verifier verifier = Verifier.create(Config.builder()
+                .roots(Collections.singletonList(root))
+                .revocationIssuers(Collections.singletonList(issuer))
+                .distrust(Collections.singletonList(new RevokedCertificate(rootId, "FF")))
+                .build());
+        assertEquals(Collections.<String>emptyList(), verifier.revocationUrls());
+    }
+
+    /** A CA certificate signed by {@code signer}, with the WWDR marker when {@code marker}. */
+    private static X509Certificate certificate(
+            X500Name issuer, BigInteger serial, X500Name subject, KeyPair subjectKey, KeyPair signer, boolean marker)
+            throws Exception {
+        org.bouncycastle.cert.X509v3CertificateBuilder builder =
+                new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                        issuer,
+                        serial,
+                        new Date(1_700_000_000_000L),
+                        new Date(2_000_000_000_000L),
+                        subject,
+                        subjectKey.getPublic());
+        builder.addExtension(
+                org.bouncycastle.asn1.x509.Extension.basicConstraints,
+                true,
+                new org.bouncycastle.asn1.x509.BasicConstraints(true));
+        if (marker) {
+            builder.addExtension(
+                    new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.840.113635.100.6.2.1"),
+                    false,
+                    org.bouncycastle.asn1.DERNull.INSTANCE);
+        }
+        return new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                .setProvider(BouncyCastle.PROVIDER)
+                .getCertificate(builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
+                        .setProvider(BouncyCastle.PROVIDER)
+                        .build(signer.getPrivate())));
     }
 
     // ------------------------------------------------------------ messages

@@ -375,7 +375,7 @@ final class Revocation {
             }
             entries += list.entryCount;
             if (entries > MAX_ENTRIES) {
-                throw refused("revocationLists hold more than " + MAX_ENTRIES + " entries in all");
+                throw refused("revocationLists[" + i + "] brings the entries in all to more than " + MAX_ENTRIES);
             }
             lists.add(list);
         }
