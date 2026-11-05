@@ -88,7 +88,7 @@ const table = [
   ['a value outside an enum',
     (d) => { d.fixtures[firstFixture].role = 'inputs'; },
     [`cases.json: /fixtures/${firstFixture}/role must be equal to one of the allowed values `
-      + '"input", "trust-anchor", "support", got "inputs"']],
+      + '"input", "trust-anchor", "revocation-list", "revocation-issuer", "support", got "inputs"']],
   ['an ok receipt case without environment (expected is a oneOf of three shapes)',
     (d) => { delete d.cases[okReceipt].expected.environment; },
     [at(okReceipt, '/expected', "must have required property 'environment'")]],
@@ -108,8 +108,8 @@ const table = [
     (d) => { d.cases[1].tags = []; },
     [at(1, '/tags', 'must NOT have fewer than 1 items')]],
   ['a wrong schemaVersion (const)',
-    (d) => { d.schemaVersion = 3; },
-    ['cases.json: /schemaVersion must be equal to constant 2, got 3']],
+    (d) => { d.schemaVersion = 2; },
+    ['cases.json: /schemaVersion must be equal to constant 3, got 2']],
   ['an endpoint /status outside its enum (inside an allOf)',
     (d) => { d.cases[endpoint].expected.fields['/status'] = 21004; },
     [at(endpoint, '/expected/fields/~1status',
@@ -153,8 +153,10 @@ test('a contentSha256 outside its pattern is reported, and so is the drift', () 
 test('a value matching two shapes of a oneOf is reported as ambiguous', () => {
   const r = plant((d, s) => { s.$defs.trustedRoots.oneOf[1] = { type: 'object' }; });
   assert.equal(r.code, 1, r.err);
-  const expected = original.cases.flatMap((c, i) => (c.config?.trustedRoots?.source === 'defaults'
-    ? [at(i, '/config/trustedRoots', 'matches 2 allowed shapes at once (oneOf branches 0, 1)')] : []));
+  // A buildConfig case carries its configuration in `input`.
+  const expected = original.cases.flatMap((c, i) => ['config', 'input'].flatMap((slot) =>
+    (c[slot]?.trustedRoots?.source === 'defaults'
+      ? [at(i, `/${slot}/trustedRoots`, 'matches 2 allowed shapes at once (oneOf branches 0, 1)')] : [])));
   assert.deepEqual(r.problems, expected);
 });
 
@@ -177,6 +179,35 @@ test('a typo keyword in the schema fails strict mode rather than validating ever
   assert.equal(r.code, 1, r.err);
   assert.deepEqual(r.problems,
     ['schema: the schema itself could not be applied — strict mode: unknown keyword: "minItem"']);
+});
+
+// A revocation list or issuer is used only through a case's revocation
+// settings; one nothing names is dead weight, and a name nothing registers
+// is a broken reference, in a verify case's config and a buildConfig input.
+test('revocation fixtures are counted as references from config and input', () => {
+  const verify = indexOf((c) => Array.isArray(c.config?.revocation?.lists));
+  const build = indexOf((c) => c.operation === 'buildConfig' && Array.isArray(c.input?.revocation?.issuers));
+  const list = original.cases[verify].config.revocation.lists[0];
+  const other = Object.keys(original.fixtures)
+    .find((id) => id !== list && original.fixtures[id].role === 'revocation-list');
+  const r = plant((d) => {
+    for (const c of d.cases) {
+      for (const slot of [c.config, c.input]) {
+        const lists = slot?.revocation?.lists;
+        if (Array.isArray(lists)) slot.revocation.lists = lists.map((id) => (id === list ? other : id));
+      }
+    }
+    d.cases[verify].config.revocation.lists.push('no-such-list');
+    d.cases[build].input.revocation.issuers.push('no-such-issuer');
+  });
+  assert.equal(r.code, 1, r.err);
+  assert.deepEqual(r.problems, [
+    `case #${verify} "${original.cases[verify].id}": config.revocation.lists references fixture `
+      + '"no-such-list", which is not registered',
+    `case #${build} "${original.cases[build].id}": input.revocation.issuers references fixture `
+      + '"no-such-issuer", which is not registered',
+    `fixture "${list}": has role "revocation-list" but is referenced by no case`,
+  ]);
 });
 
 test('the repository fixtures pass', () => {
