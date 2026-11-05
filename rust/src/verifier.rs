@@ -33,9 +33,10 @@ use std::sync::Arc;
 /// Every method has an `_at` twin that takes the instant as an argument,
 /// `now_ms` in epoch milliseconds, in place of the [`Config`] clock, which
 /// it never reads. The instant is used where the clock would be: the chain
-/// instant of a receipt or JWS that carries no usable signing date, and
-/// the endpoint's `request_date`. At the same instant the two forms give
-/// the same answer.
+/// instant of a receipt or JWS that carries no usable signing date, the
+/// endpoint's `request_date`, and the freshness of a list whose
+/// `certificateHold` entry names a certificate on the path. At the same
+/// instant the two forms give the same answer.
 ///
 /// ```no_run
 /// use apple_purchase_receipt_verifier::{Config, Verifier};

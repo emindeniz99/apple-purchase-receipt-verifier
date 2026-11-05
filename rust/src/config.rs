@@ -14,10 +14,12 @@ pub(crate) type ClockFn = dyn Fn() -> i64 + Send + Sync;
 /// Immutable verifier configuration.
 ///
 /// The clock answers "what time is it now?" and nothing else. The library
-/// reads it at most once per call, and only for one of two things: the
+/// reads it at most once per call, and only for one of three things: the
 /// certificate validity check when the receipt or JWS carries no usable
-/// signing date, and `request_date` in the endpoint response. A clock must be safe to call
-/// from several threads.
+/// signing date, `request_date` in the endpoint response, and whether a
+/// revocation list whose `certificateHold` entry names a certificate on the
+/// path is still fresh (docs/design/revocation.md §3). A clock must be safe
+/// to call from several threads.
 #[derive(Clone)]
 pub struct Config {
     roots: Arc<[TrustAnchor]>,

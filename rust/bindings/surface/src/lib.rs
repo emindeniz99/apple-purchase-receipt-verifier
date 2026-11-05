@@ -19,9 +19,11 @@
 //!   clock to read (the C ABI given a null clock) uses the `_by_clock`
 //!   calls instead, and the core reads the system clock, only when the
 //!   call needs the time. The core uses the instant
-//!   for two things only: the certificate-validity instant when the
-//!   receipt or JWS carries no usable signing date, and `request_date` in
-//!   the endpoint response.
+//!   for three things only: the certificate-validity instant when the
+//!   receipt or JWS carries no usable signing date, `request_date` in the
+//!   endpoint response, and whether a revocation list whose
+//!   `certificateHold` entry names a certificate on the path is still
+//!   fresh.
 //! - **No unsigned integers, but for one.** Ids are `i64`, since an ASN.1
 //!   INTEGER in hostile input can be negative. The receipt types are the
 //!   core's own, so an unknown attribute's type is the core's `u32`, which
