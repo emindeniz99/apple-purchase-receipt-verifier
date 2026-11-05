@@ -260,21 +260,28 @@ fn decode(s: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
 
+    /// The names of the root certificates in `certs/`: its top-level
+    /// `.cer` files, sorted. `certs/` also holds `revocations.json` and the
+    /// `revocation-issuers/` intermediates, which are not roots.
+    fn root_names() -> Vec<String> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap())
+            .filter(|e| e.file_type().unwrap().is_file())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".cer"))
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn default_fingerprints_are_the_pinned_apple_roots_in_certs() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        let got: Vec<String> = names
+        let got: Vec<String> = root_names()
             .iter()
-            .map(|n| {
-                crate::manifest::sha256_hex(
-                    &std::fs::read(format!("{dir}{}", n.to_string_lossy())).unwrap(),
-                )
-            })
+            .map(|n| crate::manifest::sha256_hex(&std::fs::read(format!("{dir}{n}")).unwrap()))
             .collect();
         assert_eq!(got, DEFAULT_ROOT_SHA256);
     }
@@ -299,14 +306,9 @@ mod tests {
     #[test]
     fn a_pem_bundle_of_the_apple_roots_reads_back_to_their_der() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        let ders: Vec<Vec<u8>> = names
+        let ders: Vec<Vec<u8>> = root_names()
             .iter()
-            .map(|n| std::fs::read(format!("{dir}{}", n.to_string_lossy())).unwrap())
+            .map(|n| std::fs::read(format!("{dir}{n}")).unwrap())
             .collect();
         let mut bundle = String::from("# the Apple roots\r\n");
         for der in &ders {
@@ -533,12 +535,7 @@ mod tests {
 
     fn certs() -> Vec<(String, Vec<u8>)> {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        names
+        root_names()
             .into_iter()
             .map(|n| {
                 let bytes = std::fs::read(format!("{dir}{n}")).unwrap();
