@@ -9,6 +9,7 @@ import java.security.cert.CertStore;
 import java.security.cert.Certificate;
 import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.PKIXBuilderParameters;
+import java.security.cert.PKIXCertPathBuilderResult;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
@@ -52,8 +53,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The receipt half of {@link Verifier#verifyReceipt}, offline, against the
- * pinned roots. Stateless; every cryptographic step uses
- * {@link BouncyCastle#PROVIDER}. The shapes screened before trust, a
+ * pinned roots, with the revocation check ({@link Revocation}) per signer
+ * once its CMS signature has verified. Stateless; every cryptographic step
+ * uses {@link BouncyCastle#PROVIDER}. The shapes screened before trust, a
  * SignerInfo's among them, are in {@link PreTrustScreen}.
  */
 final class ReceiptCore {
@@ -106,7 +108,8 @@ final class ReceiptCore {
     }
 
     /** Verifies a base64 receipt and decodes it: the size cap, then base64, then the signature, then the payload. */
-    static ReceiptPayload verify(@Nullable String base64, Set<TrustAnchor> trustAnchors, long now)
+    static ReceiptPayload verify(
+            @Nullable String base64, Set<TrustAnchor> trustAnchors, Revocation revocation, long now)
             throws VerificationException {
         if (base64 == null || base64.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "receipt is empty");
@@ -115,15 +118,15 @@ final class ReceiptCore {
             throw new VerificationException(
                     Reason.TOO_LARGE, "receipt exceeds the maximum accepted size of " + MAX_RECEIPT_BYTES + " bytes");
         }
-        return verifyDer(StrictBase64.standard(base64, Reason.MALFORMED, "receipt"), trustAnchors, now);
+        return verifyDer(StrictBase64.standard(base64, Reason.MALFORMED, "receipt"), trustAnchors, revocation, now);
     }
 
     /** {@link #verify} after the base64 step. */
-    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
+    static ReceiptPayload verifyDer(byte[] receiptDer, Set<TrustAnchor> trustAnchors, Revocation revocation, long now)
             throws VerificationException {
         byte[] payload;
         try {
-            payload = verifySignature(receiptDer, trustAnchors, now);
+            payload = verifySignature(receiptDer, trustAnchors, revocation, now);
         } catch (RuntimeException e) {
             // BouncyCastle reports hostile input with undocumented unchecked
             // exceptions.
@@ -133,7 +136,8 @@ final class ReceiptCore {
     }
 
     /** Every check up to and including a signature; returns the signed payload, not yet decoded. */
-    private static byte[] verifySignature(byte[] receiptDer, Set<TrustAnchor> trustAnchors, long now)
+    private static byte[] verifySignature(
+            byte[] receiptDer, Set<TrustAnchor> trustAnchors, Revocation revocation, long now)
             throws VerificationException {
         CMSSignedData cms = parseCms(receiptDer);
         byte[] payload = encapsulatedPayload(cms);
@@ -154,7 +158,7 @@ final class ReceiptCore {
         VerificationException first = null;
         for (SignerInformation signer : signers) {
             try {
-                verifySigner(signer, certificates.signers(signer), authenticated, at, trustAnchors);
+                verifySigner(signer, certificates.signers(signer), authenticated, at, trustAnchors, revocation, now);
                 return payload;
             } catch (VerificationException e) {
                 if (first == null) {
@@ -284,14 +288,17 @@ final class ReceiptCore {
      * Tries every certificate {@code signer} names, as the SignerInfos are
      * tried: one passing is enough, and when none does the first one's
      * failure is the verdict. Together the two loops are one loop over
-     * (SignerInfo, certificate) pairs in receipt order.
+     * (SignerInfo, certificate) pairs in receipt order. A revoked path is
+     * this pair's failure, so another SignerInfo can still verify.
      */
     private static void verifySigner(
             SignerInformation signer,
             List<X509Certificate> matches,
             List<X509Certificate> authenticated,
             Date at,
-            Set<TrustAnchor> trustAnchors)
+            Set<TrustAnchor> trustAnchors,
+            Revocation revocation,
+            long now)
             throws VerificationException {
         VerificationException first = null;
         for (X509Certificate signerCert : matches) {
@@ -302,7 +309,8 @@ final class ReceiptCore {
                             Reason.UNTRUSTED_CHAIN, "signer certificate is not issued under a pinned Apple root");
                 }
                 PublicKey signerKey = AppleTrust.decodeKey(signerCert, "receipt signer certificate");
-                List<? extends Certificate> path = validateChain(signerCert, authenticated, at, trustAnchors);
+                PKIXCertPathBuilderResult built = validateChain(signerCert, authenticated, at, trustAnchors);
+                List<? extends Certificate> path = built.getCertPath().getCertificates();
                 // The certificate after the signer on the path; a signer a
                 // root issued directly has none.
                 AppleTrust.requireMarkers(
@@ -311,6 +319,12 @@ final class ReceiptCore {
                 // first would run the attacker's own key before anything
                 // about it is trusted.
                 verifyCmsSignature(signer, signerKey);
+                // After the signature and before the payload is decoded.
+                List<X509Certificate> certificates = new ArrayList<>();
+                for (Certificate certificate : path) {
+                    certificates.add((X509Certificate) certificate);
+                }
+                revocation.check(certificates, built.getTrustAnchor().getTrustedCert(), now, "receipt");
                 return;
             } catch (VerificationException e) {
                 if (first == null) {
@@ -323,10 +337,10 @@ final class ReceiptCore {
 
     /**
      * PKIX-builds signer, then the authenticated embedded certificates, then a
-     * pinned root, at {@code at}; returns the path, leaf first, anchor
-     * excluded.
+     * pinned root, at {@code at}; returns the result, whose path runs leaf
+     * first with the anchor excluded, and whose anchor is the root it reached.
      */
-    private static List<? extends Certificate> validateChain(
+    private static PKIXCertPathBuilderResult validateChain(
             X509Certificate signerCert, List<X509Certificate> authenticated, Date at, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
         try {
@@ -341,7 +355,7 @@ final class ReceiptCore {
             // Per call: BouncyCastle's builder keeps state for the build it runs.
             CertPathBuilderResult result =
                     CertPathBuilder.getInstance("PKIX", BouncyCastle.PROVIDER).build(params);
-            return result.getCertPath().getCertificates();
+            return (PKIXCertPathBuilderResult) result;
         } catch (GeneralSecurityException | RuntimeException e) {
             throw AppleTrust.chainFailure(e, "receipt", "signer chain", at);
         }

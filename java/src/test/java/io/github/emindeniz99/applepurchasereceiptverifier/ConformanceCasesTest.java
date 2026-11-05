@@ -32,11 +32,13 @@ import org.junit.jupiter.api.TestFactory;
 /**
  * Runs every vector in {@code fixtures/cases.json}, the normative
  * conformance set, through the three public
- * {@link Verifier} methods and the two base64 decoders.
+ * {@link Verifier} methods, the two base64 decoders, and
+ * {@link Verifier#create} with the two revocation properties
+ * ({@code buildConfig}).
  *
  * <p>This adapter carries no knowledge of any individual case. It resolves a
- * fixture id to bytes, builds a {@link Config} from the case's trusted roots
- * and clock, dispatches on {@code operation}, and evaluates the expectation
+ * fixture id to bytes, builds a {@link Config} from the case's trusted roots,
+ * revocation settings and clock, dispatches on {@code operation}, and evaluates the expectation
  * on the JSON the library returns: {@link ReceiptPayload#toJson()},
  * {@link JsonPayload#json()} or the endpoint's response body, and an ok
  * case's {@code environment} on {@link ReceiptPayload#environment()} or
@@ -65,7 +67,7 @@ class ConformanceCasesTest {
 
     private static JsonNode document() throws Exception {
         JsonNode document = MAPPER.readTree(FIXTURES.resolve(CASES).toFile());
-        assertEquals(2, document.get("schemaVersion").asInt(), CASES + " schemaVersion");
+        assertEquals(3, document.get("schemaVersion").asInt(), CASES + " schemaVersion");
         return document;
     }
 
@@ -121,7 +123,11 @@ class ConformanceCasesTest {
             assertTrue(failures.isEmpty(), String.join("\n", failures));
             return;
         }
-        Verifier verifier = Verifier.create(config(fixtures, kase));
+        if ("buildConfig".equals(operation)) {
+            buildConfig(fixtures, kase);
+            return;
+        }
+        Verifier verifier = Verifier.create(config(fixtures, kase.get("config"), kase));
         JsonNode input = kase.get("input");
         if ("verifyReceiptEndpoint".equals(operation)) {
             Environment environment =
@@ -246,31 +252,98 @@ class ConformanceCasesTest {
         return receipt ? verifier.verifyReceipt(argument) : verifier.verifySignedData(argument);
     }
 
+    /**
+     * buildConfig: {@link Verifier#create} over the configuration in
+     * {@code input} either refuses it with {@link IllegalArgumentException}
+     * (the message is not pinned) or builds, and then answers the two
+     * revocation properties the case pins.
+     */
+    private static void buildConfig(JsonNode fixtures, JsonNode kase) throws Exception {
+        String id = kase.get("id").asText();
+        JsonNode expected = kase.get("expected");
+        Config config = config(fixtures, kase.get("input"), kase);
+        if ("error".equals(expected.get("status").asText())) {
+            try {
+                Verifier.create(config);
+            } catch (IllegalArgumentException e) {
+                return;
+            }
+            fail(id + ": expected the configuration to be refused, but it built");
+        }
+        assertEquals("ok", expected.get("status").asText(), id + ": harness error: unknown status");
+        Verifier verifier;
+        try {
+            verifier = Verifier.create(config);
+        } catch (IllegalArgumentException e) {
+            throw new AssertionError(id + ": expected the configuration to build: " + e.getMessage(), e);
+        }
+        List<String> urls = new ArrayList<String>();
+        for (JsonNode url : expected.get("revocationUrls")) {
+            urls.add(url.asText());
+        }
+        assertEquals(urls, verifier.revocationUrls(), id + ": revocationUrls");
+        JsonNode until = expected.get("revocationValidUntil");
+        assertEquals(
+                until.isNull() ? null : Instant.parse(until.asText()),
+                verifier.revocationValidUntil(),
+                id + ": revocationValidUntil");
+    }
+
     // ------------------------------------------------------------ inputs
 
     /**
-     * The config the case names: its trusted roots, and a clock fixed at
+     * The config the case names in {@code settings} (a verify case's
+     * {@code config}, a buildConfig case's {@code input}): its trusted roots,
+     * its revocation settings, and a clock fixed at the case's
      * {@code clock.now} when it pins one, else the default clock.
+     * Certificates are read as a caller reads them, with the JDK's own
+     * factory, so a root or an issuer reaches the library as the bytes the
+     * fixture holds.
      */
-    private static Config config(JsonNode fixtures, JsonNode kase) throws Exception {
-        JsonNode roots = kase.get("config").get("trustedRoots");
+    private static Config config(JsonNode fixtures, JsonNode settings, JsonNode kase) throws Exception {
+        JsonNode roots = settings.get("trustedRoots");
         Config.Builder builder = Config.builder();
         String source = roots.get("source").asText();
         if ("fixtures".equals(source)) {
-            CertificateFactory factory = CertificateFactory.getInstance("X.509");
-            List<X509Certificate> certificates = new ArrayList<X509Certificate>();
-            for (JsonNode id : roots.get("fixtures")) {
-                certificates.add((X509Certificate)
-                        factory.generateCertificate(new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
-            }
-            builder.roots(certificates);
+            builder.roots(certificates(fixtures, roots.get("fixtures")));
         } else if (!"defaults".equals(source)) {
             throw new IllegalStateException("harness error: unknown trustedRoots source " + source);
+        }
+        JsonNode revocation = settings.get("revocation");
+        if (revocation != null) {
+            if (revocation.has("lists")) {
+                List<byte[]> lists = new ArrayList<byte[]>();
+                for (JsonNode id : revocation.get("lists")) {
+                    lists.add(fixtureBytes(fixtures, id.asText()));
+                }
+                builder.revocationLists(lists);
+            }
+            if (revocation.has("issuers")) {
+                builder.revocationIssuers(certificates(fixtures, revocation.get("issuers")));
+            }
+            if (revocation.has("distrust")) {
+                List<RevokedCertificate> distrust = new ArrayList<RevokedCertificate>();
+                for (JsonNode entry : revocation.get("distrust")) {
+                    distrust.add(new RevokedCertificate(
+                            entry.get("issuer").asText(), entry.get("serial").asText()));
+                }
+                builder.distrust(distrust);
+            }
         }
         if (kase.has("clock")) {
             builder.clock(Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC));
         }
         return builder.build();
+    }
+
+    private static List<X509Certificate> certificates(JsonNode fixtures, JsonNode ids) throws Exception {
+        CertificateFactory factory = CertificateFactory.getInstance("X.509");
+        List<X509Certificate> certificates = new ArrayList<X509Certificate>();
+        for (JsonNode id : ids) {
+            certificates.add((X509Certificate)
+                    factory.generateCertificate(new ByteArrayInputStream(fixtureBytes(fixtures, id.asText()))));
+        }
+        return certificates;
     }
 
     /**

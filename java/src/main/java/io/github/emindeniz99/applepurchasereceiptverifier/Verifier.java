@@ -1,5 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -46,7 +49,14 @@ public interface Verifier {
      *
      * @throws NullPointerException     if {@code config} is null
      * @throws IllegalArgumentException if {@code config} has no roots, since
-     *                                  such a verifier would reject everything
+     *                                  such a verifier would reject everything,
+     *                                  or if its revocation settings are
+     *                                  refused (see
+     *                                  {@link Config.Builder#revocationLists},
+     *                                  {@link Config.Builder#revocationIssuers}
+     *                                  and {@link Config.Builder#distrust});
+     *                                  the message names the first problem
+     *                                  and its index
      * @throws IllegalStateException    if this runtime cannot run the
      *                                  library. Each of these throws:
      *                                  <ul>
@@ -124,4 +134,38 @@ public interface Verifier {
      * @throws NullPointerException if {@code environment} is null
      */
     String verifyReceiptEndpoint(Environment environment, @Nullable String requestJson);
+
+    /**
+     * Where the revocation lists this verifier can use are published, to
+     * download and pass to {@link Config.Builder#revocationLists}: the list
+     * URL of each built-in issuer that chains to the configured roots, then
+     * the http and https cRLDistributionPoints of the added issuers,
+     * without duplicates, in that order. With the default roots:
+     * {@code http://crl.apple.com/root.crl},
+     * {@code http://crl.apple.com/applerootcag3.crl},
+     * {@code http://crl.apple.com/wwdrg5.crl} and
+     * {@code http://crl.apple.com/wwdrg6.crl}. An added issuer's own list
+     * URL is not known here (Apple names it only on the certificates that
+     * issuer signs); fetch it as well. Unmodifiable.
+     *
+     * <p>The default, for a caller's own implementation, is empty.</p>
+     */
+    default List<String> revocationUrls() {
+        return Collections.emptyList();
+    }
+
+    /**
+     * The earliest {@code nextUpdate} among the lists held for the issuers
+     * this verifier expects lists from (the built-in issuers that chain to
+     * the configured roots, and the added issuers), or null when any of
+     * them has no list held (none passed, or the one passed was ignored).
+     * Null means live revocation is not fully in force; an instant in the
+     * past means a list is stale. Neither fails a call: alert on both, and
+     * build a new verifier with fresh lists.
+     *
+     * <p>The default, for a caller's own implementation, is null.</p>
+     */
+    default @Nullable Instant revocationValidUntil() {
+        return null;
+    }
 }
