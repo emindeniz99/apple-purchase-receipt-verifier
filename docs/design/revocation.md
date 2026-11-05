@@ -95,7 +95,8 @@ each list's size, DER and running entry total, then each list's issuer, signatur
 - no candidate issuer verifies it. Candidates are every configured root and authenticated issuer (§6) whose `subject`
   is byte-identical to the list's `issuer` Name, and, when the list has an AuthorityKeyIdentifier, whose
   SubjectKeyIdentifier equals its keyIdentifier (a candidate without a SubjectKeyIdentifier is then not a
-  candidate; an AuthorityKeyIdentifier without a keyIdentifier refuses the list). The list belongs to the first
+  candidate; an AuthorityKeyIdentifier without a keyIdentifier, or one that is repeated or does not read, refuses
+  the list). The list belongs to the first
   candidate, in configuration order (roots, then built-in issuers, then added issuers), whose key verifies its
   signature. A SHA-1 signature is accepted: Apple Root CA's list is `sha1WithRSAEncryption`, and the signer is
   pinned. Apple's retired "Apple Root Certificate Authority" list shares Apple Root CA's key but not its name, so it
@@ -112,8 +113,12 @@ IssuingDistributionPoint, a DeltaCRLIndicator, a FreshestCRL, an indirect entry 
 critical CRL or entry extension, a duplicate serial, a CRL Number that is negative or does not read. "Other" means:
 critical is allowed only on the AuthorityKeyIdentifier and the CRL Number of a list, and on the reasonCode and the
 invalidityDate of an entry. An ignored list counts as missing in `revocationValidUntil` and takes no part in choosing
-the list kept for its issuer; it is still refused when it is older than `newest`. An entry whose reasonCode is unknown
-(7, or above 10) or does not read revokes.
+the list kept for its issuer; it is still refused when it is older than `newest`, and a CRL Number that is negative or
+does not read counts as no number there. An entry whose reasonCode is unknown (7, or above 10) or does not read
+revokes. An extension that appears twice does not read: a repeated CRL Number puts the list outside the profile, a
+repeated reasonCode revokes, and a repeated extension the profile does not read changes nothing beyond what one copy
+would. Only the AuthorityKeyIdentifier, the CRL Number and the reasonCode are decoded; the value of any other
+extension is never read.
 
 Several lists for one issuer: the one kept has the highest CRL Number; if any of them lacks a number, the latest
 `thisUpdate`; on a tie, the one whose DER sorts first byte by byte. Lists are never merged.
@@ -173,13 +178,15 @@ The built-in issuers are the WWDR G5 and G6 intermediates, kept in `certs/revoca
 certificates, pinned by SHA-256 in `rust/src/roots.rs` and in Java), plus the configured roots themselves.
 `revocationIssuers` adds more, for a new Apple intermediate before a release knows it, or for a test PKI.
 
-An issuer certificate is accepted when, with no clock (the module's `init` has none): its signature verifies with a
-configured root's key and its `issuer` Name matches that root's `subject`; it is a CA (basicConstraints cA true); its
+An issuer certificate is accepted when, with no clock (the module's `init` has none): its `issuer` Name is
+byte-identical to a configured root's `subject` (as a list is matched to its candidates in §4, not compared in
+canonical form) and that root's key verifies its signature; it is a CA (basicConstraints cA true); its
 keyUsage, when present, has `cRLSign`; it carries the WWDR intermediate marker `1.2.840.113635.100.6.2.1`. Its
 validity dates are not judged here: a list it signed is used only for certificates it issued on a path that was
 already judged at its payload's date. An issuer whose own revocation key (§2, under the root that signed it) is in
 the built-in list, in `distrust`, or on a held list of that root (any reason except `removeFromCRL`; with no clock, a
-`certificateHold` counts) is not accepted. A built-in issuer that does not
+`certificateHold` counts) is not accepted. An issuer whose serial is negative has no revocation key that can match
+(§2), so it is accepted and nothing revokes it. A built-in issuer that does not
 chain to the configured roots (custom roots, a test PKI), or is revoked, is dropped silently; an added one is
 refused (§4).
 
@@ -240,7 +247,10 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
   signature, unknown issuer, AKI mismatch, over a bound); older than `newest`, with Apple's real stale
   `www.apple.com/appleca/root.crl` (thisUpdate 2025-03-10, refused forever because `newest` only advances); Apple's
   real `www.apple.com/certificateauthority/root.crl` (same key, other name: refused); a SHA-1-signed test list; ignored lists (v1, no `nextUpdate`,
-  IDP, delta, critical CRL extension, critical entry extension, indirect entry, duplicate serial); issuer id parity
+  IDP, delta, critical CRL extension, critical entry extension, indirect entry, duplicate serial, a CRL Number that is
+  repeated, negative or does not read); a reasonCode that is repeated or does not read (revokes); a repeated unknown
+  extension (held); an issuer held, or removed, on its root's list; an issuer whose `issuer` Name spells its root's
+  subject in another string type (refused); issuer id parity
   (same key under two names); serial normalisation (`"2"`, `"02"`, `"0080"`); `revocationUrls` and
   `revocationValidUntil` with default and custom roots; the endpoint answering 21003; a JWS whose revoked leaf signs
   a non-JSON payload (`CERTIFICATE_REVOKED`, not `UNREADABLE_PAYLOAD`); a receipt with two SignerInfos, the first
