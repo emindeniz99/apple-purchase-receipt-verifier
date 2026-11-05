@@ -85,9 +85,9 @@ a test rather than only documented.
   the caller's `Config`, and a `Config` that names none means Apple's three
   published roots, compiled into the module. The module cannot read a file,
   so nothing in the environment can add a root.
-- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
-  download. Revocation checking is disabled by design; an integrator who
-  needs it must layer it on top.
+- **It never touches the network.** No OCSP, no AIA fetch, no root
+  download, no CRL download. Apple's revocation lists reach the module only
+  as bytes you pass in ([Revocation](#revocation)).
 - **It never uses a key no pinned root vouched for.** The chain is walked
   from the roots down, so a certificate carrying an attacker's key is never
   used to check anything.
@@ -127,6 +127,9 @@ compiled into it. The package carries no copy of those roots, so the
 only when you passed your own. An explicitly empty, non-nil `Roots` slice is
 refused by `NewVerifier`.
 
+Three more fields, `RevocationLists`, `RevocationIssuers` and `Distrust`,
+are described under [Revocation](#revocation). Each defaults to empty.
+
 ### `Verifier`: three methods
 
 | Method | Input | Success |
@@ -138,6 +141,9 @@ refused by `NewVerifier`.
 The first two return `error` as `*Failure` on rejection. The endpoint never
 returns an error and never panics: the Apple status code is a field of the
 body, for every input.
+
+Two more methods report the verifier's revocation state:
+`RevocationURLs()` and `RevocationValidUntil()` ([Revocation](#revocation)).
 
 `applereceipt.Version` is the library version; `AppleStatus`-named
 constants (`StatusOK`, `StatusMalformedReceiptData`, ...) hold Apple's
@@ -196,6 +202,7 @@ an unreadable answer, the clock). Match on `failure.Reason`; never parse
 | `ReasonInvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `ReasonUnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
 | `ReasonInternalError` | `INTERNAL_ERROR` | the module trapped, which is a bug at whatever stage it happened, or gave an answer this package cannot read, or the configured clock panicked or answered a time before 1970; no input makes a correct library answer it | 21009 |
+| `ReasonCertificateRevoked` | `CERTIFICATE_REVOKED` | a certificate on the path is revoked: by the list built into the module, by `Distrust`, or by a list you passed | 21003 |
 
 `errors.As(err, &failure)` is the canonical read; `errors.Is(err,
 applereceipt.ReasonUntrustedChain)` is sugar for the single-reason case, and
@@ -250,11 +257,112 @@ days), so apply one yourself.
 legacy receipt is BER, and one correctly signed receipt can be re-chunked
 into different byte strings that carry the same signed content.
 
+## Revocation
+
+A verifier refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked inside the module
+with no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this package | always on; cannot be turned off |
+| `Distrust` | you | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with
+`ReasonCertificateRevoked` (21003 at the endpoint), whatever date the
+payload states: whoever holds a leaked key chooses that date. A missing or
+stale list never fails a call.
+
+```go
+config := applereceipt.NewConfig(applereceipt.ConfigOptions{
+    RevocationLists:   [][]byte{crl},           // CRL files exactly as downloaded (DER)
+    RevocationIssuers: []*x509.Certificate{ca}, // optional: a CA that signs lists, as a root is passed
+    Distrust: []applereceipt.RevokedCertificate{
+        {Issuer: issuerID, Serial: "7D3920094EBEF3F8EFCA6C10EA8E4303"},
+    },
+})
+```
+
+The package downloads nothing and starts no goroutine or timer. Refresh on
+your own schedule, with your own HTTP client: download the lists the
+current verifier names, build a new verifier, and swap the reference.
+
+```go
+var current atomic.Pointer[applereceipt.Verifier] // holds the NewVerifier of the defaults at start
+
+func refreshRevocation(ctx context.Context, client *http.Client) error {
+    var lists [][]byte
+    for _, url := range current.Load().RevocationURLs() {
+        request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        if err != nil {
+            return err
+        }
+        response, err := client.Do(request)
+        if err != nil {
+            continue // a missing list fails nothing; RevocationValidUntil shows it
+        }
+        body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
+        response.Body.Close()
+        if err == nil && response.StatusCode == http.StatusOK {
+            lists = append(lists, body)
+        }
+    }
+    verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(
+        applereceipt.ConfigOptions{RevocationLists: lists}))
+    if err != nil {
+        return err // a list the module refuses: the old verifier keeps serving
+    }
+    current.Store(verifier)
+    return nil
+}
+```
+
+- **Take the URLs from `RevocationURLs()`, never from Apple's PKI page.**
+  The page also links an old copy of Apple Root CA's list and a list signed
+  under a retired root name, which `NewVerifier` refuses, and a 2.3 MB WWDR
+  G1 list over the 1 MiB cap. With Apple's roots the URLs are the lists of
+  Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are
+  `http://`: the module authenticates each list by its signature, not by the
+  transport.
+- **Monitor `RevocationValidUntil()`.** It returns the earliest
+  `nextUpdate` of the lists held, in UTC, and `ok`. `ok` false means some
+  issuer the verifier expects a list from has none (none passed, or the list
+  was ignored); a time in the past means a list is stale. Alert on both.
+  Apple reissues WWDR G6's list daily.
+
+  ```go
+  if until, ok := verifier.RevocationValidUntil(); !ok || time.Now().After(until) {
+      alertOps("live revocation is not in force")
+  }
+  ```
+- **`NewVerifier` returns a plain `error`** naming the first problem and its
+  index when a list is not a CRL, is over 1 MiB, is signed by no issuer the
+  verifier knows, or is older than the list this release was built with;
+  when there are more than 16 lists; when a `RevocationIssuers` certificate
+  does not chain to your roots or is itself revoked; or when a `Distrust`
+  entry is malformed or there are more than 1,000. A genuine list in a form
+  the module does not support is ignored instead, and counts as missing.
+- **`Distrust`** takes `RevokedCertificate{Issuer, Serial}` strings:
+  `Issuer` is the SHA-256, in hex, of the issuing certificate's subject Name
+  followed by its subjectPublicKeyInfo, both as encoded in that certificate;
+  `Serial` is the revoked certificate's serial number in hex. Either letter
+  case. The package passes both strings to the module unchanged.
+- **With your own roots** `RevocationURLs()` is empty until you add
+  `RevocationIssuers`; it then names the lists those issuers may appear on.
+  The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+  `RevocationIssuers` are `*x509.Certificate` like `Roots`, and as with
+  roots only each one's `Raw` bytes reach the module.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
+
 ## The clock
 
 `Config`'s clock is a `func() int64` (epoch milliseconds), read once per
 call, before the input is looked at, and handed to the module, which uses it
-in two places:
+in three places:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
@@ -262,6 +370,9 @@ in two places:
   representable `receiptCreationDate`. Otherwise the chain is judged at the
   date the input states.
 - **`request_date`** in the endpoint's response.
+- **whether a revocation list is still fresh**, when it holds a
+  `certificateHold` entry for a certificate on the path: a hold counts only
+  until the list's `nextUpdate`.
 
 A certificate outside its validity window at that instant is
 `INVALID_CERTIFICATE`. A clock that panics, or answers a time before 1970,
@@ -470,7 +581,10 @@ cross-language vector file every port of this library answers, as one
 named test per case, and fails unless every case ran. The adapter carries
 no case-specific knowledge: it checks each fixture against the digest the
 registry records, builds a `Config` from the case, dispatches on the
-operation and evaluates the expected JSON Pointers on the result. 0.7 has no
+operation and evaluates the expected JSON Pointers on the result. A
+`buildConfig` case builds its `Config` into a `Verifier` and checks that
+`NewVerifier` refuses it, or that `RevocationURLs()` and
+`RevocationValidUntil()` report what the case states. 0.7 has no
 public base64 decoder, so the `decodeBase64` groups run through
 `VerifyReceipt` and through a JWS whose `x5c` carries the text, and check
 which side of the base64 rule each text lands on. A case with a `maxMillis`
@@ -481,8 +595,8 @@ Beyond conformance (this package holds no verification logic to test):
 - `facade_test.go` runs the wrapper over `testdata/mirror/mirror.wasm`, a
   test double of the module's ABI that answers with its own input, so a test
   chooses the module's answer: every field of a verified receipt, each of the
-  eight reasons, answers that are not the wire (an unknown member, a reason
-  outside the eight, an id that is not a decimal integer) which must be
+  nine reasons, answers that are not the wire (an unknown member, a reason
+  outside the nine, an id that is not a decimal integer) which must be
   `INTERNAL_ERROR`, a trap and recovery, the clock read once per call and
   before the input, and the six outcomes of the ABI (verified, failed,
   misuse, ABI mismatch, trap, unreadable answer);

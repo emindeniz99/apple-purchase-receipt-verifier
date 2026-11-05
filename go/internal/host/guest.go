@@ -28,6 +28,21 @@ type Guest struct {
 	// bytes of one input the module needs. Every input is cut to it; 0
 	// before init, whose configuration passes whole.
 	maxInput uint32
+	// state is the rest of what init answered: the revocation state of the
+	// configuration, which is the same for every instance of one Pool.
+	state InitState
+}
+
+// InitState is what init's accepting answer states about the
+// configuration beside max_input_bytes: the URLs of the revocation lists
+// the verifier expects, and the earliest nextUpdate of the lists it holds
+// for them. The module works both out; this package only reads them.
+type InitState struct {
+	// RevocationURLs is revocation_urls, in the module's order; never nil.
+	RevocationURLs []string
+	// RevocationValidUntilMs is revocation_valid_until_ms, epoch
+	// milliseconds, or nil for null.
+	RevocationValidUntilMs *int64
 }
 
 // newGuest instantiates the module and runs init with config, the JSON of
@@ -49,7 +64,7 @@ func (mod *module) newGuest(config []byte) (*Guest, error) {
 	if err != nil {
 		return nil, err
 	}
-	g.maxInput, err = initAnswer(answer)
+	g.maxInput, g.state, err = initAnswer(answer)
 	if err != nil {
 		g.close()
 		return nil, err
@@ -57,27 +72,46 @@ func (mod *module) newGuest(config []byte) (*Guest, error) {
 	return g, nil
 }
 
-// initAnswer reads init's answer: {"ok":true,"max_input_bytes":N}, N a
-// positive integer, gives N; {"ok":false,"message":...} is an
-// *InitRefusedError. An accepting answer without N comes from a module of
-// another ABI version, and like any answer of another shape is a
-// *ResultError.
-func initAnswer(answer string) (uint32, error) {
+// initAnswer reads init's answer. An accepting one is
+// {"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+// "revocation_valid_until_ms":M|null}, N a positive integer and M an
+// integer, and gives N and the state; {"ok":false,"message":...} is an
+// *InitRefusedError. An accepting answer without N, or without the two
+// revocation members, comes from a module of another version, and like any
+// answer of another shape is a *ResultError.
+func initAnswer(answer string) (uint32, InitState, error) {
 	var reply struct {
-		OK            *bool   `json:"ok"`
-		Message       string  `json:"message"`
-		MaxInputBytes *uint32 `json:"max_input_bytes"`
+		OK             *bool           `json:"ok"`
+		Message        string          `json:"message"`
+		MaxInputBytes  *uint32         `json:"max_input_bytes"`
+		RevocationURLs *[]string       `json:"revocation_urls"`
+		ValidUntilMs   json.RawMessage `json:"revocation_valid_until_ms"`
 	}
 	if err := json.Unmarshal([]byte(answer), &reply); err != nil || reply.OK == nil {
-		return 0, &ResultError{Fn: "init", Detail: "the answer is not {\"ok\":...}"}
+		return 0, InitState{}, &ResultError{Fn: "init", Detail: "the answer is not {\"ok\":...} in the wire's shape"}
 	}
 	if !*reply.OK {
-		return 0, &InitRefusedError{Message: reply.Message, Answer: answer}
+		return 0, InitState{}, &InitRefusedError{Message: reply.Message, Answer: answer}
 	}
 	if reply.MaxInputBytes == nil || *reply.MaxInputBytes == 0 {
-		return 0, &ResultError{Fn: "init", Detail: "the answer states no max_input_bytes"}
+		return 0, InitState{}, &ResultError{Fn: "init", Detail: "the answer states no max_input_bytes"}
 	}
-	return *reply.MaxInputBytes, nil
+	if reply.RevocationURLs == nil {
+		return 0, InitState{}, &ResultError{Fn: "init", Detail: "the answer states no revocation_urls"}
+	}
+	state := InitState{RevocationURLs: append([]string{}, (*reply.RevocationURLs)...)}
+	switch string(reply.ValidUntilMs) {
+	case "":
+		return 0, InitState{}, &ResultError{Fn: "init", Detail: "the answer states no revocation_valid_until_ms"}
+	case "null":
+	default:
+		var ms int64
+		if err := json.Unmarshal(reply.ValidUntilMs, &ms); err != nil {
+			return 0, InitState{}, &ResultError{Fn: "init", Detail: "revocation_valid_until_ms is neither an integer nor null"}
+		}
+		state.RevocationValidUntilMs = &ms
+	}
+	return *reply.MaxInputBytes, state, nil
 }
 
 // close discards the instance and everything in it.

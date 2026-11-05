@@ -13,14 +13,14 @@ func NewVerifierOverModule(config *Config, module []byte) (*Verifier, error) {
 	if err := checkConfig(config); err != nil {
 		return nil, err
 	}
-	pool, err := host.NewPoolFromModule(module, initConfig(config.roots, config.builtin))
+	pool, err := host.NewPoolFromModule(module, initConfig(config))
 	if err != nil {
 		return nil, fmt.Errorf("applereceipt: %w", err)
 	}
-	return &Verifier{pool: pool, clock: config.clock}, nil
+	return newVerifier(pool, config), nil
 }
 
 // InitConfigOf is the init configuration NewVerifier sends for config.
 func InitConfigOf(config *Config) string {
-	return string(initConfig(config.roots, config.builtin))
+	return string(initConfig(config))
 }

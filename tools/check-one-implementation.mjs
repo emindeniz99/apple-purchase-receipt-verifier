@@ -78,7 +78,7 @@ const LANGS = {
       [/\bx509\.(SystemCertPool|NewCertPool|CertPool|VerifyOptions|ParseCertificates?|ParseCertificateRequest)\b|\bCheckSignatureFrom\b|\bSetDefaultPaths\b/, 'a certificate parse or platform trust evaluation'],
     ],
     allow: [
-      { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots are *x509.Certificate (the 0.7 API); only .Raw, the DER, crosses into the module" },
+      { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots and revocation issuers are *x509.Certificate (the 0.7 API, and revocation.md §9 for the issuers); only .Raw, the DER, crosses into the module" },
       { file: 'go/internal/wasm/wasm.go', token: /"crypto\/sha256"/, why: 'checks the embedded aprv.wasm against its pinned SHA-256' },
     ],
   },
