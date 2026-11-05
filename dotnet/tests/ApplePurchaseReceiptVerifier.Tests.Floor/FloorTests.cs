@@ -102,9 +102,10 @@ public class FloorTests
     [Fact]
     public void TheReasonVocabularyIsIntactOnTheFloorAsset()
     {
-        Assert.Equal(8, Enum.GetValues(typeof(VerificationReason)).Length);
+        Assert.Equal(9, Enum.GetValues(typeof(VerificationReason)).Length);
         Assert.Equal("UNTRUSTED_CHAIN", VerificationReasonCodes.ToCode(VerificationReason.UntrustedChain));
         Assert.Equal("INTERNAL_ERROR", VerificationReasonCodes.ToCode(VerificationReason.InternalError));
+        Assert.Equal("CERTIFICATE_REVOKED", VerificationReasonCodes.ToCode(VerificationReason.CertificateRevoked));
     }
 
     [Fact]
