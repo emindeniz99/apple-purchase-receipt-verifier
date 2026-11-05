@@ -77,6 +77,7 @@
 
 mod certificate;
 mod cms;
+mod crl;
 mod envelope;
 mod item;
 #[cfg(feature = "test-seams")]
@@ -91,6 +92,7 @@ pub use certificate::Certificate;
 #[cfg(feature = "test-seams")]
 pub use cms::full_decodes_during;
 pub use cms::{CmsError, EnvelopeLimits, SignedData};
+pub use crl::{Integer, KeyIdentifier, ListEntry, ListExtension, ListField, RevocationList};
 #[cfg(feature = "test-seams")]
 pub use keys::keys_used_during;
 pub use signature::{sha256, verify_es256};

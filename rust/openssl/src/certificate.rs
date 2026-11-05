@@ -212,8 +212,13 @@ impl Certificate {
     /// [`Certificate::issued_by`]. Judging `keyUsage` here too would drop
     /// the "not a CA" report OpenSSL gives for such an issuer
     /// (REVIEW-LOG.md §11.3); merging the walks is left for later.
+    ///
+    /// The core also asks it, of a configured root and a certificate that
+    /// signs revocation lists, when it accepts that certificate as a list
+    /// issuer (`rust/src/revocation.rs`); the root is trusted, so its key is
+    /// the only one used.
     #[must_use]
-    pub(crate) fn signed_by(&self, issuer: &Certificate) -> bool {
+    pub fn signed_by(&self, issuer: &Certificate) -> bool {
         init();
         let named = issuer
             .0
@@ -247,6 +252,96 @@ impl Certificate {
         let ca = unsafe { crate::sys::X509_check_ca(self.0.as_ptr()) };
         drain_errors();
         ca != 0
+    }
+
+    /// The certificate's `subject` Name and `subjectPublicKeyInfo`, each as
+    /// the bytes it has inside the certificate's `TBSCertificate`, never a
+    /// re-encoding. OpenSSL keeps the `TBSCertificate`'s original encoding
+    /// and writes it back unchanged (`i2d_X509`), and the header walk splits
+    /// it into its fields; no value is decoded here. `None` when the fields
+    /// are not where RFC 5280 section 4.1 puts them.
+    #[must_use]
+    pub fn subject_and_key_der(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        let der = self.to_der();
+        let certificate = crate::walk::children(&der)?;
+        let tbs = crate::walk::children(certificate.first()?)?;
+        // An explicit version is a context-specific [0] before the serial.
+        let skip = tbs
+            .first()
+            .and_then(|first| crate::walk::header(first))
+            .is_some_and(|first| {
+                first.class == crate::sys::V_ASN1_CONTEXT_SPECIFIC && first.tag == 0
+            });
+        let fields = tbs.get(usize::from(skip)..)?;
+        // serialNumber, signature, issuer, validity, subject,
+        // subjectPublicKeyInfo.
+        Some((fields.get(4)?.to_vec(), fields.get(5)?.to_vec()))
+    }
+
+    /// The serial number, as OpenSSL holds it.
+    #[must_use]
+    pub fn serial(&self) -> Option<crate::Integer> {
+        // SAFETY: the serial is owned by the live certificate.
+        let serial = unsafe { ffi::X509_get_serialNumber(self.0.as_ptr()) };
+        crate::crl::integer_of(serial)
+    }
+
+    /// Whether `basicConstraints` marks the certificate a CA (`cA` true),
+    /// as OpenSSL's cached extension flags record it. A certificate whose
+    /// extensions OpenSSL finds invalid is not one.
+    #[must_use]
+    pub fn is_ca(&self) -> bool {
+        // SAFETY: reads, and on first use caches under OpenSSL's own lock,
+        // the live certificate's extension flags.
+        let flags = unsafe { ffi::X509_get_extension_flags(self.0.as_ptr()) };
+        drain_errors();
+        flags & ffi::EXFLAG_INVALID == 0 && flags & ffi::EXFLAG_CA != 0
+    }
+
+    /// Whether the certificate's `keyUsage`, when it has one, includes
+    /// `cRLSign`. True when it has none.
+    #[must_use]
+    pub fn key_usage_permits_crl_sign(&self) -> bool {
+        // SAFETY: as in `is_ca`; all bits are set when there is no
+        // keyUsage.
+        let usage = unsafe { ffi::X509_get_key_usage(self.0.as_ptr()) };
+        drain_errors();
+        usage & ffi::X509v3_KU_CRL_SIGN != 0
+    }
+
+    /// The `SubjectKeyIdentifier` extension's value, when there is one.
+    #[must_use]
+    pub fn subject_key_identifier(&self) -> Option<Vec<u8>> {
+        // SAFETY: the identifier is owned by the live certificate's cached
+        // extensions, or null.
+        let identifier = unsafe { ffi::X509_get0_subject_key_id(self.0.as_ptr()) };
+        drain_errors();
+        (!identifier.is_null()).then(|| crate::crl::string_octets(identifier.cast()))
+    }
+
+    /// Every URI among the `fullName`s of the certificate's
+    /// cRLDistributionPoints, in order; empty when it has none. The scheme
+    /// is not judged here.
+    #[must_use]
+    pub fn crl_distribution_uris(&self) -> Vec<String> {
+        init();
+        let uris = self
+            .0
+            .crl_distribution_points()
+            .map(|points| {
+                points
+                    .iter()
+                    .filter_map(|point| point.distpoint()?.fullname())
+                    .flat_map(|names| {
+                        names
+                            .iter()
+                            .filter_map(|name| name.uri().map(str::to_owned))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        drain_errors();
+        uris
     }
 
     /// Whether `notAfter` is at or after `secs` (Unix seconds).
