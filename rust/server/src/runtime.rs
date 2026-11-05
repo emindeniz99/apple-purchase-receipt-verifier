@@ -201,53 +201,86 @@ impl Runtime {
         })
     }
 
-    /// A fresh instance with `init` done, and the `max_input_bytes` its
-    /// answer states. `Ok(Err(answer))` is any answer but
-    /// `{"ok":true,...}`: the configuration was refused.
+    /// A fresh instance with `init` done, and what its answer states.
+    /// `Ok(Err(answer))` is any answer but `{"ok":true,...}`: the
+    /// configuration was refused.
     pub fn ready_instance(
         &self,
         config_json: &[u8],
-    ) -> Result<Result<(Instance, usize), String>, InvokeError> {
+    ) -> Result<Result<(Instance, InitAnswer), String>, InvokeError> {
         let mut i = self.instantiate()?;
         let answer = i.call(Op::Init, config_json)?;
-        Ok(match max_input_bytes(&answer)? {
-            Some(max) => Ok((i, max)),
+        Ok(match read_init(&answer)? {
+            Some(ready) => Ok((i, ready)),
             None => Err(answer),
         })
     }
 }
 
-/// The `max_input_bytes` of an accepting `init` answer
-/// (`{"ok":true,"max_input_bytes":N}`, rust/bindings/wire/schema), or
-/// `None` for a refusal. The module states how many bytes of one input it
-/// needs (DECISIONS.md R42): a longer input is cut to that length, and the
+/// What an accepting `init` answer states
+/// (`{"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+/// "revocation_valid_until_ms":N|null}`, rust/bindings/wire/schema).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitAnswer {
+    /// The most bytes of one input the module needs (DECISIONS.md R42).
+    pub max_input_bytes: usize,
+    /// The URLs of the revocation lists the configuration expects, in the
+    /// module's order (docs/design/revocation.md §7).
+    pub revocation_urls: Vec<String>,
+    /// The earliest `nextUpdate` of the lists held, or `None` when an
+    /// expected issuer has none (§7).
+    pub revocation_valid_until_ms: Option<i64>,
+}
+
+/// The [`InitAnswer`] of an accepting `init` answer, or `None` for a
+/// refusal. The module states how many bytes of one input it needs
+/// (DECISIONS.md R42): a longer input is cut to that length, and the
 /// module answers its own size refusal for it. An accepting answer without
-/// a usable number is the component breaking the interface, and so is a
-/// number over [`MAX_DRAIN`]: the server reads a body no further than that
-/// before it answers, so a larger cap would answer a prefix of a body over
-/// the drain limit as if it were the whole input, and would let any client
-/// make the server reserve that much memory with a `Content-Length`.
-pub fn max_input_bytes(answer: &str) -> Result<Option<usize>, InvokeError> {
-    let broken = || {
+/// exactly its four members, each usable, is the component breaking the
+/// interface, and so is a `max_input_bytes` over [`MAX_DRAIN`]: the server
+/// reads a body no further than that before it answers, so a larger cap
+/// would answer a prefix of a body over the drain limit as if it were the
+/// whole input, and would let any client make the server reserve that much
+/// memory with a `Content-Length`. The two revocation members are reported
+/// as they are; the server computes nothing from them.
+pub fn read_init(answer: &str) -> Result<Option<InitAnswer>, InvokeError> {
+    use serde_json::Value;
+    let broken = |what: &str| {
         InvokeError::Abi(format!(
-            "init accepted the configuration but states no max_input_bytes: {answer}"
+            "init accepted the configuration but states {what}: {answer}"
         ))
     };
-    let Ok(serde_json::Value::Object(members)) = serde_json::from_str::<serde_json::Value>(answer)
-    else {
+    let Ok(Value::Object(members)) = serde_json::from_str::<Value>(answer) else {
         return Ok(None);
     };
-    if members.get("ok") != Some(&serde_json::Value::Bool(true)) {
+    if members.get("ok") != Some(&Value::Bool(true)) {
         return Ok(None);
     }
     let max = members
         .get("max_input_bytes")
-        .and_then(serde_json::Value::as_u64)
+        .and_then(Value::as_u64)
         .and_then(|n| usize::try_from(n).ok())
         .filter(|n| *n > 0)
-        .ok_or_else(broken)?;
-    if members.len() != 2 {
-        return Err(broken());
+        .ok_or_else(|| broken("no max_input_bytes"))?;
+    let urls = members
+        .get("revocation_urls")
+        .and_then(Value::as_array)
+        .and_then(|a| {
+            a.iter()
+                .map(|u| u.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(|| broken("no revocation_urls"))?;
+    let until = match members.get("revocation_valid_until_ms") {
+        Some(Value::Null) => None,
+        Some(n) => Some(
+            n.as_i64()
+                .ok_or_else(|| broken("a revocation_valid_until_ms that is not an integer"))?,
+        ),
+        None => return Err(broken("no revocation_valid_until_ms")),
+    };
+    if members.len() != 4 {
+        return Err(broken("a member other than the four"));
     }
     if max > MAX_DRAIN {
         return Err(InvokeError::Abi(format!(
@@ -255,7 +288,11 @@ pub fn max_input_bytes(answer: &str) -> Result<Option<usize>, InvokeError> {
              of a request body: {answer}"
         )));
     }
-    Ok(Some(max))
+    Ok(Some(InitAnswer {
+        max_input_bytes: max,
+        revocation_urls: urls,
+        revocation_valid_until_ms: until,
+    }))
 }
 
 fn load_embedded(engine: &Engine) -> Result<(Component, Source), String> {
@@ -460,26 +497,25 @@ pub enum Lifecycle {
     Pool(Mutex<Vec<Instance>>),
 }
 
-/// The runtime, the roots configuration every instance gets, the
-/// lifecycle and the input length the module's first `init` stated: the
-/// one entry point the HTTP routes and the CLI call.
+/// The runtime, the configuration every instance gets, the lifecycle and
+/// what the module's first `init` answer stated: the one entry point the
+/// HTTP routes and the CLI call.
 pub struct Verifier {
     pub runtime: Runtime,
     config_json: Vec<u8>,
     lifecycle: Lifecycle,
-    max_input_bytes: usize,
+    init: InitAnswer,
 }
 
 impl Verifier {
     /// Checks the configuration once with a real instance, so a refused
-    /// root stops the server at start instead of failing every request.
+    /// root, list, issuer or distrust entry stops the server at start
+    /// instead of failing every request.
     pub fn new(runtime: Runtime, config_json: Vec<u8>, pool: bool) -> Result<Verifier, String> {
-        let (first, max_input_bytes) = match runtime.ready_instance(&config_json) {
+        let (first, init) = match runtime.ready_instance(&config_json) {
             Ok(Ok(ready)) => ready,
             Ok(Err(answer)) => {
-                return Err(format!(
-                    "the component refused the roots configuration: {answer}"
-                ))
+                return Err(format!("the component refused the configuration: {answer}"))
             }
             Err(e) => return Err(format!("the component failed its first init: {e}")),
         };
@@ -492,7 +528,7 @@ impl Verifier {
             runtime,
             config_json,
             lifecycle,
-            max_input_bytes,
+            init,
         })
     }
 
@@ -500,13 +536,26 @@ impl Verifier {
     /// stated: a body or stdin is cut to this length, and one of this
     /// length or more is over the module's cap.
     pub fn max_input_bytes(&self) -> usize {
-        self.max_input_bytes
+        self.init.max_input_bytes
+    }
+
+    /// The first `init` answer's `revocation_urls`. Every instance gets
+    /// the same configuration and runs the same component, so every later
+    /// answer states the same.
+    pub fn revocation_urls(&self) -> &[String] {
+        &self.init.revocation_urls
+    }
+
+    /// The first `init` answer's `revocation_valid_until_ms`; it depends
+    /// on the lists alone, never on a clock.
+    pub fn revocation_valid_until_ms(&self) -> Option<i64> {
+        self.init.revocation_valid_until_ms
     }
 
     fn fresh(&self) -> Result<Instance, InvokeError> {
         match self.runtime.ready_instance(&self.config_json)? {
-            // Every instance runs the one compiled component, so its answer
-            // states the same length the first one did.
+            // Every instance runs the one compiled component on the one
+            // configuration, so its answer states what the first one did.
             Ok((i, _)) => Ok(i),
             Err(answer) => Err(InvokeError::Abi(format!(
                 "init refused the configuration accepted at start: {answer}"
@@ -555,14 +604,42 @@ mod tests {
         );
     }
 
-    /// Only an accepting answer with a positive length is ready; any other
-    /// answer is a refusal to report, and an accepting one without a usable
-    /// length breaks the interface.
+    const OK: &str = r#"{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":null}"#;
+
+    /// Only an accepting answer with a positive length and the two
+    /// revocation members is ready; any other answer is a refusal to
+    /// report, and an accepting one without its four usable members breaks
+    /// the interface.
     #[test]
-    fn init_answers_are_read_for_the_input_length() {
+    fn init_answers_are_read_for_the_input_length_and_the_revocation_state() {
         assert_eq!(
-            max_input_bytes(r#"{"ok":true,"max_input_bytes":3145729}"#),
-            Ok(Some(3_145_729))
+            read_init(OK),
+            Ok(Some(InitAnswer {
+                max_input_bytes: 3_145_729,
+                revocation_urls: vec![],
+                revocation_valid_until_ms: None,
+            }))
+        );
+        assert_eq!(
+            read_init(
+                r#"{"ok":true,"max_input_bytes":3145729,"revocation_urls":["http://crl.apple.com/root.crl","http://crl.apple.com/wwdrg6.crl"],"revocation_valid_until_ms":1795729605000}"#
+            ),
+            Ok(Some(InitAnswer {
+                max_input_bytes: 3_145_729,
+                revocation_urls: vec![
+                    "http://crl.apple.com/root.crl".into(),
+                    "http://crl.apple.com/wwdrg6.crl".into()
+                ],
+                revocation_valid_until_ms: Some(1_795_729_605_000),
+            }))
+        );
+        // A list that is stale: an instant in the past, still reported.
+        assert_eq!(
+            read_init(&OK.replace("null", "0"))
+                .unwrap()
+                .unwrap()
+                .revocation_valid_until_ms,
+            Some(0)
         );
         for refused in [
             r#"{"ok":false,"message":"roots[0]: not a certificate"}"#,
@@ -571,19 +648,28 @@ mod tests {
             "not json",
             "[]",
         ] {
-            assert_eq!(max_input_bytes(refused), Ok(None), "{refused}");
+            assert_eq!(read_init(refused), Ok(None), "{refused}");
         }
         for broken in [
             r#"{"ok":true}"#,
-            r#"{"ok":true,"max_input_bytes":0}"#,
-            r#"{"ok":true,"max_input_bytes":-1}"#,
-            r#"{"ok":true,"max_input_bytes":"3145729"}"#,
-            r#"{"ok":true,"max_input_bytes":1.5}"#,
-            r#"{"ok":true,"max_input_bytes":3145729,"message":"m"}"#,
-            r#"{"ok":true,"max_input_bytes":18446744073709551615}"#,
+            // The 0.13 answer, without the revocation members.
+            r#"{"ok":true,"max_input_bytes":3145729}"#,
+            &OK.replace("3145729", "0"),
+            &OK.replace("3145729", "-1"),
+            &OK.replace("3145729", r#""3145729""#),
+            &OK.replace("3145729", "1.5"),
+            &OK.replace("3145729", "18446744073709551615"),
+            &OK.replace("null", "1.5"),
+            &OK.replace("null", r#""1""#),
+            &OK.replace("null", "18446744073709551615"),
+            &OK.replace("[]", "null"),
+            &OK.replace("[]", "[1]"),
+            &OK.replace(r#","revocation_valid_until_ms":null"#, ""),
+            &OK.replace(r#""revocation_urls":[],"#, ""),
+            &OK.replace("null}", r#"null,"message":"m"}"#),
         ] {
             assert!(
-                matches!(max_input_bytes(broken), Err(InvokeError::Abi(_))),
+                matches!(read_init(broken), Err(InvokeError::Abi(_))),
                 "{broken}"
             );
         }
@@ -594,7 +680,9 @@ mod tests {
     /// server stops reading early.
     #[test]
     fn the_input_length_ceiling_is_the_drain_limit() {
-        let at = |n: usize| max_input_bytes(&format!(r#"{{"ok":true,"max_input_bytes":{n}}}"#));
+        let at = |n: usize| {
+            read_init(&OK.replace("3145729", &n.to_string())).map(|a| a.map(|a| a.max_input_bytes))
+        };
         assert_eq!(at(MAX_DRAIN), Ok(Some(MAX_DRAIN)));
         assert!(matches!(at(MAX_DRAIN + 1), Err(InvokeError::Abi(_))));
     }

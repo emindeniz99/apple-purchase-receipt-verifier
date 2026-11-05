@@ -154,10 +154,12 @@ paths:
     get:
       operationId: info
       tags: [service]
-      summary: The component, engine and roots this server runs.
+      summary: The component, engine, roots and revocation settings this server runs.
       description: |
-        A client compares `component_sha256` and `roots.sha256` with what it
-        expects and refuses a server that differs.
+        A client compares `component_sha256`, `roots.sha256`,
+        `revocation_lists`, `revocation_issuers` and `distrust` with what it
+        expects and refuses a server that differs. `revocation_urls` and
+        `revocation_valid_until_ms` are the component's `init` answer.
       parameters:
         - $ref: '#/components/parameters/Token'
       responses:
@@ -351,7 +353,7 @@ components:
           type: object
     Info:
       type: object
-      required: [abi, component_sha256, wasmtime, engine_features, wasm_features, roots, lifecycle, workers, time_limit_ms, token_required, limits]
+      required: [abi, component_sha256, wasmtime, engine_features, wasm_features, roots, revocation_urls, revocation_valid_until_ms, revocation_lists, revocation_issuers, distrust, lifecycle, workers, time_limit_ms, token_required, limits]
       properties:
         abi:
           type: string
@@ -385,6 +387,37 @@ components:
               items:
                 type: string
                 pattern: '^[0-9a-f]{64}$'
+        revocation_urls:
+          type: array
+          description: The URLs of the revocation lists the configuration expects, as the component's `init` answered them (docs/design/revocation.md §7). The Apple roots and nothing else give Apple's four list URLs.
+          items:
+            type: string
+        revocation_valid_until_ms:
+          type: [integer, 'null']
+          description: The earliest `nextUpdate` (epoch milliseconds) among the lists held for the expected issuers, as `init` answered it; null when an expected issuer has no list held. An instant in the past means a list is stale.
+        revocation_lists:
+          type: array
+          description: SHA-256 of each `--revocation-list` file (or managed `revocation_lists` entry) the server was given, sorted. Every list given, also one the component ignores as outside the supported profile.
+          items:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+        revocation_issuers:
+          type: array
+          description: SHA-256 of the DER of each added revocation issuer, in configuration order; a PEM entry reports one per certificate in it.
+          items:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+        distrust:
+          type: array
+          description: The distrust entries exactly as given, in order.
+          items:
+            type: object
+            required: [issuer, serial]
+            properties:
+              issuer:
+                type: string
+              serial:
+                type: string
         lifecycle:
           type: string
           description: '`pool` (the default) keeps instances between requests; `fresh` makes one per request.'
