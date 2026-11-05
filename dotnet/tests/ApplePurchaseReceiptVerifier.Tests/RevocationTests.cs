@@ -75,10 +75,10 @@ public class RevocationTests
         Assert.Equal(before, InitJson(config));
         Assert.Equal(new byte[] { 1, 2, 3 }, config.RevocationLists[0]);
         Assert.NotEmpty(Assert.Single(config.RevocationIssuers).RawData);
-        IList<byte[]> lists = Assert.IsAssignableFrom<IList<byte[]>>(config.RevocationLists);
+        IList<byte[]> lists = Assert.IsType<IList<byte[]>>(config.RevocationLists, exactMatch: false);
         Assert.True(lists.IsReadOnly);
-        IList<RevokedCertificate> entries = Assert.IsAssignableFrom<IList<RevokedCertificate>>(
-            new Config(distrust: new[] { new RevokedCertificate("a", "b") }).Distrust);
+        IList<RevokedCertificate> entries = Assert.IsType<IList<RevokedCertificate>>(
+            new Config(distrust: new[] { new RevokedCertificate("a", "b") }).Distrust, exactMatch: false);
         Assert.True(entries.IsReadOnly);
     }
 
@@ -113,7 +113,7 @@ public class RevocationTests
         VerifierImpl verifier = Over(stub);
         Assert.Equal(new[] { "http://crl.example.test/a.crl", "https://crl.example.test/a.crl" }, verifier.RevocationUrls);
         Assert.Equal(1795046400000L, verifier.RevocationValidUntilMs);
-        Assert.True(Assert.IsAssignableFrom<IList<string>>(verifier.RevocationUrls).IsReadOnly);
+        Assert.True(Assert.IsType<IList<string>>(verifier.RevocationUrls, exactMatch: false).IsReadOnly);
         Assert.Equal(VerificationReason.Malformed, verifier.VerifyReceipt("x").Failure?.Reason);
         Assert.Equal(2, verifier.RevocationUrls.Count);
 

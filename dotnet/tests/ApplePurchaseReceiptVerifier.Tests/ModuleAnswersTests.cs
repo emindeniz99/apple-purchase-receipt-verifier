@@ -206,7 +206,7 @@ public class ModuleAnswersTests
             + "\"revocation_valid_until_ms\":1795046400000}");
         Assert.Equal(new[] { "http://a.test/1.crl", "https://a.test/1.crl" }, held.RevocationUrls);
         Assert.Equal(1795046400000L, held.RevocationValidUntilMs);
-        IList<string> list = Assert.IsAssignableFrom<IList<string>>(held.RevocationUrls);
+        IList<string> list = Assert.IsType<IList<string>>(held.RevocationUrls, exactMatch: false);
         Assert.True(list.IsReadOnly);
 
         ModuleAnswers.InitAnswer none = ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":1" + NoRevocation + "}");
