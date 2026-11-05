@@ -185,6 +185,7 @@ schedule, with your own HTTP client: download the lists the current
 `Verifier` names, build a new `Verifier`, and swap the reference.
 
 ```python
+import urllib.error
 import urllib.request
 
 verifier = Verifier(Config())
@@ -194,8 +195,13 @@ def refresh_revocation() -> None:
     global verifier
     lists = []
     for url in verifier.revocation_urls:
-        with urllib.request.urlopen(url, timeout=30) as response:
-            lists.append(response.read())
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                body = response.read((1 << 20) + 1)
+        except (urllib.error.URLError, OSError):
+            continue  # a missing list fails nothing; revocation_valid_until shows it
+        if len(body) <= 1 << 20:  # the module refuses a list over 1 MiB
+            lists.append(body)
     # A list the module refuses raises ValueError here, and the old
     # verifier keeps serving.
     verifier = Verifier(Config(revocation_lists=lists))
