@@ -269,7 +269,7 @@ test('2,000 calls leave linear memory the same size', () => {
 test('the facade copies at most one byte over the cap, and the module still answers TOO_LARGE', async () => {
   const { inputBytes } = await import('../dist/verifier.js');
   const { createVerifier, createConfig, Environment } = await import('../dist/index.js');
-  const max = initAnswer(bindings().init(DEFAULTS));
+  const max = initAnswer(bindings().init(DEFAULTS)).maxInputBytes;
   assert.equal(max, CAP + 1);
   const huge = 'A'.repeat(4 * 1024 * 1024);
   assert.equal(inputBytes(huge, max).length, CAP + 1);
