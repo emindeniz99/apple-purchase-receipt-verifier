@@ -7,6 +7,7 @@ use crate::error::{Failure, Reason};
 use crate::jws::{self, JsonPayload};
 use crate::receipt;
 use crate::receipt_payload::ReceiptPayload;
+use crate::revocation::Revocation;
 use crate::roots::TrustAnchor;
 use core::cell::Cell;
 use core::fmt;
@@ -50,16 +51,51 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct Verifier {
     roots: Arc<[TrustAnchor]>,
+    revocation: Option<Arc<Revocation>>,
     clock: Arc<ClockFn>,
 }
 
 impl Verifier {
-    /// A verifier for `config`. The roots are parsed once, when the
-    /// [`Config`] is built, and never per call.
+    /// A verifier for `config`. The roots and the revocation settings are
+    /// parsed and checked once, when the [`Config`] is built, and never per
+    /// call.
     #[must_use]
     pub fn new(config: Config) -> Verifier {
-        let (roots, clock) = config.into_parts();
-        Verifier { roots, clock }
+        let (roots, revocation, clock) = config.into_parts();
+        Verifier {
+            roots,
+            revocation,
+            clock,
+        }
+    }
+
+    /// The URLs of the revocation lists this verifier would use, for a
+    /// host to download and pass to
+    /// [`ConfigBuilder::revocation_lists`](crate::ConfigBuilder::revocation_lists)
+    /// (docs/design/revocation.md §7): the list of each built-in issuer
+    /// that chains to the configured roots, then the http and https
+    /// cRLDistributionPoints of each added issuer, each once, in that
+    /// order. With Apple's roots, four plain-HTTP URLs on `crl.apple.com`:
+    /// `root.crl`, `applerootcag3.crl`, `wwdrg5.crl` and `wwdrg6.crl`
+    /// (`certs/revocations.json` holds them). An added issuer's own list URL
+    /// cannot be known from its certificate; add it by hand.
+    #[must_use]
+    pub fn revocation_urls(&self) -> &[String] {
+        self.revocation.as_deref().map_or(&[], Revocation::urls)
+    }
+
+    /// The earliest `nextUpdate`, epoch milliseconds, among the lists
+    /// held for the built-in issuers that chain to the configured roots and
+    /// for the added issuers; `None` when one of them has no list held
+    /// (none passed, or the one passed is ignored) or there is none of
+    /// them. `None` means live revocation is not fully in force; an
+    /// instant in the past means a list is stale. Alert on either, and
+    /// refresh by building a new verifier.
+    #[must_use]
+    pub fn revocation_valid_until(&self) -> Option<i64> {
+        self.revocation
+            .as_deref()
+            .and_then(Revocation::valid_until_ms)
     }
 
     /// Verifies a legacy PKCS#7 app receipt, given as the base64 string a
@@ -198,11 +234,15 @@ impl Verifier {
     // lazy `Clock`, read at most once and only where a verdict needs it.
 
     fn receipt(&self, base64: &[u8], now: &dyn Fn() -> i64) -> Result<ReceiptPayload, Failure> {
-        self.contained(now, |clock| receipt::verify(base64, &self.roots, clock))
+        self.contained(now, |revocation, clock| {
+            receipt::verify(base64, &self.roots, revocation, clock)
+        })
     }
 
     fn signed_data(&self, jws: &[u8], now: &dyn Fn() -> i64) -> Result<JsonPayload, Failure> {
-        self.contained(now, |clock| jws::verify(jws, &self.roots, clock))
+        self.contained(now, |revocation, clock| {
+            jws::verify(jws, &self.roots, revocation, clock)
+        })
     }
 
     fn endpoint(
@@ -211,12 +251,13 @@ impl Verifier {
         request_json: &[u8],
         now: &dyn Fn() -> i64,
     ) -> String {
-        if let Err(failure) = self.check_anchors() {
-            return endpoint::status_only(endpoint::status(failure.reason()));
-        }
+        let revocation = match self.check_anchors() {
+            Ok(revocation) => revocation,
+            Err(failure) => return endpoint::status_only(endpoint::status(failure.reason())),
+        };
         let clock = Clock::new(now);
         catch_unwind(AssertUnwindSafe(|| {
-            endpoint::respond(environment, request_json, &self.roots, &clock)
+            endpoint::respond(environment, request_json, &self.roots, revocation, &clock)
         }))
         .unwrap_or_else(|_| endpoint::status_only(endpoint::status(Reason::InternalError)))
     }
@@ -225,11 +266,11 @@ impl Verifier {
     fn contained<T>(
         &self,
         now: &dyn Fn() -> i64,
-        verify: impl FnOnce(&Clock<'_>) -> Result<T, Failure>,
+        verify: impl FnOnce(&Revocation, &Clock<'_>) -> Result<T, Failure>,
     ) -> Result<T, Failure> {
-        self.check_anchors()?;
+        let revocation = self.check_anchors()?;
         let clock = Clock::new(now);
-        catch_unwind(AssertUnwindSafe(|| verify(&clock))).unwrap_or_else(|_| {
+        catch_unwind(AssertUnwindSafe(|| verify(revocation, &clock))).unwrap_or_else(|_| {
             // Nothing that is only known after a panic, its text included,
             // reaches the caller.
             Err(Failure::new(
@@ -239,17 +280,25 @@ impl Verifier {
         })
     }
 
-    /// `INTERNAL_ERROR` when there is no anchor. Only `Config::default` can
-    /// hand over an empty set, when the bundled roots did not load; every
-    /// verdict without an anchor would be a misleading `UNTRUSTED_CHAIN`.
-    fn check_anchors(&self) -> Result<(), Failure> {
+    /// `INTERNAL_ERROR` when there is no anchor, or no revocation state.
+    /// Only `Config::default` can hand over an empty set, when the bundled
+    /// roots did not load, and no revocation state, when the built-in
+    /// revocation list did not load; every verdict without an anchor would
+    /// be a misleading `UNTRUSTED_CHAIN`, and one without the built-in list
+    /// would pass a revoked certificate.
+    fn check_anchors(&self) -> Result<&Revocation, Failure> {
         if self.roots.is_empty() {
             return Err(Failure::new(
                 Reason::InternalError,
                 "no trust anchors: the bundled Apple roots did not load",
             ));
         }
-        Ok(())
+        self.revocation.as_deref().ok_or_else(|| {
+            Failure::new(
+                Reason::InternalError,
+                "the built-in revocation list did not load",
+            )
+        })
     }
 }
 
@@ -257,6 +306,8 @@ impl fmt::Debug for Verifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Verifier")
             .field("roots", &self.roots.len())
+            .field("revocation_urls", &self.revocation_urls())
+            .field("revocation_valid_until", &self.revocation_valid_until())
             .finish_non_exhaustive()
     }
 }
@@ -306,6 +357,7 @@ mod tests {
         // load: not UNTRUSTED_CHAIN, which would blame every input.
         let verifier = Verifier {
             roots: Arc::from(Vec::new()),
+            revocation: None,
             clock: Arc::new(|| 0),
         };
         for failure in [
@@ -328,7 +380,7 @@ mod tests {
         // as a client "deny". Its text never reaches the caller.
         let verifier = Verifier::new(crate::Config::default());
         let failure = verifier
-            .contained(&|| 0, |_| -> Result<(), crate::Failure> {
+            .contained(&|| 0, |_, _| -> Result<(), crate::Failure> {
                 panic!("secret panic text")
             })
             .unwrap_err();

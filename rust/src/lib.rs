@@ -77,6 +77,7 @@ mod jws;
 mod path;
 mod receipt;
 mod receipt_payload;
+mod revocation;
 mod roots;
 mod verifier;
 
