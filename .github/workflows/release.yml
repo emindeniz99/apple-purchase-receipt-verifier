@@ -1059,26 +1059,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Skip if this version is already on PyPI
-        id: gate
-        working-directory: python
-        env:
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if curl -fsSL "https://pypi.org/pypi/apple-purchase-receipt-verifier/$VERSION/json" >/dev/null 2>&1; then
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "PyPI already has $VERSION; a dry run builds it anyway."
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "PyPI already has $VERSION — skipping publish."
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
       # The sdist and one wheel per platform wasmtime-py ships a wheel for,
       # never a py3-none-any wheel: on a platform without a wasmtime wheel pip
       # takes the sdist, which stops with the pointer to aprv-server (R28).
@@ -1089,7 +1069,6 @@ jobs:
       # environment; the pip it runs there reads PIP_CONSTRAINT, so the
       # constraint below decides which setuptools builds what PyPI ships.
       - name: Build the sdist and the platform wheels
-        if: steps.gate.outputs.publish == 'true'
         working-directory: python
         run: |
           set -euo pipefail
@@ -1099,8 +1078,39 @@ jobs:
           python3 tools/build_dist.py --out dist
           python3 tools/build_dist.py --check dist
 
+      # Decided per file, not per version: an upload cut off part way (0.13.0
+      # reached PyPI with four of its nine files when the upload stalled)
+      # leaves the version present but incomplete, and a gate on the version
+      # alone would skip it for good. A file PyPI already holds is left
+      # alone (PyPI never takes a second file of the same name), so a
+      # completion run uploads only what is missing.
+      - name: Upload only the files PyPI lacks
+        id: gate
+        working-directory: python
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if ! curl -fsSL "https://pypi.org/pypi/apple-purchase-receipt-verifier/$VERSION/json" -o "$RUNNER_TEMP/pypi.json"; then
+            echo '{"urls": []}' > "$RUNNER_TEMP/pypi.json"
+          fi
+          missing=$(python3 - "$RUNNER_TEMP/pypi.json" dist <<'EOF'
+          import json, os, sys
+          held = {u["filename"] for u in json.load(open(sys.argv[1]))["urls"]}
+          for name in sorted(os.listdir(sys.argv[2])):
+              if name not in held:
+                  print(name)
+          EOF
+          )
+          if [ -z "$missing" ]; then
+            echo "PyPI holds every file of $VERSION; nothing to upload."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "To upload for $VERSION:"; echo "$missing"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ inputs.dry_run && steps.gate.outputs.publish == 'true' }}
+        if: ${{ inputs.dry_run }}
         with:
           name: dry-run-pypi
           path: python/dist/
@@ -1110,6 +1120,7 @@ jobs:
         if: ${{ steps.gate.outputs.publish == 'true' && !inputs.dry_run }}
         with:
           packages-dir: python/dist/
+          skip-existing: true
 
   publish-npm:
     name: publish node to npm
