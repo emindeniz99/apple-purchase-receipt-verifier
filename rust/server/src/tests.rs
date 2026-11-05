@@ -766,7 +766,7 @@ fn configured(settings: &Settings) -> (Arc<Verifier>, axum::Router) {
     let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
     let v = Arc::new(Verifier::new(rt, settings.config_json(), true).expect("init"));
     let mut info = serde_json::json!({ "roots": settings.roots.info() });
-    crate::add_revocation_info(&mut info, &v, &settings.revocation);
+    crate::add_revocation_info(&mut info, v.init_answer(), &settings.revocation);
     let router = http::router(Arc::new(App {
         verifier: v.clone(),
         permits: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -895,7 +895,10 @@ async fn info_reports_the_revocation_state() {
         ])
     );
     assert_eq!(info["revocation_valid_until_ms"], 1_796_083_200_000_i64);
-    assert_eq!(v.revocation_valid_until_ms(), Some(1_796_083_200_000));
+    assert_eq!(
+        v.init_answer().revocation_valid_until_ms,
+        Some(1_796_083_200_000)
+    );
     assert_eq!(
         info["revocation_lists"],
         serde_json::json!([

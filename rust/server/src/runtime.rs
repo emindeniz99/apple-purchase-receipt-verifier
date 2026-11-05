@@ -539,17 +539,12 @@ impl Verifier {
         self.init.max_input_bytes
     }
 
-    /// The first `init` answer's `revocation_urls`. Every instance gets
-    /// the same configuration and runs the same component, so every later
-    /// answer states the same.
-    pub fn revocation_urls(&self) -> &[String] {
-        &self.init.revocation_urls
-    }
-
-    /// The first `init` answer's `revocation_valid_until_ms`; it depends
-    /// on the lists alone, never on a clock.
-    pub fn revocation_valid_until_ms(&self) -> Option<i64> {
-        self.init.revocation_valid_until_ms
+    /// The first `init` answer. Every instance gets the same configuration
+    /// and runs the same component, so every later answer states the same;
+    /// `revocation_valid_until_ms` depends on the lists alone, never on a
+    /// clock.
+    pub fn init_answer(&self) -> &InitAnswer {
+        &self.init
     }
 
     fn fresh(&self) -> Result<Instance, InvokeError> {

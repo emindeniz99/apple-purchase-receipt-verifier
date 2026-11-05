@@ -44,7 +44,9 @@ pub enum Roots {
 }
 
 impl Roots {
-    /// `init`'s argument.
+    /// `init`'s argument for these roots and no revocation setting (the
+    /// tests' shorthand for [`Settings::config_json`]).
+    #[cfg(test)]
     pub fn config_json(&self) -> Vec<u8> {
         Settings {
             roots: self.clone(),

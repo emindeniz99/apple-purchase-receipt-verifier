@@ -12,7 +12,7 @@ mod tests;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use roots::{Revocation, Roots, Settings};
-use runtime::{Instance, Load, Op, Runtime, Verifier};
+use runtime::{InitAnswer, Instance, Load, Op, Runtime, Verifier};
 use std::io::{BufRead, Read, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
@@ -58,8 +58,9 @@ enum Cmd {
         #[command(flatten)]
         args: OneShotArgs,
     },
-    /// The component's SHA-256, the Wasmtime version and features, the limits
-    Info(ComponentArg),
+    /// The component's SHA-256, the Wasmtime version and features, the limits, and what init
+    /// answers for the roots and revocation flags given
+    Info(InfoArgs),
     /// Precompile a component for TARGET's baseline ISA (full build only)
     Precompile {
         #[arg(value_name = "COMPONENT.wasm")]
@@ -90,6 +91,18 @@ struct ComponentArg {
     /// Compile this component at start instead of the embedded one (full build only)
     #[arg(long, value_name = "FILE.wasm")]
     component: Option<String>,
+}
+
+#[derive(Args)]
+struct InfoArgs {
+    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
+    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
+    #[arg(long, value_name = "FILE")]
+    roots: Vec<String>,
+    #[command(flatten)]
+    revocation: RevocationArgs,
+    #[command(flatten)]
+    component: ComponentArg,
 }
 
 #[derive(Args)]
@@ -417,36 +430,58 @@ fn build_info(runtime: &Runtime, max_input_bytes: usize) -> serde_json::Value {
 /// what the server was given (`revocation_lists`, `revocation_issuers`,
 /// `distrust`; [`Revocation::info`]), so a client can refuse a server
 /// whose revocation state differs from its own configuration.
-fn add_revocation_info(info: &mut serde_json::Value, verifier: &Verifier, r: &Revocation) {
-    info["revocation_urls"] = verifier.revocation_urls().into();
-    info["revocation_valid_until_ms"] = verifier.revocation_valid_until_ms().into();
+fn add_revocation_info(info: &mut serde_json::Value, init: &InitAnswer, r: &Revocation) {
+    info["revocation_urls"] = init.revocation_urls.clone().into();
+    info["revocation_valid_until_ms"] = init.revocation_valid_until_ms.into();
     let (lists, issuers, distrust) = r.info();
     info["revocation_lists"] = lists;
     info["revocation_issuers"] = issuers;
     info["distrust"] = distrust;
 }
 
-fn info(component: ComponentArg) -> i32 {
+/// `aprv info`: one instance's `init` on the configuration the flags give
+/// (the built-in roots and nothing else without them) states the input
+/// length and the revocation state, which `GET /v1/info` states for a
+/// server. A configuration `init` refuses exits 2, as the one-shot
+/// commands do, so a client that runs one process per call (PHP's
+/// `CliTransport`) learns both values and any refusal in one call.
+fn info(a: InfoArgs) -> i32 {
     let t = Instant::now();
-    // The input length is the module's: one instance with the built-in
-    // roots says it.
-    let ready = load(&component, None).and_then(|runtime| {
+    let settings = match settings_from(&a.roots, &a.revocation) {
+        Ok(s) => s,
+        Err(e) => return usage(&e),
+    };
+    let ready = load(&a.component, None).and_then(|runtime| {
         let runtime = std::mem::ManuallyDrop::new(runtime);
-        match runtime.ready_instance(&Roots::Defaults.config_json()) {
+        match runtime.ready_instance(&settings.config_json()) {
             Ok(Ok((instance, init))) => {
                 std::mem::forget(instance);
-                Ok((runtime, init.max_input_bytes))
+                Ok(Ok((runtime, init)))
             }
-            Ok(Err(answer)) => Err(format!(
-                "the component refused its built-in roots: {answer}"
-            )),
+            // The module refusing its own roots is a broken module; a
+            // configuration given is the caller's to fix.
+            Ok(Err(answer))
+                if settings.roots == Roots::Defaults
+                    && settings.revocation == Revocation::default() =>
+            {
+                Err(format!(
+                    "the component refused its built-in roots: {answer}"
+                ))
+            }
+            Ok(Err(answer)) => Ok(Err(answer)),
             Err(e) => Err(format!("the component failed its init: {e}")),
         }
     });
     match ready {
-        Ok((runtime, max_input_bytes)) => {
+        Ok(Err(answer)) => {
+            eprintln!("aprv: the component refused the configuration: {answer}");
+            EXIT_USAGE
+        }
+        Ok(Ok((runtime, init))) => {
             // As the CLI: exit without the runtime's slow teardown.
-            let mut v = build_info(&runtime, max_input_bytes);
+            let mut v = build_info(&runtime, init.max_input_bytes);
+            v["roots"] = settings.roots.info();
+            add_revocation_info(&mut v, &init, &settings.revocation);
             v["load_ms"] = serde_json::json!((t.elapsed().as_secs_f64() * 1e4).round() / 10.0);
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
             EXIT_OK
@@ -553,7 +588,7 @@ fn serve(o: ServeArgs) -> i32 {
         NonZeroUsize::get,
     );
     info["roots"] = settings.roots.info();
-    add_revocation_info(&mut info, &verifier, &settings.revocation);
+    add_revocation_info(&mut info, verifier.init_answer(), &settings.revocation);
     info["lifecycle"] = verifier.lifecycle_name().into();
     info["workers"] = workers.into();
     info["time_limit_ms"] = o
@@ -816,6 +851,17 @@ mod cli_tests {
             &["info", "--component", "c.wasm"],
             &["info"],
             &[
+                "info",
+                "--roots",
+                "r",
+                "--revocation-list",
+                "l.crl",
+                "--revocation-issuer",
+                "i.cer",
+                "--distrust",
+                "ab:01",
+            ],
+            &[
                 "precompile",
                 "c.wasm",
                 "--target",
@@ -839,7 +885,6 @@ mod cli_tests {
             &["serve", "--managed", "--revocation-issuer", "i.cer"],
             &["serve", "--managed", "--distrust", "ab:01"],
             &["verify-receipt", "--revocation-list"],
-            &["info", "--revocation-list", "l.crl"],
             &["serve", "--workers", "0"],
             // Four request bodies per worker: MAX_PERMITS / 4 + 1 workers
             // would need more upload permits than a semaphore holds.
@@ -862,7 +907,8 @@ mod cli_tests {
             &["verify-receipt", "--roots"],
             &["verify-receipt-endpoint"],
             &["verify-receipt-endpoint", "staging"],
-            &["info", "--roots", "r"],
+            &["info", "--now-ms", "1"],
+            &["info", "--workers", "1"],
             &["precompile", "c.wasm"],
         ] {
             let e = parse(bad).err().unwrap_or_else(|| panic!("{bad:?} parsed"));
