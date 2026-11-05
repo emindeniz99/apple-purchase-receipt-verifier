@@ -50,7 +50,7 @@
     clippy::panic
 )]
 
-use aprv_surface::{Environment, Failure, JsonPayload, ReceiptPayload};
+use aprv_surface::{Environment, Failure, JsonPayload, ReceiptPayload, Revocation, Verifier};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------- writer
@@ -127,72 +127,132 @@ pub fn verify_signed_data_result(result: &Result<JsonPayload, Failure>) -> Strin
 
 // ------------------------------------------------------------------ init
 
-/// The answer of `init`: `{"ok":true,"max_input_bytes":N}` or
-/// `{"ok":false,"message":"..."}`.
+/// The answer of `init` to a configuration it accepted.
 #[derive(Serialize)]
-struct InitAnswer<'a> {
+struct InitAccepted<'a> {
     ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_input_bytes: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    message: Option<&'a str>,
+    max_input_bytes: usize,
+    revocation_urls: &'a [String],
+    /// `null` when the verifier reports none.
+    revocation_valid_until_ms: Option<i64>,
+}
+
+/// The answer of `init` to a configuration it refused.
+#[derive(Serialize)]
+struct InitRefused<'a> {
+    ok: bool,
+    message: &'a str,
 }
 
 /// The answer of `init` (`init-result.schema.json`):
-/// `{"ok":true,"max_input_bytes":N}`, or `{"ok":false,"message":"..."}`
-/// naming why the configuration was refused.
+/// `{"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+/// "revocation_valid_until_ms":N|null}` for the verifier `init` made, or
+/// `{"ok":false,"message":"..."}` naming why the configuration was
+/// refused.
 ///
 /// `max_input_bytes` is [`aprv_surface::MAX_INPUT_BYTES`]: the most bytes
 /// of one input a host needs to hand the module. A longer input may be cut
 /// to this length, and the module answers `TOO_LARGE` for it. A host reads
 /// it here rather than keeping a copy (DECISIONS.md R42).
+///
+/// `revocation_urls` and `revocation_valid_until_ms` are the verifier's
+/// [`revocation_urls`](aprv_surface::Verifier::revocation_urls) and
+/// [`revocation_valid_until_ms`](aprv_surface::Verifier::revocation_valid_until_ms)
+/// (docs/design/revocation.md §7, §8): every wrapper reads both from here,
+/// and none reads a certificate or a list.
 #[must_use]
-pub fn init_result(result: &Result<(), String>) -> String {
-    to_json(&InitAnswer {
-        ok: result.is_ok(),
-        max_input_bytes: result.as_ref().ok().map(|()| aprv_surface::MAX_INPUT_BYTES),
-        message: result.as_ref().err().map(String::as_str),
-    })
+pub fn init_result(result: &Result<&Verifier, String>) -> String {
+    match result {
+        Ok(verifier) => to_json(&InitAccepted {
+            ok: true,
+            max_input_bytes: aprv_surface::MAX_INPUT_BYTES,
+            revocation_urls: verifier.revocation_urls(),
+            revocation_valid_until_ms: verifier.revocation_valid_until_ms(),
+        }),
+        Err(message) => to_json(&InitRefused { ok: false, message }),
+    }
 }
 
 /// `init`'s configuration as serde reads a struct: a derived `Deserialize`
 /// refuses a member named twice, where `serde_json`'s own map keeps only
-/// the last. Read for that refusal alone; the value is taken from the map.
+/// the last. Read for that refusal alone; the values are taken from the
+/// map.
 #[derive(Deserialize)]
 struct Once {
     #[serde(rename = "roots")]
     _roots: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "revocation_lists")]
+    _revocation_lists: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "revocation_issuers")]
+    _revocation_issuers: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "distrust")]
+    _distrust: Option<serde::de::IgnoredAny>,
 }
 
-/// Reads `init`'s configuration (`init-config.schema.json`) into the
-/// decoded bytes of the roots it names, in order: DER or PEM, which the
-/// core tells apart. An empty result means the three Apple roots
-/// compiled into the library.
+/// The members `init`'s configuration may hold, in the order a refusal
+/// names them.
+const MEMBERS: [&str; 4] = [
+    "roots",
+    "revocation_lists",
+    "revocation_issuers",
+    "distrust",
+];
+
+/// What `init`'s configuration asks for: the decoded roots (empty for the
+/// three Apple roots compiled into the library) and the revocation
+/// settings, which the core judges when the verifier is made.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InitConfig {
+    /// The roots, each the decoded bytes of one DER certificate or of PEM
+    /// text; empty means the Apple roots.
+    pub roots: Vec<Vec<u8>>,
+    /// The revocation lists, issuers and `distrust` entries.
+    pub revocation: Revocation,
+}
+
+impl InitConfig {
+    /// The verifier this configuration asks for.
+    ///
+    /// # Errors
+    /// The surface's message for a root or issuer that is not a
+    /// certificate, or for a revocation setting the core refuses.
+    pub fn verifier(&self) -> Result<Verifier, String> {
+        Verifier::with_revocation(&self.roots, &self.revocation).map_err(|error| error.message)
+    }
+}
+
+/// Reads `init`'s configuration (`init-config.schema.json`).
 ///
 /// Accepted: no bytes at all (or only JSON whitespace) and `{}`, both the
-/// Apple roots, and `{"roots":["<base64>", ...]}` with at least one root,
-/// each in padded standard base64 by the core's `receipt-data` rule
-/// ([`aprv_surface::decode_base64`]). Anything else is refused with a
-/// message, so a wrapper that misspells a member finds out at `create`
-/// instead of getting the Apple roots it did not ask for; so is `roots`
-/// named twice, which a JSON reader that keeps the last member would read
-/// as whichever came last. An empty `roots` list is refused with the
-/// message the core's `Config` gives an empty root set, so no verifier
-/// with no roots is made and a configuration that came up empty fails at
-/// `create` rather than reading as the Apple roots (DECISIONS.md R23,
-/// owner decision Q30). Whether a root is a certificate is the surface's
-/// question, asked when the verifier is made.
+/// Apple roots with no revocation setting; and an object with any of
+/// `roots` (at least one root), `revocation_lists` and
+/// `revocation_issuers` (lists of padded standard base64 by the core's
+/// `receipt-data` rule, [`aprv_surface::decode_base64`]), and `distrust`
+/// (a list of `{"issuer":"...","serial":"..."}` objects with exactly
+/// those two string members). A root or an issuer is DER or PEM, which the
+/// core tells apart. Anything else is refused with a message, so a wrapper
+/// that misspells a member finds out at `create` instead of getting
+/// settings it did not ask for; so is a member named twice, which a JSON
+/// reader that keeps the last member would read as whichever came last.
+/// An empty `roots` list is refused with the message the core's `Config`
+/// gives an empty root set, so no verifier with no roots is made and a
+/// configuration that came up empty fails at `create` rather than reading
+/// as the Apple roots (DECISIONS.md R23, owner decision Q30). Whether a
+/// root or an issuer is a certificate, and whether a list or a `distrust`
+/// entry is accepted, is the core's question, asked when the verifier is
+/// made ([`InitConfig::verifier`]).
 ///
 /// # Errors
-/// A message naming what is wrong: not UTF-8, not JSON, not an object,
-/// `roots` more than once, a member other than `roots`, `roots` not a
-/// list, `roots` an empty list, or a root that is not a string or not
-/// base64 (by its index), the first of these that applies.
-pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+/// A message naming what is wrong: not UTF-8, not JSON, not an object, a
+/// member more than once, a member other than the four, a member that is
+/// not a list, `roots` an empty list, an entry that is not a string or not
+/// base64, or a `distrust` entry that is not such an object (by its
+/// index), the first of these that applies.
+pub fn read_init_config(config: &[u8]) -> Result<InitConfig, String> {
     let text =
         core::str::from_utf8(config).map_err(|_| "the configuration is not UTF-8".to_owned())?;
     if text.trim_matches([' ', '\t', '\n', '\r']).is_empty() {
-        return Ok(Vec::new());
+        return Ok(InitConfig::default());
     }
     let value: serde_json::Value =
         serde_json::from_str(text).map_err(|_| "the configuration is not JSON".to_owned())?;
@@ -200,30 +260,99 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
         return Err("the configuration is not a JSON object".to_owned());
     };
     // The text is a JSON object, so the one thing `Once` can refuse is a
-    // repeated `roots`.
-    serde_json::from_str::<Once>(text)
-        .map_err(|_| "the configuration names \"roots\" more than once".to_owned())?;
-    let roots = members.remove("roots");
-    if !members.is_empty() {
-        return Err("the configuration has a member other than \"roots\"".to_owned());
+    // repeated member.
+    if let Err(error) = serde_json::from_str::<Once>(text) {
+        let named = MEMBERS
+            .iter()
+            .find(|member| error.to_string().contains(&format!("`{member}`")))
+            .copied()
+            .unwrap_or("a member");
+        return Err(format!(
+            "the configuration names \"{named}\" more than once"
+        ));
     }
-    let entries = match roots {
+    let mut taken: Vec<Option<serde_json::Value>> = MEMBERS
+        .iter()
+        .map(|member| members.remove(*member))
+        .collect();
+    if !members.is_empty() {
+        return Err(
+            "the configuration has a member other than \"roots\", \"revocation_lists\", \
+             \"revocation_issuers\" and \"distrust\""
+                .to_owned(),
+        );
+    }
+    let mut take = |index: usize| taken.get_mut(index).and_then(Option::take);
+    let roots = match take(0) {
         None => Vec::new(),
         Some(serde_json::Value::Array(entries)) if entries.is_empty() => {
             return Err("roots must not be empty".to_owned())
         }
-        Some(serde_json::Value::Array(entries)) => entries,
-        Some(_) => return Err("roots is not a list".to_owned()),
+        Some(value) => base64_list("roots", value)?,
+    };
+    let lists = take(1)
+        .map(|value| base64_list("revocation_lists", value))
+        .transpose()?
+        .unwrap_or_default();
+    let issuers = take(2)
+        .map(|value| base64_list("revocation_issuers", value))
+        .transpose()?
+        .unwrap_or_default();
+    let distrust = take(3).map(distrust_list).transpose()?.unwrap_or_default();
+    Ok(InitConfig {
+        roots,
+        revocation: Revocation {
+            lists,
+            issuers,
+            distrust,
+        },
+    })
+}
+
+/// A member that must be a list of padded standard base64 strings,
+/// decoded.
+fn base64_list(member: &str, value: serde_json::Value) -> Result<Vec<Vec<u8>>, String> {
+    let serde_json::Value::Array(entries) = value else {
+        return Err(format!("{member} is not a list"));
     };
     entries
         .into_iter()
         .enumerate()
         .map(|(index, entry)| {
             let serde_json::Value::String(entry) = entry else {
-                return Err(format!("roots[{index}] is not a string"));
+                return Err(format!("{member}[{index}] is not a string"));
             };
             aprv_surface::decode_base64(entry.as_bytes())
-                .ok_or_else(|| format!("roots[{index}] is not padded standard base64"))
+                .ok_or_else(|| format!("{member}[{index}] is not padded standard base64"))
+        })
+        .collect()
+}
+
+/// `distrust`: a list of `{"issuer":"...","serial":"..."}`, both strings,
+/// nothing else. Whether the strings are an issuer id and a hex serial is
+/// the core's question.
+fn distrust_list(value: serde_json::Value) -> Result<Vec<(String, String)>, String> {
+    let serde_json::Value::Array(entries) = value else {
+        return Err("distrust is not a list".to_owned());
+    };
+    entries
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let refused =
+                || format!("distrust[{index}] is not {{\"issuer\":\"...\",\"serial\":\"...\"}}");
+            let serde_json::Value::Object(mut members) = entry else {
+                return Err(refused());
+            };
+            let (Some(serde_json::Value::String(issuer)), Some(serde_json::Value::String(serial))) =
+                (members.remove("issuer"), members.remove("serial"))
+            else {
+                return Err(refused());
+            };
+            if !members.is_empty() {
+                return Err(refused());
+            }
+            Ok((issuer, serial))
         })
         .collect()
 }
@@ -233,7 +362,7 @@ pub fn read_init_config(config: &[u8]) -> Result<Vec<Vec<u8>>, String> {
 mod tests {
     use super::{
         init_result, read_init_config, receipt_payload, verify_receipt_result,
-        verify_signed_data_result,
+        verify_signed_data_result, InitConfig, Revocation,
     };
     use apple_purchase_receipt_verifier::__internal as seams;
     use aprv_surface::{Reason, ReceiptPayload, UnknownAttributes};
@@ -455,13 +584,19 @@ mod tests {
     }
 
     #[test]
-    fn init_answers_ok_with_the_input_length_or_a_message() {
+    fn init_answers_ok_with_the_input_length_and_revocation_state_or_a_message() {
         // One over the core's largest cap, 3 MiB: pinned here so a change
         // of it is seen, not carried silently to every host.
         assert_eq!(aprv_surface::MAX_INPUT_BYTES, 3_145_729);
+        let verifier = aprv_surface::Verifier::new(&[]).unwrap();
         assert_eq!(
-            init_result(&Ok(())),
-            r#"{"ok":true,"max_input_bytes":3145729}"#
+            init_result(&Ok(&verifier)),
+            concat!(
+                r#"{"ok":true,"max_input_bytes":3145729,"revocation_urls":["#,
+                r#""http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl","#,
+                r#""http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"],"#,
+                r#""revocation_valid_until_ms":null}"#
+            )
         );
         assert_eq!(
             init_result(&Err("roots[0]: \"x\"".to_owned())),
@@ -469,20 +604,47 @@ mod tests {
         );
     }
 
+    fn roots_only(roots: Vec<Vec<u8>>) -> InitConfig {
+        InitConfig {
+            roots,
+            ..InitConfig::default()
+        }
+    }
+
     #[test]
-    fn the_configuration_names_roots_or_nothing() {
+    fn the_configuration_names_roots_and_revocation_settings_or_nothing() {
         for built_in in ["", " \n", "{}", " { } "] {
             assert_eq!(
                 read_init_config(built_in.as_bytes()),
-                Ok(Vec::new()),
+                Ok(InitConfig::default()),
                 "{built_in:?}"
             );
         }
         assert_eq!(
             read_init_config(b"{\"roots\":[\"AQID\",\"BA==\"]}"),
-            Ok(vec![vec![1, 2, 3], vec![4]])
+            Ok(roots_only(vec![vec![1, 2, 3], vec![4]]))
         );
-        let refused: [(&[u8], &str); 13] = [
+        assert_eq!(
+            read_init_config(
+                br#"{"revocation_lists":["AQID"],"revocation_issuers":["BA=="],"distrust":[{"issuer":"ab","serial":"01"}]}"#
+            ),
+            Ok(InitConfig {
+                roots: Vec::new(),
+                revocation: Revocation {
+                    lists: vec![vec![1, 2, 3]],
+                    issuers: vec![vec![4]],
+                    distrust: vec![("ab".to_owned(), "01".to_owned())],
+                },
+            })
+        );
+        // Empty revocation members are no setting.
+        assert_eq!(
+            read_init_config(br#"{"revocation_lists":[],"revocation_issuers":[],"distrust":[]}"#),
+            Ok(InitConfig::default())
+        );
+        let other = "the configuration has a member other than \"roots\", \"revocation_lists\", \
+                     \"revocation_issuers\" and \"distrust\"";
+        let refused: [(&[u8], &str); 24] = [
             // One spelling for the Apple roots, `{}`: an empty list is a
             // root set that came up empty, the core's `Config` refusal.
             (b"{\"roots\":[]}", "roots must not be empty"),
@@ -497,14 +659,20 @@ mod tests {
                 b"{\"roots\":[],\"roots\":[\"AQ==\"]}",
                 "the configuration names \"roots\" more than once",
             ),
+            (
+                br#"{"distrust":[],"distrust":[{"issuer":"a","serial":"1"}]}"#,
+                "the configuration names \"distrust\" more than once",
+            ),
+            (
+                br#"{"revocation_lists":["AQ=="],"revocation_lists":[]}"#,
+                "the configuration names \"revocation_lists\" more than once",
+            ),
             (b"\xff", "the configuration is not UTF-8"),
             (b"{", "the configuration is not JSON"),
             (b"[]", "the configuration is not a JSON object"),
             (b"null", "the configuration is not a JSON object"),
-            (
-                b"{\"root\":[]}",
-                "the configuration has a member other than \"roots\"",
-            ),
+            (b"{\"root\":[]}", other),
+            (b"{\"revocationLists\":[]}", other),
             (b"{\"roots\":\"AQID\"}", "roots is not a list"),
             (b"{\"roots\":[1]}", "roots[0] is not a string"),
             (
@@ -514,6 +682,35 @@ mod tests {
             (
                 b"{\"roots\":[\"\"]}",
                 "roots[0] is not padded standard base64",
+            ),
+            (
+                br#"{"revocation_lists":"AQID"}"#,
+                "revocation_lists is not a list",
+            ),
+            (
+                br#"{"revocation_lists":["AQID","A"]}"#,
+                "revocation_lists[1] is not padded standard base64",
+            ),
+            (
+                br#"{"revocation_issuers":[null]}"#,
+                "revocation_issuers[0] is not a string",
+            ),
+            (br#"{"distrust":{}}"#, "distrust is not a list"),
+            (
+                br#"{"distrust":["ab:01"]}"#,
+                "distrust[0] is not {\"issuer\":\"...\",\"serial\":\"...\"}",
+            ),
+            (
+                br#"{"distrust":[{"issuer":"ab"}]}"#,
+                "distrust[0] is not {\"issuer\":\"...\",\"serial\":\"...\"}",
+            ),
+            (
+                br#"{"distrust":[{"issuer":"ab","serial":1}]}"#,
+                "distrust[0] is not {\"issuer\":\"...\",\"serial\":\"...\"}",
+            ),
+            (
+                br#"{"distrust":[{"issuer":"ab","serial":"01","note":""}]}"#,
+                "distrust[0] is not {\"issuer\":\"...\",\"serial\":\"...\"}",
             ),
         ];
         for (config, message) in refused {

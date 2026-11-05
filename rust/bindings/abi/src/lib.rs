@@ -191,9 +191,9 @@ impl Guest for Aprv {
             }
             set_c_random_source();
             set_c_clock(0);
-            let made = aprv_wire::read_init_config(&config_json)
-                .and_then(|roots| Verifier::new(&roots).map_err(|error| error.message));
-            let answer = aprv_wire::init_result(&made.as_ref().map(|_| ()).map_err(Clone::clone));
+            let made =
+                aprv_wire::read_init_config(&config_json).and_then(|config| config.verifier());
+            let answer = aprv_wire::init_result(&made.as_ref().map_err(Clone::clone));
             if let Ok(verifier) = made {
                 *slot.borrow_mut() = Some(verifier);
             }

@@ -9,8 +9,12 @@ interface verify {
 
   /// Once per instance, before any verify call. `{"roots":["<base64 of DER or PEM>", ...]}`;
   /// `{}` or no bytes mean the three Apple roots built into the module; an empty `roots` list is refused.
-  /// Answers {"ok":true,"max_input_bytes":N} or {"ok":false,"message":"..."}. A refused init may be
-  /// retried; an init after an accepting answer traps, and so does a verify call before one.
+  /// Optional revocation members: `"revocation_lists":["<base64 of a DER CRL>", ...]`,
+  /// `"revocation_issuers":["<base64 of DER or PEM>", ...]` and
+  /// `"distrust":[{"issuer":"<64 hex digits>","serial":"<hex>"}, ...]`.
+  /// Answers {"ok":true,"max_input_bytes":N,"revocation_urls":[...],"revocation_valid_until_ms":N|null}
+  /// or {"ok":false,"message":"..."}. A refused init may be retried; an init after an accepting answer
+  /// traps, and so does a verify call before one. A verify answer's reason may be CERTIFICATE_REVOKED.
   init: func(config-json: list<u8>) -> string;
   /// `now-ms`: the host's clock in milliseconds since the Unix epoch, for an input with no usable date.
   verify-receipt: func(now-ms: s64, receipt-base64: list<u8>) -> string;
