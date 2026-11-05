@@ -124,8 +124,8 @@ const LANGS = {
       [/\b(ECDsa|RSA|DSA)\s*\.\s*Create\b|ECDsa|\bRSA(Cng|OpenSsl)?\b|RSACryptoServiceProvider|Verify(Data|Hash)|Org\.BouncyCastle/, '.NET signature verification'],
     ],
     allow: [
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and the Config constructor\'s roots take X509Certificate2 (the 0.7 type); only its RawData, the DER, reaches the module' },
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots above; no chain, no key, no signature" },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and the Config constructor\'s roots take X509Certificate2 (the 0.7 type), and so do Config.RevocationIssuers and the revocationIssuers parameter (revocation.md §9); only its RawData, the DER, reaches the module' },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots and Config.RevocationIssuers above; no chain, no key, no signature" },
     ],
   },
   php: {
