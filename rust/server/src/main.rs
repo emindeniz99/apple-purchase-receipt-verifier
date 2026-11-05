@@ -128,7 +128,7 @@ struct ServeArgs {
     #[arg(long, value_enum, default_value_t = Lifecycle::Pool)]
     lifecycle: Lifecycle,
     /// Concurrent verifications [default: the CPU count]
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = workers)]
     workers: Option<NonZeroUsize>,
     /// The guest time limit per call [default: 10000]
     #[arg(long, value_name = "N")]
@@ -149,7 +149,20 @@ struct ServeArgs {
 /// `Semaphore::new` panics above `MAX_PERMITS`, so a larger value is a
 /// usage error rather than a crash at start.
 fn max_connections(s: &str) -> Result<NonZeroUsize, String> {
-    let max = tokio::sync::Semaphore::MAX_PERMITS;
+    up_to(s, tokio::sync::Semaphore::MAX_PERMITS)
+}
+
+/// `--workers`: each worker is a permit of one semaphore and admits
+/// `UPLOADS_PER_WORKER` request bodies through another, so the count
+/// stops where that product would pass `MAX_PERMITS`.
+fn workers(s: &str) -> Result<NonZeroUsize, String> {
+    up_to(
+        s,
+        tokio::sync::Semaphore::MAX_PERMITS / http::UPLOADS_PER_WORKER,
+    )
+}
+
+fn up_to(s: &str, max: usize) -> Result<NonZeroUsize, String> {
     match s.parse::<NonZeroUsize>() {
         Ok(n) if n.get() <= max => Ok(n),
         _ => Err(format!("expected an integer from 1 to {max}")),
@@ -748,6 +761,10 @@ mod cli_tests {
             &["serve", "--managed", "--listen", "127.0.0.1:1"],
             &["serve", "--managed", "--token-file", "t"],
             &["serve", "--workers", "0"],
+            // Four request bodies per worker: MAX_PERMITS / 4 + 1 workers
+            // would need more upload permits than a semaphore holds.
+            &["serve", "--workers", "576460752303423488"],
+            &["serve", "--workers", "18446744073709551616"],
             &["serve", "--time-limit-ms", "0"],
             &["serve", "--max-connections", "0"],
             // The cap is a tokio semaphore, which holds at most MAX_PERMITS.
@@ -795,5 +812,22 @@ mod cli_tests {
             _ => unreachable!(),
         };
         assert_eq!(roots, ["a.cer", "b.pem"]);
+    }
+
+    /// Each count stops at the largest value its semaphores can hold, on
+    /// any pointer width: one more is a usage error, not a panic at start.
+    #[test]
+    fn workers_and_connections_stop_at_what_a_semaphore_holds() {
+        use super::{http::UPLOADS_PER_WORKER, max_connections, workers};
+        use std::num::NonZeroUsize;
+        let max = tokio::sync::Semaphore::MAX_PERMITS;
+        let most = max / UPLOADS_PER_WORKER;
+        assert_eq!(workers(&most.to_string()).map(NonZeroUsize::get), Ok(most));
+        assert!(workers(&(most + 1).to_string()).is_err());
+        assert_eq!(
+            max_connections(&max.to_string()).map(NonZeroUsize::get),
+            Ok(max)
+        );
+        assert!(max_connections(&(max + 1).to_string()).is_err());
     }
 }
