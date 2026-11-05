@@ -26,9 +26,11 @@
 // the file is current or the only difference is a newer list (WWDR G6's is
 // reissued daily); 1 on a new, vanished or reappearing entry, a changed
 // reason, a refused list, or an unknown WWDR intermediate; 2 on a network
-// failure or a bug in this script. Without --check it writes the file and
-// its copy in rust/certs/ and exits 0, or exits 2 on any failure, a
-// refused list included.
+// failure or a bug in this script. Without --check it writes the file, its
+// copy in rust/certs/, the file's SHA-256 pin in rust/src/roots.rs and the
+// JSON_LINES constant in Java's AppleRevocations.java, which must all
+// change together or the core and Java refuse the built-in list, and exits
+// 0, or exits 2 on any failure, a refused list included.
 //
 // Parsing: `openssl asn1parse` reads every structure (tag, offsets,
 // lengths); this script only slices the bytes at the offsets it reports and
@@ -503,6 +505,25 @@ async function unknownWwdrIntermediates(doc) {
 
 // ---------------------------------------------------------------- main
 
+// The pin of certs/revocations.json in rust/src/roots.rs, rewritten to
+// `sha256`. Throws when the constant is not where it was.
+export function withRustPin(rootsRs, sha256) {
+  const pin = /(pub\(crate\) static REVOCATIONS_JSON_SHA256: &str =\s*")[0-9a-f]{64}(";)/;
+  if (!pin.test(rootsRs)) throw new Error('rust/src/roots.rs: REVOCATIONS_JSON_SHA256 not found');
+  return rootsRs.replace(pin, `$1${sha256}$2`);
+}
+
+// AppleRevocations.java with its JSON_LINES constant holding `text`, one
+// Java string per line, as RevocationTest prints them. Throws when the
+// constant is not where it was.
+export function withJavaLines(java, text) {
+  const block = /( {4}private static final String\[\] JSON_LINES = \{\n)[\s\S]*?(\n {4}\};)/;
+  if (!block.test(java)) throw new Error('AppleRevocations.java: JSON_LINES not found');
+  const lines = text.split('\n').filter((line) => line !== '')
+    .map((line) => `        "${line.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}",`);
+  return java.replace(block, (_whole, head, tail) => `${head}${lines.join('\n')}${tail}`);
+}
+
 export async function main(argv, { repoRoot = fileURLToPath(new URL('..', import.meta.url)) } = {}) {
   const { values } = parseArgs({ args: argv, options: { check: { type: 'boolean', default: false } } });
   const file = join(repoRoot, 'certs', 'revocations.json');
@@ -533,11 +554,22 @@ export async function main(argv, { repoRoot = fileURLToPath(new URL('..', import
     return changes.length === 0 ? 0 : 1;
   }
   // rust/certs/ is the copy the core compiles in; check-cert-copies.mjs
-  // fails CI when the two differ.
+  // fails CI when the two differ. The core pins the copy's SHA-256 and Java
+  // compiles the same text in: without both, every verifier refuses the
+  // built-in list (the core answers INTERNAL_ERROR, Java's RevocationTest
+  // fails).
   const text = `${JSON.stringify(doc, null, 2)}\n`;
+  const rootsRs = join(repoRoot, 'rust', 'src', 'roots.rs');
+  const java = join(repoRoot, 'java', 'src', 'main', 'java', 'io', 'github', 'emindeniz99',
+    'applepurchasereceiptverifier', 'AppleRevocations.java');
+  const pinned = withRustPin(readFileSync(rootsRs, 'utf8'), createHash('sha256').update(text).digest('hex'));
+  const lines = withJavaLines(readFileSync(java, 'utf8'), text);
   writeFileSync(file, text);
   writeFileSync(join(repoRoot, 'rust', 'certs', 'revocations.json'), text);
-  console.log(`wrote certs/revocations.json and rust/certs/revocations.json (${doc.revoked.length} entries)`);
+  writeFileSync(rootsRs, pinned);
+  writeFileSync(java, lines);
+  console.log(`wrote certs/revocations.json and rust/certs/revocations.json (${doc.revoked.length} entries), `
+    + 'the pin in rust/src/roots.rs and JSON_LINES in AppleRevocations.java');
   return 0;
 }
 

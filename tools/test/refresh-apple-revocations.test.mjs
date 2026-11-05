@@ -22,7 +22,10 @@ import {
   parseCertificate,
   parseCrl,
   verifyCrl,
+  withJavaLines,
+  withRustPin,
 } from '../refresh-apple-revocations.mjs';
+import { createHash } from 'node:crypto';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'aprv-revocation-test-'));
@@ -274,4 +277,32 @@ test('certs/revocations.json: every issuer resolves to its certificate, entries 
     assert.equal(normaliseHex(e.serial), e.serial);
     assert.ok(!['certificateHold', 'removeFromCRL'].includes(e.reason));
   }
+});
+
+// Write mode rewrites the core's pin and Java's constant with the file, or
+// every verifier refuses the built-in list until someone edits both by
+// hand. Rewriting them from the committed file changes nothing, which is
+// what roots.rs's pin test and RevocationTest check in CI.
+test('the pin in roots.rs and JSON_LINES in AppleRevocations.java follow the file', () => {
+  const text = readFileSync(join(repoRoot, 'certs/revocations.json'), 'utf8');
+  const rootsRs = readFileSync(join(repoRoot, 'rust/src/roots.rs'), 'utf8');
+  const javaPath = 'java/src/main/java/io/github/emindeniz99/applepurchasereceiptverifier/AppleRevocations.java';
+  const java = readFileSync(join(repoRoot, javaPath), 'utf8');
+  assert.equal(withRustPin(rootsRs, createHash('sha256').update(text).digest('hex')), rootsRs);
+  assert.equal(withJavaLines(java, text), java);
+
+  const changed = '{\n  "comment": "a \\"quoted\\" \\\\ text",\n  "revoked": []\n}\n';
+  const lines = withJavaLines(java, changed);
+  assert.ok(lines.includes([
+    '    private static final String[] JSON_LINES = {',
+    '        "{",',
+    '        "  \\"comment\\": \\"a \\\\\\"quoted\\\\\\" \\\\\\\\ text\\",",',
+    '        "  \\"revoked\\": []",',
+    '        "}",',
+    '    };',
+  ].join('\n')), lines);
+  const pin = 'ab'.repeat(32);
+  assert.match(withRustPin(rootsRs, pin), new RegExp(`REVOCATIONS_JSON_SHA256: &str =\\s*"${pin}";`));
+  assert.throws(() => withRustPin('no pin here', pin), /REVOCATIONS_JSON_SHA256 not found/);
+  assert.throws(() => withJavaLines('no lines here', text), /JSON_LINES not found/);
 });

@@ -156,7 +156,10 @@ certificates as base64), pinned byte for byte to `certs/` by `RevocationTest`. F
 - `tools/refresh-apple-revocations.mjs` writes it: it downloads each issuer's `list` over HTTPS (HTTP when Apple does
   not serve HTTPS, which on 2026-11-05 is all four: `crl.apple.com` answers 404 over HTTPS; the signature, not the
   transport, authenticates it), verifies it with `openssl crl -verify` against the issuer certificate from `certs/`,
-  refuses anything outside the §4 profile, and appends new entries and `newest`. A weekly workflow
+  refuses anything outside the §4 profile, and appends new entries and `newest`. It writes `certs/revocations.json`,
+  its copy in `rust/certs/`, the copy's SHA-256 pin in `rust/src/roots.rs` and Java's `AppleRevocations.JSON_LINES`
+  together: a change to one without the others makes the core refuse the built-in list and Java's tests fail. A weekly
+  workflow
   (`apple-revocation-watch.yml`) runs it with `--check` and fails, so the owner is notified, when a new entry, a
   vanished entry not yet marked `delisted`, a reappearing entry, a changed reason, a refused list, or a WWDR
   intermediate not in `issuers` appears on Apple's PKI page (https://www.apple.com/certificateauthority/); a newer
