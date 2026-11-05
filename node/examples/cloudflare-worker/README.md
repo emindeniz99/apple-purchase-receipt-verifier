@@ -28,6 +28,10 @@ Open http://localhost:8787/ for the demo page.
 Deploy to your own account with `npx wrangler login`, then
 `npx wrangler deploy`.
 
+This repository deploys it with every release, from
+`.github/workflows/deploy-worker.yml`, once the post-publish smoke test
+has passed for that release (BOOTSTRAP.md, "Cloudflare Workers example").
+
 ## The demo page
 
 `/` serves [`public/index.html`](public/index.html), one HTML file with no
@@ -139,10 +143,15 @@ purchase history. Keep it that way if you extend it.
 
 ## Deployed
 
-https://aprv-example.emindeniz99.workers.dev, deployed on 2026-10-15 with
-wrangler 4.147.0 and package 0.12.0, the WebAssembly core (every response
-says which release in `X-Aprv-Version`). The Worker upload is 2,888 KiB,
-957 KiB gzipped, and starts in 2 ms.
+https://aprv-example.emindeniz99.workers.dev, deployed by
+`.github/workflows/deploy-worker.yml` with each release once its smoke test
+has passed; `/v1/info` and every response's `X-Aprv-Version` say which
+release it runs. The deploy then checks that `/v1/info` answers with the
+version it deployed.
+
+Measured on the first deploy, 2026-10-15, with wrangler 4.147.0 and package
+0.12.0, the WebAssembly core: the Worker upload is 2,888 KiB, 957 KiB
+gzipped, and starts in 2 ms.
 
 Checked against that URL on 2026-10-15: `/v1/info`, `X-Aprv-Version` and the
 page's package file report 0.12.0; the public sandbox receipt verifies on

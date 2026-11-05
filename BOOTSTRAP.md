@@ -34,7 +34,8 @@ Releases** carry `aprv.wasm`, the component, the server binaries and
 `SHA256SUMS` with the workflow's own token.
 
 Still open: RubyGems, NuGet, Packagist and Docker Hub (a first publish or
-a one-time setup each, below); crates.io, never published, on purpose; the
+a one-time setup each, below); the Cloudflare token the Workers example's
+deploy needs; crates.io, never published, on purpose; the
 `-wasm` Maven artifact, held until the owner flips
 `APRV_PUBLISH_JAVA_WASM`; two owner decisions that are not registries, the
 Maven Central release count and the Java 8 CI distribution; and the
@@ -212,6 +213,28 @@ Until that environment holds a token the job prints a notice and succeeds.
    add the secret `DOCKERHUB_TOKEN` (the token) and two variables:
    `DOCKERHUB_USERNAME` (the account that owns the token) and
    `DOCKERHUB_NAMESPACE` (where the image goes).
+
+## Cloudflare Workers example — a token and the account id
+
+`deploy-worker.yml` deploys `node/examples/cloudflare-worker` with each
+release once post-publish-smoke has passed for it, and on a manual
+dispatch. It installs the released npm package over the example's
+lockfile, checks its registry signature and provenance with
+`npm audit signatures`, runs `wrangler deploy`, and checks that
+https://aprv-example.emindeniz99.workers.dev/v1/info answers with the
+version it deployed (the repository variable `APRV_WORKER_URL` points the
+check elsewhere). Until the secrets below exist it skips the deploy with a
+notice.
+
+1. In the Cloudflare dashboard, create an API token (My Profile → API
+   Tokens) with the one permission Account → Workers Scripts → Edit,
+   limited to your account. Note the account id (Workers & Pages,
+   overview).
+2. In this repository's settings, create the environment `cloudflare` and
+   add the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. Run deploy-worker once by hand (Actions → deploy-worker → Run
+   workflow) to put the current release live; later releases deploy on
+   their own.
 
 ## Packagist (PHP) — layout A is landed, two owner actions remain
 
