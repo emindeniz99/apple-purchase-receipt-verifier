@@ -28,6 +28,10 @@ Open http://localhost:8787/ for the demo page.
 Deploy to your own account with `npx wrangler login`, then
 `npx wrangler deploy`.
 
+This repository deploys it with every release, from
+`.github/workflows/deploy-worker.yml`, once the post-publish smoke test
+has passed for that release (BOOTSTRAP.md, "Cloudflare Workers example").
+
 ## The demo page
 
 `/` serves [`public/index.html`](public/index.html), one HTML file with no

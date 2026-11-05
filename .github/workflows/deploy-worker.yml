@@ -1,0 +1,171 @@
+# Deploys the Cloudflare Workers example (node/examples/cloudflare-worker)
+# with the release that was just published and smoke-tested.
+#
+# The example's lockfile names the version it was last moved to, which lags
+# a release until a pull request moves it (a caret on a 0.x version never
+# reaches the next minor). So the job installs the released version itself,
+# from the registry, on top of the lockfile, checks that npm's registry
+# signature and provenance attestation hold for it, and deploys that. What
+# runs on the Worker is then exactly the package post-publish-smoke has just
+# installed and run.
+#
+# It needs a Cloudflare API token that can edit Workers scripts and the
+# account id, as secrets of the `cloudflare` environment (BOOTSTRAP.md,
+# "Cloudflare Workers example"). Until they exist the job says so and stops,
+# like the registry jobs that wait for an owner bootstrap.
+name: deploy-worker
+
+# zizmor flags workflow_run as dangerous because it runs in the base
+# repository with secrets, which is how fork pull requests escalate through
+# it. That path does not exist here: the trigger is post-publish-smoke, which
+# itself only runs after a release run or a manual dispatch (both need write
+# access), this workflow checks out main by name rather than anything from
+# the triggering run, downloads no artifacts from it, and reads only its
+# conclusion and its ref.
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [post-publish-smoke]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published npm version to deploy, without the v (default: version.txt on main)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  # To read the triggering smoke run's jobs.
+  actions: read
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy the Workers example
+    # A smoke run that passed, for a release tag, or a manual dispatch.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cloudflare
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      # The version is the one the smoke run tested (its ref is the release
+      # tag) and must be the one main carries: the deploy follows a release,
+      # never a tag that main has moved past or not reached. A smoke run
+      # whose jobs were all skipped (after a failed release) still concludes
+      # "success", so its npm leg must have run and passed: that leg is the
+      # install the Worker repeats.
+      - name: the version to deploy
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+          SMOKE_REF: ${{ github.event.workflow_run.head_branch }}
+          SMOKE_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          main_version=$(tr -d '[:space:]' < version.txt)
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            version="$INPUT_VERSION"
+          elif [ -n "${SMOKE_REF:-}" ]; then
+            npm_leg=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SMOKE_RUN/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | startswith("npm "))][0].conclusion // "absent"')
+            if [ "$npm_leg" != "success" ]; then
+              echo "::notice::post-publish-smoke's npm leg is '$npm_leg', not success; nothing to deploy."
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            version="${SMOKE_REF#v}"
+            if [ "$version" != "$main_version" ]; then
+              echo "::notice::post-publish-smoke tested $version but main is at $main_version; nothing to deploy."
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            version="$main_version"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$version' is not a release version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: the Cloudflare secrets exist
+        id: secrets
+        if: steps.version.outputs.deploy == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::notice::The cloudflare environment has no CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID yet. Skipping the deploy; see BOOTSTRAP.md, section \"Cloudflare Workers example\"."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A deploy job, so nothing is restored from a cache (AGENTS.md: publish
+      # jobs never cache).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: install the example, then the released package over it # zizmor: ignore[adhoc-packages]
+        if: steps.secrets.outputs.ready == 'true'
+        working-directory: node/examples/cloudflare-worker
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund "apple-purchase-receipt-verifier@$VERSION"
+          installed=$(node -p "require('./node_modules/apple-purchase-receipt-verifier/package.json').version")
+          if [ "$installed" != "$VERSION" ]; then
+            echo "::error::installed apple-purchase-receipt-verifier $installed, not $VERSION"
+            exit 1
+          fi
+          # The registry's signature and the package's provenance attestation.
+          npm audit signatures
+
+      - name: deploy
+        if: steps.secrets.outputs.ready == 'true'
+        working-directory: node/examples/cloudflare-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx --no-install wrangler deploy
+
+      # With the Worker's address set as the repository variable
+      # APRV_WORKER_URL, the deployed Worker must answer with the version
+      # just deployed. Without it the deploy is reported as is.
+      - name: the Worker answers with this version
+        if: steps.secrets.outputs.ready == 'true' && vars.APRV_WORKER_URL != ''
+        env:
+          URL: ${{ vars.APRV_WORKER_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 12); do
+            got=$(curl -fsS --max-time 10 "${URL%/}/v1/info" | jq -r .version || true)
+            if [ "$got" = "$VERSION" ]; then
+              echo "$URL serves $VERSION"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$URL/v1/info answered '${got:-nothing}', not $VERSION"
+          exit 1
