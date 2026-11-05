@@ -252,7 +252,8 @@ impl Settings {
     /// defaults. Roots and issuers are base64 of DER or PEM, PEM unwrapped
     /// to DER here; lists are base64 of the list's bytes; a distrust entry
     /// is an object of exactly two strings, `issuer` and `serial`. An empty
-    /// revocation array is no setting.
+    /// revocation array is no setting; an empty list entry is passed on,
+    /// for `init` to refuse.
     pub fn from_config_json(text: &str) -> Result<Settings, String> {
         let v: Value = serde_json::from_str(text)
             .map_err(|e| format!("configuration line is not JSON: {e}"))?;
@@ -284,6 +285,13 @@ impl Settings {
                 let s = l
                     .as_str()
                     .ok_or_else(|| format!("revocation_lists[{i}] is not a string"))?;
+                // An empty entry goes on to `init`, which refuses it as the
+                // component refuses any list it cannot read, so a client
+                // reads it as the configuration refused, as on every other
+                // engine, not as a server that failed to start.
+                if s.is_empty() {
+                    return Ok(Vec::new());
+                }
                 decode(s).map_err(|e| format!("revocation_lists[{i}]: {e}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -848,10 +856,11 @@ mod tests {
             refused(r#"{"revocation_lists":[1]}"#),
             "revocation_lists[0] is not a string"
         );
-        assert_eq!(
-            refused(r#"{"revocation_lists":[""]}"#),
-            "revocation_lists[0]: empty"
-        );
+        // An empty list is passed on for `init` to refuse, so a client
+        // reads the component's refusal, as on its other engines.
+        let empty_list = Settings::from_config_json(r#"{"revocation_lists":[""]}"#).unwrap();
+        assert_eq!(empty_list.revocation.lists, vec![Vec::<u8>::new()]);
+        assert_eq!(empty_list.config_json(), br#"{"revocation_lists":[""]}"#);
         assert!(refused(r#"{"revocation_lists":["AQ!D"]}"#)
             .starts_with("revocation_lists[0]: not standard base64"));
         assert_eq!(
