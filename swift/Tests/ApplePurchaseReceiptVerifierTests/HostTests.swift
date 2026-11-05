@@ -24,11 +24,13 @@ final class AbiTests: XCTestCase {
     }
 
     /// An accepting init answer states the most bytes of one input the
-    /// module needs (docs/rust-core/DECISIONS.md R42): a positive integer,
-    /// and nothing else beside `ok`.
+    /// module needs (docs/rust-core/DECISIONS.md R42), a positive integer,
+    /// and the revocation state of the configuration
+    /// (docs/design/revocation.md §8), and nothing else beside `ok`.
     func assertAccepts(_ answer: String, _ what: String = "", file: StaticString = #filePath, line: UInt = #line) {
         let reply = (try? JSONSerialization.jsonObject(with: Data(answer.utf8))) as? [String: Any]
-        XCTAssertEqual(reply.map { Set($0.keys) }, ["ok", "max_input_bytes"], "\(what): \(answer)", file: file, line: line)
+        let keys: Set<String> = ["ok", "max_input_bytes", "revocation_urls", "revocation_valid_until_ms"]
+        XCTAssertEqual(reply.map { Set($0.keys) }, keys, "\(what): \(answer)", file: file, line: line)
         XCTAssertEqual(reply?["ok"] as? Bool, true, "\(what): \(answer)", file: file, line: line)
         XCTAssertGreaterThan(reply?["max_input_bytes"] as? Int ?? 0, 0, "\(what): \(answer)", file: file, line: line)
     }
@@ -115,6 +117,37 @@ final class AbiTests: XCTestCase {
         XCTAssertEqual(Config.initJson([[0xFB, 0xFF], []]), Array(#"{"roots":["+/8=",""]}"#.utf8))
         XCTAssertEqual(Config.initJson([]), Array(#"{"roots":[]}"#.utf8))
         XCTAssertEqual(Config.initJson(nil), Array("{}".utf8))
+        XCTAssertEqual(Config().initJson, Array("{}".utf8), "empty revocation settings are left out")
+    }
+
+    /// The revocation settings reach init as docs/design/revocation.md §8
+    /// names them: lists and issuers as base64 bytes, exactly as roots are
+    /// passed, and distrust entries as `{"issuer","serial"}` with the
+    /// strings as given, unchecked here: the module judges them. The members
+    /// are written in sorted order.
+    func testTheRevocationSettingsAreWrittenAsInitReadsThem() {
+        let entries = [RevokedCertificate(issuer: "Ab", serial: "0x/1"), RevokedCertificate(issuer: "", serial: "\u{0}")]
+        let config = Config(roots: [[1]], revocationLists: [[0xFB, 0xFF], [2]], revocationIssuers: [[3]], distrust: entries)
+        let want =
+            #"{"distrust":[{"issuer":"Ab","serial":"0x/1"},{"issuer":"","serial":"\u0000"}],"#
+            + #""revocation_issuers":["Aw=="],"revocation_lists":["+/8=","Ag=="],"roots":["AQ=="]}"#
+        XCTAssertEqual(String(decoding: config.initJson, as: UTF8.self), want)
+        let issuersOnly = Config(revocationIssuers: [[3]])
+        XCTAssertEqual(String(decoding: issuersOnly.initJson, as: UTF8.self), #"{"revocation_issuers":["Aw=="]}"#)
+    }
+
+    /// init states the revocation state of the configuration
+    /// (docs/design/revocation.md §7), and each instance keeps it: with the
+    /// built-in roots, Apple's four list URLs and no list held; with the
+    /// caller's own roots and no added issuer, nothing.
+    func testInitStatesTheRevocationStateOfTheConfiguration() throws {
+        let apple = [
+            "http://crl.apple.com/root.crl", "http://crl.apple.com/applerootcag3.crl", "http://crl.apple.com/wwdrg5.crl",
+            "http://crl.apple.com/wwdrg6.crl",
+        ]
+        XCTAssertEqual(try initialized().revocation, RevocationState(urls: apple, validUntilMs: nil))
+        let own = try initialized(Config.initJson([try TestFixtures.bytes(TestFixtures.jwsRoot)]))
+        XCTAssertEqual(own.revocation, RevocationState(urls: [], validUntilMs: nil))
     }
 
     func testTheFourOperationsAnswer() throws {
@@ -322,7 +355,8 @@ final class FacadeTests: XCTestCase {
     func testCallerMisuseIsAConfigErrorAtStartup() throws {
         XCTAssertThrowsError(try Verifier(config: Config(roots: []))) { XCTAssertTrue($0 is ConfigError, "\($0)") }
         XCTAssertThrowsError(try Verifier(config: Config(roots: [Array("not a certificate".utf8)]))) {
-            XCTAssertTrue(($0 as? ConfigError)?.detail.hasPrefix("trust anchor is not a certificate") == true, "\($0)")
+            let detail = ($0 as? ConfigError)?.detail ?? ""
+            XCTAssertTrue(detail.hasPrefix("the verification module refused the configuration: "), "\($0)")
         }
         XCTAssertNoThrow(try Verifier(config: Config(roots: [try TestFixtures.bytes(TestFixtures.receiptRoot)])))
     }
@@ -485,10 +519,82 @@ final class FacadeTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(try Wire.initAnswer(#"{"ok":true,"max_input_bytes":3145729}"#), 3_145_729)
+        let stated = #"{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":null}"#
+        XCTAssertEqual(try Wire.initAnswer(stated).maxInputBytes, 3_145_729)
         XCTAssertThrowsError(try Wire.initAnswer(#"{"ok":false,"message":"no"}"#)) { error in
             guard case HostError.initRefused(let message) = error, message == "no" else { return XCTFail("\(error)") }
         }
+    }
+
+    /// An accepting init answer without the revocation state comes from a
+    /// module older than revocation (docs/design/revocation.md §8): the
+    /// instance is refused as an unusable answer, never used. The state is
+    /// read as the module wrote it, `null` included.
+    func testAnInitAnswerWithoutTheRevocationStateIsUnusable() throws {
+        let pool = Pool(module: .success(try TestFixtures.double()), config: Array("m".utf8))
+        XCTAssertThrowsError(try pool.create()) { error in
+            guard case HostError.unusableAnswer(let export, let detail) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(export, "init")
+            XCTAssertTrue(detail.contains("revocation_urls"), detail)
+        }
+        XCTAssertNil(pool.revocation, "no instance started")
+        let head = #"{"ok":true,"max_input_bytes":1"#
+        for tail in [
+            "}", #","revocation_urls":[]}"#, #","revocation_valid_until_ms":null}"#,
+            #","revocation_urls":null,"revocation_valid_until_ms":null}"#,
+            #","revocation_urls":[1],"revocation_valid_until_ms":null}"#,
+            #","revocation_urls":"u","revocation_valid_until_ms":null}"#,
+            #","revocation_urls":[],"revocation_valid_until_ms":"1"}"#, #","revocation_urls":[],"revocation_valid_until_ms":1.5}"#,
+        ] {
+            XCTAssertThrowsError(try Wire.initAnswer(head + tail), tail) { error in
+                guard case HostError.unusableAnswer(let export, _) = error, export == "init" else {
+                    return XCTFail("\(tail): \(error)")
+                }
+            }
+        }
+        let held = try Wire.initAnswer(head + #","revocation_urls":["u","v"],"revocation_valid_until_ms":1795046400000}"#)
+        let want = RevocationState(urls: ["u", "v"], validUntilMs: 1_795_046_400_000)
+        XCTAssertEqual(held, InitAnswer(maxInputBytes: 1, revocation: want))
+        let none = try Wire.initAnswer(head + #","revocation_urls":[],"revocation_valid_until_ms":null}"#)
+        XCTAssertEqual(none.revocation, RevocationState(urls: [], validUntilMs: nil))
+    }
+
+    /// The verifier reports the revocation state init answered, read once,
+    /// from the instance started with it, and computes nothing: over the
+    /// double, the built-in roots get Apple's four URLs and `nil`, and a
+    /// configuration that names something gets the double's two test URLs
+    /// and its date. That first instance then serves the first call.
+    func testTheVerifierReportsTheRevocationStateInitAnswered() throws {
+        let apple = try Verifier(starting: Config(), module: .success(try TestFixtures.double()))
+        XCTAssertEqual(apple.pool.idleCount, 1, "the instance that checked the configuration is kept")
+        XCTAssertEqual(
+            apple.revocationUrls,
+            [
+                "http://crl.apple.com/root.crl", "http://crl.apple.com/applerootcag3.crl", "http://crl.apple.com/wwdrg5.crl",
+                "http://crl.apple.com/wwdrg6.crl",
+            ])
+        XCTAssertNil(apple.revocationValidUntil)
+        let named = Config(distrust: [RevokedCertificate(issuer: "i", serial: "s")])
+        let test = try Verifier(starting: named, module: .success(try TestFixtures.double()))
+        XCTAssertEqual(test.revocationUrls, ["http://crl.example.test/a.crl", "https://crl.example.test/a.crl"])
+        XCTAssertEqual(test.revocationValidUntil, Date(timeIntervalSince1970: 1_795_046_400))
+        XCTAssertEqual(test.verifySignedData(jws: #"{"verified":true,"payload":"{}","environment":null}"#).payload?.json, "{}")
+        XCTAssertEqual(test.pool.idleCount, 1, "the first call ran on the started instance")
+        XCTAssertEqual(test.revocationUrls.count, 2, "unchanged by the calls")
+    }
+
+    /// A configuration the module refuses is a ``ConfigError`` at startup
+    /// carrying the module's message, whichever setting it names; and the
+    /// unstarted verifier the tests build reports no revocation state.
+    func testARefusedConfigurationIsAConfigErrorAtStartup() throws {
+        let long = RevokedCertificate(issuer: String(repeating: "a", count: 64), serial: "01")
+        XCTAssertThrowsError(try Verifier(starting: Config(distrust: [long]), module: .success(try TestFixtures.double()))) {
+            let detail = ($0 as? ConfigError)?.detail
+            XCTAssertEqual(detail, "the verification module refused the configuration: the double refuses this configuration")
+        }
+        let unstarted = try verifier()
+        XCTAssertEqual(unstarted.revocationUrls, [])
+        XCTAssertNil(unstarted.revocationValidUntil)
     }
 
     /// The input length is the module's: an instance cuts every input to

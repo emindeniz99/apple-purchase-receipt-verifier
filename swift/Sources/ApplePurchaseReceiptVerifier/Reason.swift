@@ -1,6 +1,6 @@
 /// Why a verification failed.
 ///
-/// The set is closed: these eight values are the whole contract, and adding
+/// The set is closed: these nine values are the whole contract, and adding
 /// one is a breaking change.
 public enum Reason: String, Sendable, CaseIterable {
     /// The base64, ASN.1, CMS or JWS structure is broken, or a structural
@@ -22,6 +22,10 @@ public enum Reason: String, Sendable, CaseIterable {
     case unreadablePayload = "UNREADABLE_PAYLOAD"
     /// The library failed before it could decide. Alert; do not retry.
     case internalError = "INTERNAL_ERROR"
+    /// A certificate on the path is revoked: by the list built into the
+    /// verification module, by ``Config/distrust``, or by a list passed in
+    /// ``Config/revocationLists``. Judged whatever date the payload states.
+    case certificateRevoked = "CERTIFICATE_REVOKED"
 }
 
 /// A verification verdict of "no".

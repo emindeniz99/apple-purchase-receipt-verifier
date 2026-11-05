@@ -194,7 +194,7 @@ final class PortBehaviourTests: XCTestCase {
         }
         switch result.failure!.reason {
         case .malformed, .tooLarge: return 21002
-        case .invalidSignature, .untrustedChain, .invalidCertificate, .invalidCertificatePurpose: return 21003
+        case .invalidSignature, .untrustedChain, .invalidCertificate, .invalidCertificatePurpose, .certificateRevoked: return 21003
         case .unreadablePayload, .internalError: return 21009
         }
     }

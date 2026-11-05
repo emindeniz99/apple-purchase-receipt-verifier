@@ -20,6 +20,9 @@ final class Pool: @unchecked Sendable {
     private let maxIdle: Int
     private let lock = NSLock()
     private var idle: [Guest] = []
+    /// What the first instance's init answered about revocation. Every
+    /// instance runs init with the same configuration, so it is read once.
+    private var answered: RevocationState?
 
     init(
         module: Result<AprvModule, HostError>, config: [UInt8],
@@ -46,7 +49,26 @@ final class Pool: @unchecked Sendable {
     func create() throws(HostError) -> Guest {
         let guest = try Guest(module.get(), random: random)
         try guest.start(config)
+        lock.lock()
+        if answered == nil { answered = guest.revocation }
+        lock.unlock()
         return guest
+    }
+
+    /// Creates the first instance now and keeps it for the first call, so
+    /// that the configuration is checked, and its revocation state read, at
+    /// startup.
+    func start() throws(HostError) {
+        let guest = try create()
+        give(guest)
+    }
+
+    /// The revocation state the first instance's init stated, or `nil`
+    /// while no instance has started.
+    var revocation: RevocationState? {
+        lock.lock()
+        defer { lock.unlock() }
+        return answered
     }
 
     /// How many instances wait for the next call.

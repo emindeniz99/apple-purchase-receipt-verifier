@@ -12,9 +12,10 @@ import Foundation
 /// cryptography and no trust decision of its own.
 ///
 /// Immutable and thread-safe (`Sendable`); share one across threads. It
-/// owns a small pool of module instances: each is set up with the roots once,
-/// serves one call at a time, and is discarded if the module traps. There
-/// is nothing to close.
+/// owns a small pool of module instances: each is set up with the
+/// configuration once, serves one call at a time, and is discarded if the
+/// module traps. There is nothing to close. To take new revocation lists,
+/// build a new `Verifier` and swap the reference.
 ///
 /// The verify methods never throw for any input. A failure of the machinery
 /// itself (the module trapped, gave an answer this package cannot read, or
@@ -36,28 +37,63 @@ public struct Verifier: Sendable {
 
     /// A verifier for `config`. The first `Verifier` of a process loads
     /// aprv.wasm (checks its SHA-256 and parses it, a few milliseconds).
-    /// When `config` gives roots, one instance is created here, at startup,
-    /// to check them; the instances that serve calls are created on first
-    /// use.
+    /// One instance is created here, at startup: it checks the
+    /// configuration, states the revocation state, and then serves the
+    /// first call. Further instances are created when calls overlap.
     ///
-    /// - Throws: ``ConfigError`` for an empty root set, or when the
-    ///   verification module refuses one of the caller's roots as a
-    ///   certificate or cannot be loaded to check them. The roots are
-    ///   handed to a fresh module instance here, so a bad one is refused
-    ///   at startup rather than on the first call. The default roots are
-    ///   not checked here and never throw.
+    /// - Throws: ``ConfigError`` for an empty root set, when the
+    ///   verification module refuses the configuration (one of the caller's
+    ///   roots is not a certificate, or a revocation setting is refused; the
+    ///   message names the first problem and its index), or when the
+    ///   verification module cannot be loaded. So a bad configuration is
+    ///   refused at startup rather than on the first call.
     public init(config: Config) throws {
-        try config.check()
-        self.init(config: config, module: AprvModule.bundled)
+        try self.init(starting: config, module: AprvModule.bundled)
     }
 
-    // Skips `Config.check()`: a `Config(roots: [])` here reaches the module as `{"roots":[]}`, which init refuses.
+    /// ``init(config:)`` over any module: tests start a verifier over the
+    /// ABI double this way.
+    init(starting config: Config, module: Result<AprvModule, HostError>) throws {
+        try config.check()
+        self.init(config: config, module: module)
+        do {
+            try pool.start()
+        } catch .initRefused(let message) {
+            throw ConfigError("the verification module refused the configuration: \(message)")
+        } catch {
+            throw ConfigError("the verification module could not check the configuration: \(error)")
+        }
+    }
+
+    // Skips `Config.check()` and starts no instance: a `Config(roots: [])` here reaches the module as `{"roots":[]}`, which
+    // init refuses, on the first call.
     init(
         config: Config, module: Result<AprvModule, HostError>,
         random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes
     ) {
         self.pool = Pool(module: module, config: config.initJson, random: random)
         self.clock = config.clock
+    }
+
+    /// The URLs of the revocation lists this verifier expects, as the
+    /// verification module states them: with Apple's roots, the lists of
+    /// Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6, then the
+    /// distribution points of added ``Config/revocationIssuers``. Download
+    /// these with your own HTTP client, on your own schedule, and pass the
+    /// bytes as ``Config/revocationLists`` to a new `Verifier`. Empty with
+    /// your own roots and no added issuers.
+    public var revocationUrls: [String] {
+        pool.revocation?.urls ?? []
+    }
+
+    /// The earliest `nextUpdate` among the revocation lists held for the
+    /// issuers this verifier expects a list from. `nil` when any of them has
+    /// no list held (none passed, or the list was ignored): live revocation
+    /// is then not fully in force. A date in the past means a list is
+    /// stale. Monitor both; neither fails a call.
+    public var revocationValidUntil: Date? {
+        guard let millis = pool.revocation?.validUntilMs else { return nil }
+        return Date(timeIntervalSince1970: Double(millis) / 1000)
     }
 
     /// Verifies a legacy PKCS#7 app receipt, given as the base64 string a
