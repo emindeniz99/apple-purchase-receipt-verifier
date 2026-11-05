@@ -304,7 +304,8 @@ func refreshRevocation(ctx context.Context, client *http.Client) error {
         }
         body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
         response.Body.Close()
-        if err == nil && response.StatusCode == http.StatusOK {
+        // The module refuses a list over 1 MiB; skip it like a missing one.
+        if err == nil && response.StatusCode == http.StatusOK && len(body) <= 1<<20 {
             lists = append(lists, body)
         }
     }
