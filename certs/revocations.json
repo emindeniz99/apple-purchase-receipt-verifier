@@ -1,0 +1,180 @@
+{
+  "comment": "Certificates Apple has revoked on the lists of the issuers below, compiled into the core and into Java and always checked (docs/design/revocation.md). Written by tools/refresh-apple-revocations.mjs, never by hand. Append-only: an entry stays when Apple drops it from a later list, and then gains a delisted member naming the first list without it. certificateHold and removeFromCRL entries are not added. Serials and CRL Numbers are uppercase hex, an even number of digits, no leading 00 pair.",
+  "issuers": [
+    {
+      "id": "0274fe858b04726bb2c6fd7ba73fe4c63a1d076f6eff78373bdb81498151c86e",
+      "name": "Apple Root CA",
+      "certificate": null,
+      "list": "http://crl.apple.com/root.crl",
+      "newest": {
+        "crlNumber": null,
+        "thisUpdate": "2026-08-25T00:06:52Z"
+      }
+    },
+    {
+      "id": "e691a373c3e637bf2d2e0abc6056ea4e5413c90414b47b0b0133ad3cb757be57",
+      "name": "Apple Root CA - G3",
+      "certificate": null,
+      "list": "http://crl.apple.com/applerootcag3.crl",
+      "newest": {
+        "crlNumber": "38",
+        "thisUpdate": "2026-08-25T00:08:08Z"
+      }
+    },
+    {
+      "id": "c4c7a18465d55f4f7d20ff2a525bceafb55d860fc3b59a1981b04783fd74f96b",
+      "name": "Apple Worldwide Developer Relations Certification Authority G5",
+      "certificate": "certs/revocation-issuers/AppleWWDRCAG5.cer",
+      "list": "http://crl.apple.com/wwdrg5.crl",
+      "newest": {
+        "crlNumber": "076B",
+        "thisUpdate": "2026-11-04T21:46:46Z"
+      }
+    },
+    {
+      "id": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "name": "Apple Worldwide Developer Relations Certification Authority G6",
+      "certificate": "certs/revocation-issuers/AppleWWDRCAG6.cer",
+      "list": "http://crl.apple.com/wwdrg6.crl",
+      "newest": {
+        "crlNumber": "0857",
+        "thisUpdate": "2026-11-05T13:36:46Z"
+      }
+    }
+  ],
+  "revoked": [
+    {
+      "issuer": "0274fe858b04726bb2c6fd7ba73fe4c63a1d076f6eff78373bdb81498151c86e",
+      "serial": "3EDF4E5729AECD39",
+      "reason": "cessationOfOperation",
+      "revocationDate": "2024-12-12T21:48:43Z",
+      "crlNumber": null
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "37D34791D02A56160329892A81C5A0EA",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-03-06T23:59:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "60B6E8776CFE8C8E0710E521ADCC2C6F",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-07-01T09:16:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "4B6F88DE48E5822739E368CBD31CE9E5",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-04-15T17:41:01Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "375229468211E66808CDD808A28FC2A3",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-03-10T20:41:01Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "6FAFF74C8A3FAE56DF44F8355EFF65DC",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-08-13T21:05:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "1E06A88C9A5E1FDC2072E5BE9AF3FCF7",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-08-13T21:05:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "766930566FF29A587D8BE196BC4F00C5",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-05-04T15:03:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "1AB313C1E745231DE19F33ED595D0A72",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-03-28T18:37:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "1737BF8D15406B20CBEA8828A33BD79F",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-09-15T01:30:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "54884CB34A766BF5418AD35CF603032E",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-02-09T12:39:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "42092A8296424852A12D24CCDBC8CA0B",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-02-09T13:54:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "48E58537C0319BD157F1049E61936002",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-04-16T23:12:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "5D63F49A8AF94ED7CF7FC93AFB26CC91",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-06-24T15:52:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "4889DD7445B574454F49F9259571A30F",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-08-01T03:32:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "5610AC1F192184591CF3E60348248E91",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-08-14T11:03:51Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "6F39270AEA7D013322DCD61AC31AA4D0",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-10-22T10:55:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "535555D671233C535C0D93C542134143",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-10-22T10:49:00Z",
+      "crlNumber": "0857"
+    },
+    {
+      "issuer": "ccb38ff9530770495de3a1cf2a9c868e7cbe76f871a46ee485699a7d32dd0bee",
+      "serial": "21F4EE77681AA4D6C0547468875A0AA9",
+      "reason": "keyCompromise",
+      "revocationDate": "2026-10-21T10:50:00Z",
+      "crlNumber": "0857"
+    }
+  ]
+}
