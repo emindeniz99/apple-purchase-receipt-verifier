@@ -75,7 +75,17 @@ final class Aprv
         stream_set_timeout($pipes[1], 30);
         $line = fgets($pipes[1]);
         if (!is_string($line) || preg_match('/^APRV_LISTEN=(127\.0\.0\.1:\d+)$/', trim($line), $match) !== 1) {
+            // A server that printed something else, or nothing within the
+            // timeout, may still be running, and reading its stderr or
+            // closing it would then wait for it forever: stop it first. One
+            // that closed its stdout is exiting, and its exit status says
+            // whether it refused its configuration.
+            if (is_string($line) || stream_get_meta_data($pipes[1])['timed_out']) {
+                proc_terminate($process);
+            }
             $error = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
             $code = proc_close($process);
             if ($code === 2) {
                 throw new InvalidArgumentException('aprv serve refused its configuration: ' . $error);

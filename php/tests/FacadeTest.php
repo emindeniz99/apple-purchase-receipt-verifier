@@ -200,7 +200,7 @@ final class FacadeTest extends TestCase
         yield 'a scalar' => ['"x"'];
         yield 'an empty object' => ['{}'];
         yield 'verified as a string' => ['{"verified":"true","payload":{}}'];
-        yield 'a reason outside the eight' => ['{"verified":false,"reason":"INVALID_JWS_FORMAT","message":"m"}'];
+        yield 'a reason this package does not know' => ['{"verified":false,"reason":"INVALID_JWS_FORMAT","message":"m"}'];
         yield 'a failure without a message' => ['{"verified":false,"reason":"MALFORMED"}'];
         yield 'a verified receipt without a payload' => ['{"verified":true,"environment":null}'];
         yield 'a receipt payload that is a string' => ['{"verified":true,"payload":"x","environment":null}'];

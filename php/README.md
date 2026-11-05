@@ -231,6 +231,9 @@ $verifier->revocationValidUntil();    // ?DateTimeImmutable: alert when null or 
 - `revocationIssuers` adds CA certificates that sign lists (DER or PEM,
   like the roots), for an Apple intermediate a release does not know yet.
   Its own list URL cannot be known from the certificate; add it by hand.
+  With a server URL, give one DER string per issuer certificate: the
+  server reports the SHA-256 of each certificate's DER, the client hashes
+  each `Config` issuer as given, and a PEM string never matches.
 - `distrust` names certificates to refuse: the issuer id (64 hex digits,
   the SHA-256 of the issuing CA's subject Name and public key as they
   appear in its certificate) and the serial in hex. At most 1,000.
@@ -421,7 +424,7 @@ Apple's own endpoint, it checks no bundle id: compare
 |---|---|
 | 0 | Valid. `environment` and `receipt` are present in the response. |
 | 21002 | `receipt-data` is missing, not a string, too large, or the body isn't valid JSON. |
-| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
+| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired, wrong-purpose or revoked certificate). |
 | 21007 | A sandbox receipt was sent to `Environment::Production`. |
 | 21008 | A production receipt was sent to `Environment::Sandbox`. |
 | 21009 | Internal data access error: the receipt authenticated but its signed content, or one of its in-app purchases, does not parse, or the library itself failed. Deterministic; alert, don't retry. |

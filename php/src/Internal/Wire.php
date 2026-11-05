@@ -98,7 +98,7 @@ final class Wire
         }
         $reason = Reason::tryFrom($token);
         if ($reason === null) {
-            throw self::bad('a reason outside the eight of 0.7');
+            throw self::bad('a reason this package does not know');
         }
 
         // The module's own verdicts carry no cause: it is a Rust-only chain.
