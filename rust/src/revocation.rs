@@ -426,15 +426,21 @@ impl Candidate {
 }
 
 /// Why a certificate is not accepted as a list issuer (§6), or `Ok` with
-/// the root that signed it.
+/// the root that signed it: the first root whose `subject` is
+/// byte-identical to the certificate's `issuer` Name, as §4 matches a list
+/// to its candidates, and whose key verifies its signature.
 fn authenticate<'a>(
     certificate: &Certificate,
     roots: &'a [Candidate],
     revoked: impl Fn(&str, &str) -> bool,
 ) -> Result<&'a Candidate, &'static str> {
+    let issuer_name = certificate.issuer_name_der();
     let root = roots
         .iter()
-        .find(|root| certificate.signed_by(&root.certificate))
+        .find(|root| {
+            issuer_name.as_deref() == Some(root.subject.as_slice())
+                && certificate.signed_by(&root.certificate)
+        })
         .ok_or("the certificate does not chain to a configured root")?;
     if !certificate.is_ca() {
         return Err("the certificate is not a CA");
@@ -445,12 +451,10 @@ fn authenticate<'a>(
     if !certificate.has_extension(WWDR_INTERMEDIATE_OID) {
         return Err("the certificate lacks Apple's WWDR marker OID 1.2.840.113635.100.6.2.1");
     }
-    let serial = certificate
-        .serial()
-        .as_ref()
-        .and_then(integer_hex)
-        .ok_or("the certificate's serial is negative or does not read")?;
-    if revoked(&root.id, &serial) {
+    // A negative serial is never matched (§2): such an issuer is accepted
+    // and can never be revoked, as Java judges it.
+    let serial = certificate.serial().as_ref().and_then(integer_hex);
+    if serial.is_some_and(|serial| revoked(&root.id, &serial)) {
         return Err("the certificate is revoked");
     }
     Ok(root)

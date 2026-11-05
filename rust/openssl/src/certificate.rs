@@ -262,6 +262,23 @@ impl Certificate {
     /// are not where RFC 5280 section 4.1 puts them.
     #[must_use]
     pub fn subject_and_key_der(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        let [subject, key] = self.tbs_fields([4, 5])?;
+        Some((subject, key))
+    }
+
+    /// The certificate's `issuer` Name as the bytes it has inside the
+    /// certificate's `TBSCertificate`, never a re-encoding, as
+    /// [`Certificate::subject_and_key_der`] reads its fields.
+    #[must_use]
+    pub fn issuer_name_der(&self) -> Option<Vec<u8>> {
+        let [issuer] = self.tbs_fields([2])?;
+        Some(issuer)
+    }
+
+    /// The `TBSCertificate` fields at `indices`, counted from
+    /// serialNumber (0: serialNumber, 1: signature, 2: issuer, 3: validity,
+    /// 4: subject, 5: subjectPublicKeyInfo), each as encoded.
+    fn tbs_fields<const N: usize>(&self, indices: [usize; N]) -> Option<[Vec<u8>; N]> {
         let der = self.to_der();
         let certificate = crate::walk::children(&der)?;
         let tbs = crate::walk::children(certificate.first()?)?;
@@ -273,9 +290,11 @@ impl Certificate {
                 first.class == crate::sys::V_ASN1_CONTEXT_SPECIFIC && first.tag == 0
             });
         let fields = tbs.get(usize::from(skip)..)?;
-        // serialNumber, signature, issuer, validity, subject,
-        // subjectPublicKeyInfo.
-        Some((fields.get(4)?.to_vec(), fields.get(5)?.to_vec()))
+        let mut out = indices.map(|_| Vec::new());
+        for (slot, index) in out.iter_mut().zip(indices) {
+            *slot = fields.get(index)?.to_vec();
+        }
+        Some(out)
     }
 
     /// The serial number, as OpenSSL holds it.

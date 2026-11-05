@@ -468,6 +468,58 @@ fn an_issuer_its_root_holds_is_refused_when_the_configuration_is_built() {
 }
 
 #[test]
+fn an_issuer_with_a_negative_serial_is_accepted_and_never_revoked() {
+    // A negative serial is never matched (§2), so an added issuer whose
+    // serial is negative is accepted (Java judges it the same way) and no
+    // list or distrust entry can name it. Its own list is still read.
+    let setup = setup();
+    let key = pki::Key::rsa();
+    let mut spec = pki::CertSpec::new(
+        pki::name("Negative Serial WWDR CA"),
+        subject(&setup.pki.root),
+        key.spki(),
+    );
+    spec.serial = vec![0xFF]; // -1
+    spec.extensions.push(pki::basic_constraints(true, None));
+    spec.extensions.push(pki::marker(pki::WWDR_OID, pki::NULL));
+    let issuer = spec.sign(&setup.pki.root_key);
+    let root_id = issuer_id(&setup.pki.root);
+    let root_list = list(
+        &subject(&setup.pki.root),
+        &setup.pki.root_key,
+        NOW - DAY_MS,
+        NOW + 30 * DAY_MS,
+        Some(1),
+        &[Entry {
+            serial: vec![0xFF],
+            reason: Some(KEY_COMPROMISE),
+        }],
+    );
+    let own_list = list(
+        &pki::name("Negative Serial WWDR CA"),
+        &key,
+        NOW - DAY_MS,
+        NOW + 14 * DAY_MS,
+        Some(1),
+        &[],
+    );
+    let verifier = Verifier::new(
+        setup
+            .builder()
+            .revocation_lists([root_list, own_list])
+            .revocation_issuers([common::anchor_from_der(&issuer)])
+            .distrust([(root_id, "FF".to_owned())])
+            .build()
+            .expect("an issuer with a negative serial is accepted"),
+    );
+    assert_eq!(
+        verifier.revocation_valid_until(),
+        Some(NOW + 14 * DAY_MS),
+        "the issuer's own list is held"
+    );
+}
+
+#[test]
 fn the_clock_is_read_only_for_a_matching_hold() {
     // The receipt carries its creation date, so only a certificateHold entry
     // that matches its signer needs the time: a clock that panics shows
