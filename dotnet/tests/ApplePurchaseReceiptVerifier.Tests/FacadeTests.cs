@@ -159,6 +159,39 @@ public class FacadeTests
 
     private static int LastLength(AprvInstance instance) => (int)instance.Raw.GetFunction("last_len")!.Invoke()!;
 
+    /// <summary>
+    /// The facade encodes only as much of an input as the instance passes on,
+    /// and what it encodes, once cut to the stated length, is the whole
+    /// input's bytes cut the same way: the module sees the same bytes and
+    /// gives the same answer, multi-byte characters, surrogate pairs and lone
+    /// surrogates at the cut included. A string far over the length is not
+    /// encoded whole.
+    /// </summary>
+    [Fact]
+    public void AnInputIsEncodedOnlyAsFarAsTheInstanceCutsIt()
+    {
+        UTF8Encoding utf8 = new(false, false);
+        string[] inputs =
+        {
+            string.Empty, "abc", "abcdefgh", "ééééé", "€€€€€€",
+            "a\U0001F600\U0001F600\U0001F600", "abc\U0001F600x", "abcd\uD800\uD800x", "ab\uDC00\U0001F600\uD800",
+        };
+        foreach (string input in inputs)
+        {
+            byte[] whole = utf8.GetBytes(input);
+            Assert.Equal(whole, VerifierImpl.InputBytes(input, null));
+            for (int max = 1; max <= 16; max++)
+            {
+                Assert.Equal(Cut(whole, max), Cut(VerifierImpl.InputBytes(input, max), max));
+            }
+        }
+
+        Assert.Empty(VerifierImpl.InputBytes(null, 4));
+        Assert.Equal(15, VerifierImpl.InputBytes(new string('€', 1_000_000), 4).Length);
+    }
+
+    private static byte[] Cut(byte[] bytes, int max) => bytes.Length > max ? bytes[..max] : bytes;
+
     // --- 4. ABI mismatch ------------------------------------------------------
 
     [Fact]

@@ -468,10 +468,26 @@ abstract class ConformanceBase extends TestCase
         }
     }
 
+    /**
+     * Numbers compare by value, never through a rounded double. json_decode
+     * gives an int for an integer literal inside int64 and a float for any
+     * other number, an integer past int64 included. Two ints compare as ints,
+     * so 2^63-2 does not pass for 2^63-1. An int and a float are equal only
+     * where a double holds every integer exactly (2^53), so 2^63, decoded as
+     * a float, never matches 2^63-1, while 1722945600000 still matches
+     * 1722945600000.0. Two floats compare as floats: the only floats the cases
+     * pin are non-integers or an exponent form (1E+300), never an integer
+     * past int64.
+     */
     private static function fieldsEqual(mixed $got, mixed $want): bool
     {
-        if (is_int($got) || is_float($got)) {
-            return (is_int($want) || is_float($want)) && (float) $got === (float) $want;
+        if ((is_int($got) || is_float($got)) && (is_int($want) || is_float($want))) {
+            if (is_int($got) === is_int($want)) {
+                return $got === $want;
+            }
+            $exact = 2 ** 53;
+
+            return abs($got) <= $exact && abs($want) <= $exact && (float) $got === (float) $want;
         }
 
         return $got === $want;

@@ -44,7 +44,7 @@ test('reads every other pin from the files that hold it', () => {
   assert.deepEqual(Object.keys(others), [
     'cbindgen', 'spectral-cli', 'Gradle', 'rustup', 'symfony/process', 'schemathesis', 'zizmor', 'ty',
     'cargo-deny', 'cargo-fuzz', 'cargo-cyclonedx', 'Maven', 'build', 'setuptools', 'Spring Boot', 'bun',
-    'deno', 'workerd', '@bytecodealliance/weval', 'minimatch', 'sharp', 'uv', 'age', 'palantir-java-format',
+    'deno', 'workerd', 'minimatch', 'sharp', 'uv', 'age', 'palantir-java-format',
     'openssl-sys',
   ]);
   for (const version of Object.values(others)) assert.match(version, /^\d+(\.\d+)+$/);
@@ -68,6 +68,17 @@ test('reads the pins whose shape a regex could misread', () => {
   // Spring Boot: the first entry may be a Boot line or not.
   assert.equal(readPin('        boot: ["4.0.8", "4.1.1"]\n', pin('Spring Boot')), '4.1.1');
   assert.equal(readPin('        boot: ["pom", "4.1.1"]\n', pin('Spring Boot')), '4.1.1');
+  // ...and java-wasm-consumers' boot-<version> leg must name the same one.
+  const boot = (javaBoot, consumer) =>
+    `        boot: ["pom", "${javaBoot}"]\n` +
+    `          -Dspring-boot.version=$BOOT\n` +
+    `        consumer: [jvm-interop, boot-pom${consumer}]\n` +
+    '            if [ "$CONSUMER" != boot-pom ]; then boot=("-Dspring-boot.version=${CONSUMER#boot-}"); fi\n' +
+    '            mvn -B -f java/samples/spring-boot-smoke/pom.xml test\n';
+  assert.equal(readPin(boot('4.1.1', ', boot-4.1.1'), pin('Spring Boot')), '4.1.1');
+  assert.throws(() => readPin(boot('4.1.2', ', boot-4.1.1'), pin('Spring Boot')), /pins Spring Boot at 4\.1\.2 and 4\.1\.1/);
+  // A consumer matrix that lost its Boot version is not a quiet pass.
+  assert.throws(() => readPin(boot('4.1.1', ''), pin('Spring Boot')), /runs Spring Boot 2 times and names its version 1 times/);
   // openssl-sys: the package's own version, not a dependency's.
   const manifest = '[package]\nname = "openssl-sys"\nversion = "0.9.117"\n\n[dependencies.libc]\nversion = "0.2"\n';
   assert.equal(readPin(manifest, pin('openssl-sys')), '0.9.117');
@@ -156,6 +167,8 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
       '          - { image: "ghcr.io/astral-sh/uv:python3.12-alpine@' + D('c') + '" } # python3.12-alpine, uv 0.13.6',
       '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
       'ziglang==0.17.0 --hash=sha256:' + 'd'.repeat(64),
+      // buildx's driver image, as a `--driver-opt image=` value.
+      '            --driver-opt image=moby/buildkit:buildx-stable-1@' + D('f'),
     ].join('\n') },
     { file: 'b.yml', text: '            swift:6.3@' + D('a') + ' \\\n' },
   ]);
@@ -163,6 +176,7 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
     { name: 'swift', tag: '6.3', digest: D('a'), files: ['a.yml', 'b.yml'] },
     { name: 'gcr.io/distroless/java21-debian13', tag: 'nonroot', digest: D('b'), files: ['a.yml'] },
     { name: 'ghcr.io/astral-sh/uv', tag: 'python3.12-alpine', digest: D('c'), files: ['a.yml'] },
+    { name: 'moby/buildkit', tag: 'buildx-stable-1', digest: D('f'), files: ['a.yml'] },
   ]);
   // A digest with no tag anywhere cannot be compared, and must not be
   // skipped quietly.
@@ -170,9 +184,9 @@ test('finds every digest-pinned image, tagged in the reference or in a comment',
   assert.throws(() => readImages([{ file: 'c.yml', text: 'image: gcr.io/distroless/static@' + D('e') + ' # other:nonroot' }]), /names no tag/);
 });
 
-test('the workflows pin the swift, distroless, uv, mono and temurin images by digest', () => {
+test('the workflows pin the swift, distroless, uv, mono, temurin and buildkit images by digest', () => {
   const names = new Set(images.map((i) => i.name));
-  for (const name of ['swift', 'gcr.io/distroless/java21-debian13', 'ghcr.io/astral-sh/uv', 'mono', 'eclipse-temurin']) {
+  for (const name of ['swift', 'gcr.io/distroless/java21-debian13', 'ghcr.io/astral-sh/uv', 'mono', 'eclipse-temurin', 'moby/buildkit']) {
     assert.ok(names.has(name), `no digest-pinned ${name} found`);
   }
 });

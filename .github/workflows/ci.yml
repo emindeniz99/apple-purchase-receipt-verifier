@@ -17,10 +17,16 @@ permissions:
 # evidence. Every commit on main is a release candidate -- release.yml's
 # ci-passed gate polls for a completed run on the exact tagged SHA -- so a
 # main commit whose run was cancelled has no record that its tree ever
-# passed. That is not hypothetical: run 132 was cancelled by a docs commit
-# pushed 43 seconds after it, and runs 123 and 125 went the same way.
+# passed, and the tag that names it cannot publish. A group per ref does not
+# prevent that even with cancel-in-progress off: a group holds one running
+# and one pending run, and a newer pending run cancels the older one before
+# it starts (six main runs cancelled with no jobs on 2026-11-04, the last
+# push of a burst the only one to run). A run that does survive waits for
+# the one in progress, which can outlast the gate's poll. So each main
+# commit gets a group of its own, keyed by SHA, and runs at once; other
+# refs keep one group per ref and cancel the run a newer push supersedes.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -478,7 +484,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        boot: ["pom", "4.1.1"]
+        boot: ["pom", "4.1.2"]
         jdk: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -517,16 +523,16 @@ jobs:
       matrix:
         # Every supported line (endoflife.date/python); 3.11 is the
         # requires-python floor and stays tested while claimed.
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-latest, windows-11-arm]
         # macOS and Windows runners are the scarce ones. On a pull request
         # this job runs Linux only: every line on x86_64, the floor and the
-        # newest line (3.11, 3.14) on arm64. macos-wrappers runs 3.11 and
-        # 3.14 on Apple silicon and windows-wrappers runs them on
+        # newest line (3.11, 3.15) on arm64. macos-wrappers runs 3.11 and
+        # 3.15 on Apple silicon and windows-wrappers runs them on
         # windows-latest, in sequence on one runner each, and windows-11-arm
         # and macos-15-intel sit out. A push to main, which every release is
         # cut from, runs the whole grid here.
-        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"}]' || '[]') }}
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-15"},{"os":"macos-15-intel"},{"os":"windows-latest"},{"os":"windows-11-arm"},{"os":"ubuntu-24.04-arm","python":"3.12"},{"os":"ubuntu-24.04-arm","python":"3.13"},{"os":"ubuntu-24.04-arm","python":"3.14"}]' || '[]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -561,12 +567,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:58f67f392d490af90763f17b57a31245e3f26fb12ac9b6322c7af20507f15336" } # python3.11-alpine, uv 0.13.6
           - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:8a8e1becc4af37b754fa36eb75e26340e3e4d421542b7c4fdc6bced966abd6bf" } # python3.12-alpine, uv 0.13.6
           - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:63b8fa4be2338728034164eb6c067a363fdbb3234fa79b64c83545317b7feec1" } # python3.13-alpine, uv 0.13.6
           - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a069b57ec30ef94da43700a7332b162a13adb0b8a1cfba4e0b62c1a9727153c4" } # python3.14-alpine, uv 0.13.6
+          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:4de1eb2baffd7a44903a53b6cb112b2538232d56287bc37d18b66ae1f17108d4" } # python3.15-alpine, uv 0.13.6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1132,7 +1139,7 @@ jobs:
 
   # On a pull request every macOS leg except Swift's runs here, in sequence
   # on one macos-latest runner: go-platforms, ruby-macos, dotnet, python
-  # (3.11 and 3.14 on Apple silicon), rust-ffi and aprv-server. macOS
+  # (3.11 and 3.15 on Apple silicon), rust-ffi and aprv-server. macOS
   # runners are the scarce ones (five at a time on this plan), and each leg
   # runs for one to six minutes. Swift's two legs need Xcode on macos-26 and
   # share swift-apple instead. A push to main runs each leg in its own job,
@@ -1215,9 +1222,9 @@ jobs:
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         run: .github/scripts/python-suite.sh 3.11
-      - name: python 3.14
+      - name: python 3.15
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        run: .github/scripts/python-suite.sh 3.14
+        run: .github/scripts/python-suite.sh 3.15
       # rust-ffi: needs no module, only Node for the vector manifest.
       - if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1247,7 +1254,7 @@ jobs:
 
   # On a pull request the Windows legs of go-platforms, dotnet and python
   # share one windows-latest runner here, as macos-wrappers does for macOS:
-  # Go, .NET, then Python 3.11 and 3.14 (windows-11-arm sits out). Not
+  # Go, .NET, then Python 3.11 and 3.15 (windows-11-arm sits out). Not
   # folded: rust-ffi's Windows leg (about 10 minutes, the longest job of a
   # full run) and aprv-server's (5 to 8 minutes with a cold target cache);
   # either would make this the critical path. A push to main runs every
@@ -1307,10 +1314,10 @@ jobs:
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
         run: .github/scripts/python-suite.sh 3.11
-      - name: python 3.14
+      - name: python 3.15
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
-        run: .github/scripts/python-suite.sh 3.14
+        run: .github/scripts/python-suite.sh 3.15
 
   # The arm64-darwin platform gem of wasmtime, which the Linux legs never
   # load. One current-Ruby leg is enough. On a pull request this leg runs in
@@ -1589,8 +1596,12 @@ jobs:
           # dependency at all.
           - otp: "27"
             elixir: "1.18"
-          # What a current install gets.
+          # Elixir 1.20 supports OTP 27 to 29 (hexdocs, "Compatibility and
+          # deprecations"): the previous OTP line, and the newest, which is
+          # what a current install gets.
           - otp: "28"
+            elixir: "1.20"
+          - otp: "29"
             elixir: "1.20"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1899,7 +1910,7 @@ jobs:
   # on a pull request -- the same budget and the same shape as
   # go-fuzz and rust-fuzz. Pinned to CPython 3.13 because atheris ships wheels
   # only (3.1.0: 3.12/3.13/3.14, no sdist), so the fuzzer's Python is not the
-  # library's: the `python` matrix above is what proves 3.11 through 3.14, and
+  # library's: the `python` matrix above is what proves 3.11 through 3.15, and
   # every crasher these targets found is pinned as a test under python/tests/
   # so it runs on all of them. atheris stays out of the package's dependency
   # sets -- run.sh installs it into an ephemeral uv environment and fuzzes the
@@ -2628,9 +2639,9 @@ jobs:
           trap 'kill "$p1" "$p2" 2>/dev/null || true; cat serve1.log serve2.log' EXIT
           up 18080
           up 18081
-          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18080/openapi.json \
+          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18080/openapi.json \
             --checks all --max-examples 50 --workers 1
-          uvx --from schemathesis==4.28.0 schemathesis run http://127.0.0.1:18081/openapi.json \
+          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18081/openapi.json \
             --checks all --max-examples 30 --workers 1 -H "X-Aprv-Token: $token"
 
   # The Docker image both ways it is built: from source (the Dockerfile's
@@ -2804,7 +2815,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        consumer: [jvm-interop, boot-pom, boot-4.1.1]
+        consumer: [jvm-interop, boot-pom, boot-4.1.2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -2975,7 +2986,7 @@ jobs:
         # seven-day cooldown, pinned exactly so this leg never runs a
         # release the cooldown has not looked at (SECURITY.md); bump it by
         # hand.
-        symfony-process: ["8.0.5", "8.1.7"]
+        symfony-process: ["8.0.5", "8.1.10"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -371,7 +372,7 @@ func resolvePointer(root any, pointer string) (value any, present bool, err erro
 // jsonEqual compares a "want" value from the case file (json.Number for
 // every number, since the document is decoded with UseNumber) against a
 // "got" value from the library's own output, decoded the same way.
-// Numbers compare by value, integers exactly; everything else compares
+// Numbers compare exactly by value; everything else compares
 // structurally.
 func jsonEqual(want, got any) bool {
 	switch w := want.(type) {
@@ -383,19 +384,12 @@ func jsonEqual(want, got any) bool {
 			return false
 		}
 		// Compared by value, not by spelling: 1722945600000 and
-		// 1722945600000.0 are the same claim. Exact int64 comparison only
-		// when BOTH sides parse as a literal integer, so a 19-digit id
-		// keeps its exact digits; otherwise (either side has a fraction or
-		// an exponent) fall back to float64, which is what "the same
-		// number" means once either spelling is not a bare integer.
-		wi, werr := w.Int64()
-		gi, gerr := g.Int64()
-		if werr == nil && gerr == nil {
-			return wi == gi
-		}
-		wf, wferr := w.Float64()
-		gf, gferr := g.Float64()
-		return wferr == nil && gferr == nil && wf == gf
+		// 1722945600000.0 are the same claim. Both sides are read as exact
+		// rationals, never through int64 or float64, so 2^63 does not
+		// equal 2^63-1 and no digit of a 19-digit id is rounded away.
+		wr, wok := new(big.Rat).SetString(w.String())
+		gr, gok := new(big.Rat).SetString(g.String())
+		return wok && gok && wr.Cmp(gr) == 0
 	case string:
 		g, ok := got.(string)
 		return ok && g == w
@@ -815,6 +809,29 @@ func TestEveryExpectedReasonIsInTheVocabulary(t *testing.T) {
 		if c.Expected.Reason != "" && !known[c.Expected.Reason] {
 			t.Errorf("%s expects reason %q, which is not in the exported vocabulary",
 				c.ID, c.Expected.Reason)
+		}
+	}
+}
+
+// The case pinning download_id at 2^63-1 is there to catch a value
+// rounded through a double, so the comparison must round nothing itself:
+// a near miss in the last digit is a mismatch, a different spelling of
+// the same value is not.
+func TestJSONEqualComparesNumbersExactly(t *testing.T) {
+	for _, c := range []struct {
+		want, got string
+		equal     bool
+	}{
+		{"9223372036854775807", "9223372036854775807", true},
+		{"9223372036854775807", "9223372036854775808", false},
+		{"9223372036854775808", "9223372036854775809", false},
+		{"18446744073709551615", "18446744073709551614", false},
+		{"9007199254740993", "9007199254740992", false},
+		{"1722945600000", "1722945600000.0", true},
+		{"1.5", "15e-1", true},
+	} {
+		if got := jsonEqual(json.Number(c.want), json.Number(c.got)); got != c.equal {
+			t.Errorf("jsonEqual(%s, %s) = %v, want %v", c.want, c.got, got, c.equal)
 		}
 	}
 }

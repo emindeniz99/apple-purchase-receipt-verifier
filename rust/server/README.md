@@ -36,6 +36,8 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `--lifecycle pool\|fresh` | serve | `pool` (default): instances are kept, one request at a time each, at most one per worker, and one that trapped or broke the interface is destroyed, never reused. `fresh`: a new store, instance and `init` per request. The default follows DECISIONS.md R23: `init` costs 2.3 to 3.7 ms and a fresh instance 1.45 to 4 times a pooled call (`docs/evidence/2026-09-29-init-cost.md`) |
 | `--workers N` | serve | Concurrent verifications. Default: the CPU count |
 | `--time-limit-ms N` | serve, CLI | The guest time limit per call. Default 10,000 |
+| `--max-connections N` | serve | Connections open at once; at the cap the server stops accepting and further connections wait in the listen backlog. Default 512 |
+| `--header-timeout-ms N` | serve | How long a connection may take to send a complete request head, from accept and again from the end of each response, then it is closed unanswered; and how long a response write may send nothing, then the connection is closed. Default 30,000 |
 | `--component FILE.wasm` | all | The full build only: compile this component at start instead of the embedded one (development and tests) |
 
 `aprv --help` and `aprv <command> --help` print the same, generated from
@@ -186,6 +188,9 @@ A bad handshake exits 2 with a message on stderr and prints no address.
 | Concurrent verifications | a semaphore of `--workers`, default the CPU count; a call holds its worker until the guest call ends, even when the client has gone |
 | Request bodies in flight | four per worker, received or waiting for a worker; a request takes its place before reading the body and gives it back when a worker takes the call |
 | Body deadline | 30 s from admission; a body that has not arrived by then gets 408 and the connection closed |
+| Request-head deadline | 30 s by default (`--header-timeout-ms`), from accept and again from the end of each response, so it is also the keep-alive idle timeout. A connection that has not sent a complete head by then is closed without an answer. It runs before the token check, but it restarts after every response, and any request gets one (`GET /healthz` needs no token, and a 401 is a response too). A peer that sends a request before each deadline keeps its connection, and its place under the cap, without reconnecting |
+| Write deadline | The same time as the request-head deadline (`--header-timeout-ms`). A response write that has sent nothing for that long, because the peer stopped reading and the socket buffers are full, closes the connection |
+| Open connections | 512 by default (`--max-connections`). At the cap the server stops accepting until one closes; the kernel's listen backlog holds what arrives meanwhile. Each connection holds one file descriptor, so the cap holds only while the process's descriptor limit (`ulimit -n`) leaves room for it plus the listener, stdio and the other descriptors the process has open. Below that, accept fails with EMFILE, which the server reports on stderr and retries every second, and the cap is never reached. The server does not raise its own limit |
 
 A trapped instance is discarded in both lifecycles. In the default pool
 an instance that answered normally serves later requests, so its guest
