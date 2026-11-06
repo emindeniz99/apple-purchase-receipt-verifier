@@ -109,8 +109,18 @@ final class CliTransport implements Transport
         // not in the first real call, and its answer states the input
         // length and the revocation state.
         [$code, $out, $err] = $this->execute(array_merge(['info'], $this->configArguments), '');
-        if ($code === 2 && $this->configArguments !== []) {
+        // Exit 2 is also how the argument parser answers a flag it does not
+        // know, which is what an aprv older than this package does with the
+        // configuration flags; aprv itself prefixes every refusal of a
+        // configuration with "aprv: ", the parser never does.
+        if ($code === 2 && $this->configArguments !== [] && str_starts_with($err, 'aprv: ')) {
             throw new InvalidArgumentException('the verification module refused the configuration: ' . Text::printable($err));
+        }
+        if ($code === 2 && $this->configArguments !== []) {
+            throw new RuntimeException(
+                $this->describe('aprv info', $code, $err)
+                . ': install the aprv binary that belongs to this package version',
+            );
         }
         if ($code !== 0) {
             throw new RuntimeException($this->describe('aprv info', $code, $err));

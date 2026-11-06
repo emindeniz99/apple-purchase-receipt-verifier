@@ -364,6 +364,30 @@ final class CliTransportTest extends TestCase
         }
     }
 
+    /**
+     * An aprv older than this package does not know the configuration
+     * flags, and its argument parser exits 2 for them, as aprv does for a
+     * configuration it refuses. That is a binary of the wrong version, not
+     * the caller's configuration: create names the binary.
+     */
+    public function testAnOlderBinaryThatDoesNotKnowTheFlagsIsNotBlamedOnTheConfig(): void
+    {
+        $this->cli->behave([
+            'info_exit' => 2,
+            'info_stderr' => "error: unexpected argument '--roots' found\n\nUsage: aprv info [OPTIONS]\n",
+        ]);
+
+        try {
+            Verifier::create(new Config(roots: ["\x30\x03\x02\x01\x01"]), $this->transport());
+            self::fail('create must refuse a binary that does not know the flags');
+        } catch (InvalidArgumentException $e) {
+            self::fail('a binary of another version is not the caller\'s configuration: ' . $e->getMessage());
+        } catch (RuntimeException $e) {
+            self::assertStringContainsString("unexpected argument '--roots'", $e->getMessage());
+            self::assertStringContainsString('install the aprv binary that belongs to this package version', $e->getMessage());
+        }
+    }
+
     public function testAMissingOrNonExecutableBinaryFailsCreateWithTheWayOut(): void
     {
         foreach ([
