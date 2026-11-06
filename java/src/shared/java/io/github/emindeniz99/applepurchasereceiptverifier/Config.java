@@ -216,8 +216,10 @@ public final class Config {
          * certificate's index, unless the certificate is signed by a
          * configured root under that root's name, is a CA, has
          * {@code cRLSign} when it has a keyUsage, carries Apple's WWDR
-         * marker OID 1.2.840.113635.100.6.2.1, and is not itself revoked.
-         * Its validity dates are not judged.</p>
+         * marker OID 1.2.840.113635.100.6.2.1. Its validity dates are not
+         * judged. One that is itself revoked is set aside, with any list it
+         * signed, rather than refused: paths through it fail with
+         * {@link Reason#CERTIFICATE_REVOKED}.</p>
          *
          * @throws NullPointerException if {@code issuers} or any element is null
          */

@@ -323,6 +323,52 @@ class RevocationTest {
     }
 
     /**
+     * §6: an added issuer that its root's list or distrust revokes is set
+     * aside as a revoked built-in one is, not refused (owner decision
+     * 2026-11-06): refusing it would keep a refreshing host on its old
+     * verifier, which accepts it. Its own list is neither held nor refused,
+     * it is not an expected issuer, its distribution points stay reported,
+     * and its paths fail on the issuer itself, whatever the order of the
+     * lists. The core judges it the same way.
+     */
+    @Test
+    void aRevokedAddedIssuerAndItsOwnListAreSetAsideNotRefused() throws Exception {
+        String jws = testText("jws.jws");
+        byte[] ownList = testBytes("crl-fresh-empty.der");
+        byte[] rootList = testBytes("root-crl-revokes-intermediate.der");
+        List<String> urls = Arrays.asList(
+                "http://crl.example.test/aprv-test-root.crl", "https://crl.example.test/aprv-test-root.crl");
+        Map<Config, String> revoking = new LinkedHashMap<>();
+        revoking.put(withAddedIssuer(Arrays.asList(rootList, ownList)).build(), "Apple's list");
+        revoking.put(withAddedIssuer(Arrays.asList(ownList, rootList)).build(), "Apple's list");
+        revoking.put(
+                withAddedIssuer(Collections.singletonList(ownList))
+                        .distrust(Collections.singletonList(new RevokedCertificate(TEST_ROOT, "1A")))
+                        .build(),
+                "distrust");
+        for (Map.Entry<Config, String> revoked : revoking.entrySet()) {
+            Verifier verifier = Verifier.create(revoked.getKey());
+            assertEquals(urls, verifier.revocationUrls());
+            assertNull(verifier.revocationValidUntil(), "a set-aside issuer is not expected");
+            assertEquals(
+                    "x5c certificate with serial 1A is revoked: " + revoked.getValue(),
+                    verifier.verifySignedData(jws).failure().message());
+        }
+
+        Verifier accepted = Verifier.create(
+                withAddedIssuer(Collections.singletonList(ownList)).build());
+        assertEquals(urls, accepted.revocationUrls());
+        assertEquals(Instant.parse("2026-12-01T00:00:00Z"), accepted.revocationValidUntil());
+        assertTrue(accepted.verifySignedData(jws).verified());
+    }
+
+    private static Config.Builder withAddedIssuer(List<byte[]> lists) throws Exception {
+        return testConfig()
+                .revocationIssuers(Collections.singletonList(testCertificate("intermediate.der")))
+                .revocationLists(lists);
+    }
+
+    /**
      * A list whose CRL Number is negative is outside the profile (§4): it
      * has no number, so its age against {@code newest} is judged by
      * thisUpdate, as the core judges it, never by comparing -1 with the
