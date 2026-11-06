@@ -650,6 +650,8 @@ does not qualify, or when a `distrust` entry is malformed. A genuine list
 in a format the library does not read (version 1, no `nextUpdate`, a
 distribution point, a delta, an unknown critical extension) is ignored,
 not refused, so a change at Apple cannot stop your service from starting.
+An added issuer that is itself revoked is set aside with any list it
+signed, not refused: a path through it fails with `CERTIFICATE_REVOKED`.
 
 Two read-only properties tell you what to fetch and whether it is in
 force:
