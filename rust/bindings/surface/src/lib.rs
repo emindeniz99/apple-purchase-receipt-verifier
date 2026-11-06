@@ -111,7 +111,7 @@ fn certificates(member: &str, entries: &[Vec<u8>]) -> Result<ReadCertificates, C
 /// The core's refusal, with a `revocation_issuers[i]` index, which counts
 /// certificates, turned into the index of the entry given (and the
 /// certificate's place when that entry is a PEM bundle of several).
-fn entry_named(detail: &str, origin: &[(usize, usize)], counts: &[usize]) -> String {
+fn entry_named(detail: &str, origin: &[(usize, usize)]) -> String {
     const PREFIX: &str = "revocation_issuers[";
     let Some(rest) = detail.strip_prefix(PREFIX) else {
         return detail.to_owned();
@@ -122,7 +122,7 @@ fn entry_named(detail: &str, origin: &[(usize, usize)], counts: &[usize]) -> Str
     let Some(&(index, place)) = digits.parse::<usize>().ok().and_then(|i| origin.get(i)) else {
         return detail.to_owned();
     };
-    if counts.get(index).copied().unwrap_or(1) > 1 {
+    if origin.iter().filter(|(entry, _)| *entry == index).count() > 1 {
         format!(
             "{PREFIX}{index}] (certificate {} of its PEM text){tail}",
             place + 1
@@ -217,19 +217,13 @@ impl Verifier {
             builder = builder.roots(certificates("roots", roots)?.0);
         }
         let (issuers, origin) = certificates("revocation_issuers", &revocation.issuers)?;
-        let mut counts = vec![0_usize; revocation.issuers.len()];
-        for &(index, _) in &origin {
-            if let Some(count) = counts.get_mut(index) {
-                *count += 1;
-            }
-        }
         let config = builder
             .revocation_lists(revocation.lists.iter().cloned())
             .revocation_issuers(issuers)
             .distrust(revocation.distrust.iter().cloned())
             .build()
             .map_err(|err| ConfigError {
-                message: entry_named(err.detail(), &origin, &counts),
+                message: entry_named(err.detail(), &origin),
             })?;
         Ok(Verifier {
             inner: core_api::Verifier::new(config),
