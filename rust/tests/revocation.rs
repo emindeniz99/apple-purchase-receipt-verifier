@@ -429,17 +429,24 @@ fn refusals_are_reported_lists_first_then_issuers_then_distrust() {
 }
 
 #[test]
-fn an_issuer_its_root_holds_is_refused_when_the_configuration_is_built() {
+fn a_revoked_added_issuer_and_its_own_list_are_set_aside_not_refused() {
     // The build has no clock (§6), so an issuer on its root's list is not
     // accepted whatever the entry's reason, certificateHold included; only
-    // removeFromCRL lets it through.
+    // removeFromCRL lets it through. A revoked added issuer is set aside as
+    // a revoked built-in one is: the configuration builds, its own list is
+    // neither held nor refused, it is not an expected issuer of
+    // revocationValidUntil, and its path fails on the issuer itself.
+    // Refusing it would keep a host on its old verifier, which accepts it.
     let setup = setup();
+    let root_id = issuer_id(&setup.pki.root);
     let intermediate_serial = pki::cert_fields(&setup.pki.intermediate).serial;
-    for (reason, accepted) in [
-        (Some(KEY_COMPROMISE), false),
-        (Some(CERTIFICATE_HOLD), false),
-        (None, false),
-        (Some(8), true),
+    let intermediate_hex = serial_hex(&setup.pki.intermediate);
+    let own_list = setup.intermediate_list(1, &[], KEY_COMPROMISE);
+    for (reason, revoked_by) in [
+        (Some(KEY_COMPROMISE), Some("Apple's list")),
+        (Some(CERTIFICATE_HOLD), Some("Apple's list")),
+        (None, Some("Apple's list")),
+        (Some(8), None),
     ] {
         let root_list = list(
             &subject(&setup.pki.root),
@@ -452,19 +459,58 @@ fn an_issuer_its_root_holds_is_refused_when_the_configuration_is_built() {
                 reason,
             }],
         );
-        let built = setup
+        let config = setup
             .builder()
-            .revocation_lists([root_list])
+            .revocation_lists([own_list.clone(), root_list])
             .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
-            .build();
-        assert_eq!(built.is_ok(), accepted, "{reason:?}");
-        if let Err(error) = built {
-            assert_eq!(
-                error.detail(),
-                "revocation_issuers[0]: the certificate is revoked"
-            );
+            .build()
+            .unwrap_or_else(|error| panic!("{reason:?}: {}", error.detail()));
+        let verifier = Verifier::new(config);
+        let outcome = verifier
+            .verify_receipt(&setup.receipt)
+            .map(|_| ())
+            .map_err(|failure| (failure.reason(), failure.message().to_owned()));
+        match revoked_by {
+            Some(layer) => {
+                assert_eq!(verifier.revocation_valid_until(), None, "{reason:?}");
+                assert_eq!(
+                    outcome,
+                    Err((
+                        Reason::CertificateRevoked,
+                        format!("revoked: {layer}, serial {intermediate_hex}")
+                    )),
+                    "{reason:?}"
+                );
+            }
+            None => {
+                // Accepted: its own list is held and expected.
+                assert_eq!(
+                    verifier.revocation_valid_until(),
+                    Some(NOW + 14 * DAY_MS),
+                    "{reason:?}"
+                );
+                assert_eq!(outcome, Ok(()), "{reason:?}");
+            }
         }
     }
+    // distrust revokes it the same way.
+    let config = setup
+        .builder()
+        .revocation_lists([own_list])
+        .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
+        .distrust([(root_id, intermediate_hex.clone())])
+        .build()
+        .unwrap_or_else(|error| panic!("distrust: {}", error.detail()));
+    let verifier = Verifier::new(config);
+    assert_eq!(verifier.revocation_valid_until(), None);
+    let failure = verifier.verify_receipt(&setup.receipt).unwrap_err();
+    assert_eq!(
+        (failure.reason(), failure.message()),
+        (
+            Reason::CertificateRevoked,
+            format!("revoked: distrust, serial {intermediate_hex}").as_str()
+        )
+    );
 }
 
 #[test]

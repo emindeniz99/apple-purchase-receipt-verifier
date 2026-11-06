@@ -147,9 +147,11 @@ impl ConfigBuilder {
     /// ones (Apple's WWDR G5 and G6 intermediates, and the configured
     /// roots), replacing any given before: a new Apple intermediate before a
     /// release knows it, or a test PKI. Each must be signed by a configured
-    /// root, be a CA, allow `cRLSign` when it has a keyUsage, carry Apple's
-    /// WWDR marker OID, and not be revoked; [`build`](ConfigBuilder::build)
-    /// refuses it otherwise.
+    /// root, be a CA, allow `cRLSign` when it has a keyUsage, and carry
+    /// Apple's WWDR marker OID; [`build`](ConfigBuilder::build) refuses it
+    /// otherwise. One that is itself revoked is set aside, with any list it
+    /// signed, rather than refused: paths through it fail with
+    /// [`Reason::CertificateRevoked`](crate::Reason::CertificateRevoked).
     #[must_use]
     pub fn revocation_issuers(mut self, issuers: impl IntoIterator<Item = TrustAnchor>) -> Self {
         self.revocation_issuers = issuers.into_iter().collect();

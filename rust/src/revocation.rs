@@ -606,12 +606,12 @@ impl Revocation {
                     .is_some_and(|held| held.entries.contains_key(serial))
         };
 
-        // The built-in issuers that chain to the configured roots, and the
-        // ones dropped because they are revoked, whose own lists are set
-        // aside below.
+        // The built-in issuers that chain to the configured roots; and the
+        // issuers, built-in or added, dropped because they are revoked,
+        // whose own lists are set aside below.
         let mut chaining: Vec<&BuiltInIssuer> = Vec::new();
         let mut accepted: Vec<Candidate> = Vec::new();
-        let mut revoked_built_in: Vec<Candidate> = Vec::new();
+        let mut revoked_issuers: Vec<Candidate> = Vec::new();
         for issuer in &built_in.issuers {
             match &issuer.certificate {
                 None => {
@@ -626,21 +626,35 @@ impl Revocation {
                             accepted.push(candidate);
                         }
                     }
-                    Err(ISSUER_REVOKED) => revoked_built_in.extend(Candidate::of(certificate)),
+                    Err(ISSUER_REVOKED) => revoked_issuers.extend(Candidate::of(certificate)),
                     Err(_) => {}
                 },
             }
         }
-        // The added issuers; a refusal is reported after the lists'.
+        // The added issuers; a refusal is reported after the lists'. One
+        // that is revoked is set aside as a built-in one is, not refused:
+        // its cRLDistributionPoints still name where its own revocation is
+        // published, so they stay among the URLs reported (§7).
         let mut issuer_error = None;
         let mut added: Vec<Candidate> = Vec::new();
+        let mut reported: Vec<&Certificate> = Vec::new();
         for (index, anchor) in settings.issuers.iter().enumerate() {
             let certificate = anchor.certificate();
-            let verdict = authenticate(certificate, &roots, revoked_under).and_then(|()| {
-                Candidate::of(certificate).ok_or("the certificate's subject or key does not read")
-            });
-            match verdict {
-                Ok(candidate) => added.push(candidate),
+            let verdict = authenticate(certificate, &roots, revoked_under);
+            let candidate = match verdict {
+                Ok(()) | Err(ISSUER_REVOKED) => Candidate::of(certificate)
+                    .ok_or("the certificate's subject or key does not read"),
+                Err(detail) => Err(detail),
+            };
+            match candidate {
+                Ok(candidate) => {
+                    reported.push(certificate);
+                    if verdict.is_ok() {
+                        added.push(candidate);
+                    } else {
+                        revoked_issuers.push(candidate);
+                    }
+                }
                 Err(detail) => {
                     issuer_error.get_or_insert_with(|| {
                         ConfigError::new(format!("revocation_issuers[{index}]: {detail}"))
@@ -662,12 +676,12 @@ impl Revocation {
                 .as_ref()
                 .map_err(|detail| list_error(index, detail))?;
             let Some(owner) = owner else {
-                // The list of a built-in issuer dropped because it is
-                // revoked (§6) is set aside, neither held nor refused: every
-                // path through that issuer already fails on the issuer
-                // itself, and refusing would leave a host that refreshes
-                // from the URLs it was given on its old configuration.
-                if owner_among(list, naming, &revoked_built_in).is_some() {
+                // The list of an issuer dropped because it is revoked (§6)
+                // is set aside, neither held nor refused: every path through
+                // that issuer already fails on the issuer itself, and
+                // refusing would leave a host that refreshes from the URLs
+                // it was given on its old configuration.
+                if owner_among(list, naming, &revoked_issuers).is_some() {
                     continue;
                 }
                 let named_any = roots
@@ -706,8 +720,8 @@ impl Revocation {
         for issuer in &chaining {
             push(&issuer.list);
         }
-        for issuer in &added {
-            for uri in issuer.certificate.crl_distribution_uris() {
+        for certificate in &reported {
+            for uri in certificate.crl_distribution_uris() {
                 // http and https only (§7): an ldap or file URI is no URL a
                 // host fetches a list from.
                 let web = uri.split_once("://").is_some_and(|(scheme, _)| {
