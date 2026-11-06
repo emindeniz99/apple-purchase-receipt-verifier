@@ -308,8 +308,8 @@ final class ApiShapeTest extends TestCase
     /**
      * `new Config()` is the one way to get the defaults. `Config::defaults()`
      * only called it, and went on 2026-10-02 (DECISIONS.md R41), as 0.7's
-     * builder had: the constructor is the class's one method, so no
-     * `defaults()` and no `builder()`.
+     * builder had: the constructor is the class's one public method, so no
+     * `defaults()` and no `builder()`. Private helpers are not API.
      */
     public function testConfigIsBuiltWithItsConstructorAlone(): void
     {
@@ -317,7 +317,7 @@ final class ApiShapeTest extends TestCase
             ['__construct'],
             array_map(
                 static fn (\ReflectionMethod $method): string => $method->getName(),
-                (new ReflectionClass(Config::class))->getMethods(),
+                (new ReflectionClass(Config::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
             ),
         );
     }
