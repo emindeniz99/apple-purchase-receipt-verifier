@@ -62,29 +62,22 @@ def _max_input_bytes(value: "dict[str, Any]") -> int:
     return limit
 
 
-def check_init(answer: str) -> "str | None":
-    """``None`` when ``init`` accepted the roots and stated its
-    ``max_input_bytes``, else its refusal message."""
-    value = _object(answer)
-    if value.get("ok") is True:
-        _max_input_bytes(value)
-        return None
-    if value.get("ok") is False and isinstance(value.get("message"), str):
-        return str(value["message"])
-    raise ResultShapeError("init answered neither ok nor a refusal")
-
-
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
-def init_revocation(answer: str) -> "tuple[tuple[str, ...], datetime | None]":
-    """The revocation state an accepting ``init`` answer states:
-    ``revocation_urls``, a list of strings, and ``revocation_valid_until_ms``,
-    epoch milliseconds or ``null``, as a UTC ``datetime`` or ``None``. An
-    accepting answer without both comes from a module of another version."""
+def read_init(answer: str) -> "str | tuple[tuple[str, ...], datetime | None]":
+    """``init``'s refusal message, or, when it accepted the configuration,
+    the revocation state its answer states: ``revocation_urls``, a list of
+    strings, and ``revocation_valid_until_ms``, epoch milliseconds or
+    ``null``, as a UTC ``datetime`` or ``None``. An accepting answer without
+    ``max_input_bytes`` and both of those comes from a module of another
+    version."""
     value = _object(answer)
+    if value.get("ok") is False and isinstance(value.get("message"), str):
+        return str(value["message"])
     if value.get("ok") is not True:
-        raise ResultShapeError("init did not accept the configuration")
+        raise ResultShapeError("init answered neither ok nor a refusal")
+    _max_input_bytes(value)
     urls = value.get("revocation_urls")
     if not isinstance(urls, list) or not all(isinstance(url, str) for url in urls):
         raise ResultShapeError("init accepted the configuration but stated no revocation_urls")

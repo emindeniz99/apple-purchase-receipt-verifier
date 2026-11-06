@@ -60,7 +60,7 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(3_145_729, fresh().max_input)
         refusal = '{"ok":false,"message":"not a certificate"}'
         self.assertIsNone(_wire.init_accepted(refusal))
-        self.assertEqual("not a certificate", _wire.check_init(refusal))
+        self.assertEqual("not a certificate", _wire.read_init(refusal))
         # An accepting answer without a positive integer is a module of
         # another ABI version: no cap of the wrapper's own stands in for it.
         for answer in (
@@ -75,7 +75,7 @@ class ContractTest(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertIsNone(_wire.init_accepted(answer))
                 with self.assertRaises(_wire.ResultShapeError):
-                    _wire.check_init(answer)
+                    _wire.read_init(answer)
 
     def test_init_with_no_roots_uses_the_built_in_ones_and_answers_ok(self) -> None:
         self.assertEqual(b"{}", _wire.init_config(None))
@@ -87,7 +87,7 @@ class ContractTest(unittest.TestCase):
 
     def test_init_refuses_an_empty_root_list(self) -> None:
         answer = _host.Instance(_host.default_runtime()).call("init", (), _wire.init_config([]))
-        self.assertEqual("roots must not be empty", _wire.check_init(answer))
+        self.assertEqual("roots must not be empty", _wire.read_init(answer))
 
     def test_init_takes_roots_as_base64_der_and_answers_ok(self) -> None:
         self.assertEqual(
@@ -106,15 +106,15 @@ class ContractTest(unittest.TestCase):
                 ),
                 None,
             ),
-            _wire.init_revocation(OK),
+            _wire.read_init(OK),
         )
-        self.assertEqual(((), None), _wire.init_revocation(OK_OWN_ROOTS))
+        self.assertEqual(((), None), _wire.read_init(OK_OWN_ROOTS))
 
     def test_init_refuses_a_revocation_list_that_is_not_a_crl_and_can_be_retried(self) -> None:
         instance = fresh(init=False)
         answer = instance.call("init", (), _wire.init_config(None, [b"\x01\x02\x03"]))
-        message = _wire.check_init(answer)
-        assert message is not None, answer
+        message = _wire.read_init(answer)
+        assert isinstance(message, str), answer
         self.assertTrue(message.startswith("revocation_lists[0]"), message)
         self.assertEqual(OK, instance.call("init", (), b"{}"))
 

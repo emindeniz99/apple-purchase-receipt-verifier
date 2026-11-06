@@ -80,22 +80,17 @@ class Verifier:
         )
         try:
             self._pool = _host.Pool(runtime(), init_config, _pool_size(), _wire.init_accepted)
-            # An answer the pool already read as accepting needs no second
-            # parse; any other is read for its refusal or its shape fault.
-            refusal = None if self._pool.accepted else _wire.check_init(self._pool.init_answer)
             # Every instance of the pool runs init with the same
-            # configuration, so the first answer's revocation state is the
-            # verifier's.
-            revocation = (
-                None if refusal is not None else _wire.init_revocation(self._pool.init_answer)
-            )
+            # configuration, so the first answer's refusal or revocation
+            # state is the verifier's.
+            state = _wire.read_init(self._pool.init_answer)
         except _host.AbiMismatchError:
             raise
         except (_host.Fault, _wire.ResultShapeError) as error:
             raise RuntimeError("the verification module could not be started") from error
-        if revocation is None:
-            raise ValueError(f"the module refused the configuration: {refusal}")
-        self._revocation_urls, self._revocation_valid_until = revocation
+        if isinstance(state, str):
+            raise ValueError(f"the module refused the configuration: {state}")
+        self._revocation_urls, self._revocation_valid_until = state
 
     @property
     def revocation_urls(self) -> "tuple[str, ...]":
