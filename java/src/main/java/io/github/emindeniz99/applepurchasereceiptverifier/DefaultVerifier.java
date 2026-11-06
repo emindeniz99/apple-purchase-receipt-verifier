@@ -13,7 +13,9 @@ import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.TrustAnchor;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -27,8 +29,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The one {@link Verifier}. Everything per-instance is built once here (the
- * trust anchors); every call keeps its state in locals, so one instance
- * serves every thread.
+ * trust anchors and the revocation state); every call keeps its state in
+ * locals, so one instance serves every thread.
  *
  * <p>Each method reads the clock once, before any input is looked at, so
  * a clock that throws is {@link Reason#INTERNAL_ERROR} (the host's fault)
@@ -49,9 +51,18 @@ final class DefaultVerifier implements Verifier {
     static final int RECEIPT_NESTING = 9;
 
     private final Set<TrustAnchor> trustAnchors;
+    private final Revocation revocation;
     private final Clock clock;
 
     DefaultVerifier(Config config) {
+        this(config, null);
+    }
+
+    /**
+     * {@code builtIn} replaces the compiled-in revocation list, for tests
+     * only; null means the compiled-in one.
+     */
+    DefaultVerifier(Config config, @Nullable BuiltInRevocations builtIn) {
         Objects.requireNonNull(config, "config");
         initialise();
         // Not behind runtimeProbe: neither asks the provider for an engine.
@@ -59,6 +70,10 @@ final class DefaultVerifier implements Verifier {
         requireReceiptNesting();
         // A bad config (an empty root set) fails before the probe's cost.
         this.trustAnchors = AppleTrust.anchors(config.roots());
+        // In the roots' configuration order, which decides which root a list
+        // belongs to when two could have signed it.
+        this.revocation =
+                Revocation.build(config.roots(), config, builtIn != null ? builtIn : BuiltInRevocations.apple());
         if (config.runtimeProbe()) {
             // Outside the probe's try: a root that does not parse is this
             // library's defect, not the runtime's.
@@ -215,7 +230,7 @@ final class DefaultVerifier implements Verifier {
     public VerificationResult<ReceiptPayload> verifyReceipt(@Nullable String base64) {
         try {
             long now = clock.millis();
-            return VerificationResult.of(ReceiptCore.verify(base64, trustAnchors, now));
+            return VerificationResult.of(ReceiptCore.verify(base64, trustAnchors, revocation, now));
         } catch (VerificationException e) {
             return VerificationResult.failed(e.toFailure());
         } catch (RuntimeException e) {
@@ -227,7 +242,7 @@ final class DefaultVerifier implements Verifier {
     public VerificationResult<JsonPayload> verifySignedData(@Nullable String jws) {
         try {
             long now = clock.millis();
-            return VerificationResult.of(JwsCore.verify(jws, trustAnchors, now));
+            return VerificationResult.of(JwsCore.verify(jws, trustAnchors, revocation, now));
         } catch (VerificationException e) {
             return VerificationResult.failed(e.toFailure());
         } catch (RuntimeException e) {
@@ -245,7 +260,17 @@ final class DefaultVerifier implements Verifier {
             return EndpointResponse.status(AppleStatus.INTERNAL_DATA_ACCESS_ERROR);
         }
         // One read serves both the chain instant and request_date.
-        return Endpoint.respond(environment, requestJson, trustAnchors, now);
+        return Endpoint.respond(environment, requestJson, trustAnchors, revocation, now);
+    }
+
+    @Override
+    public List<String> revocationUrls() {
+        return revocation.urls();
+    }
+
+    @Override
+    public @Nullable Instant revocationValidUntil() {
+        return revocation.validUntil();
     }
 
     private static Failure internalError(RuntimeException e) {

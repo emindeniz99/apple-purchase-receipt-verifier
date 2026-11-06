@@ -15,7 +15,7 @@ namespace ApplePurchaseReceiptVerifier.Tests;
 public class ApiShapeTests
 {
     /// <summary>
-    /// The eight canonical tokens, read out of
+    /// The nine canonical tokens, read out of
     /// <c>fixtures/cases.schema.json</c> rather than retyped — so a
     /// drifted spelling fails here instead of in another port's CI.
     /// </summary>
@@ -34,9 +34,10 @@ public class ApiShapeTests
     }
 
     [Fact]
-    public void ReasonHasExactlyTheEightMembersOf07()
+    public void ReasonHasExactlyTheNineMembers()
     {
-        Assert.Equal(8, Enum.GetValues<VerificationReason>().Length);
+        Assert.Equal(9, Enum.GetValues<VerificationReason>().Length);
+        Assert.Equal("CERTIFICATE_REVOKED", VerificationReasonCodes.ToCode(VerificationReason.CertificateRevoked));
     }
 
     [Fact]
@@ -188,20 +189,27 @@ public class ApiShapeTests
 
     /// <summary>
     /// A <see cref="Config"/> is built one way, the C# way (DECISIONS.md R41):
-    /// one public constructor whose two arguments both default to
-    /// <see langword="null"/>. No static factory and no nested builder sit
-    /// beside it as a second spelling of the same thing.
+    /// one public constructor whose arguments all default to
+    /// <see langword="null"/>: the roots and the clock, then the three
+    /// revocation settings (docs/design/revocation.md §4), whose issuers take
+    /// the roots' type. No static factory and no nested builder sit beside it
+    /// as a second spelling of the same thing.
     /// </summary>
     [Fact]
     public void ConfigHasOnePublicConstructorAndNoOtherWayToBuildIt()
     {
         ConstructorInfo constructor = Assert.Single(typeof(Config).GetConstructors());
         ParameterInfo[] parameters = constructor.GetParameters();
-        Assert.Equal(2, parameters.Length);
-        Assert.Equal("roots", parameters[0].Name);
-        Assert.Equal(typeof(IEnumerable<X509Certificate2>), parameters[0].ParameterType);
-        Assert.Equal("clock", parameters[1].Name);
-        Assert.Equal(typeof(Func<long>), parameters[1].ParameterType);
+        Assert.Equal(
+            new[] { "roots", "clock", "revocationLists", "revocationIssuers", "distrust" },
+            parameters.Select(p => p.Name!));
+        Assert.Equal(
+            new[]
+            {
+                typeof(IEnumerable<X509Certificate2>), typeof(Func<long>), typeof(IEnumerable<byte[]>),
+                typeof(IEnumerable<X509Certificate2>), typeof(IEnumerable<RevokedCertificate>),
+            },
+            parameters.Select(p => p.ParameterType));
         Assert.All(parameters, parameter =>
         {
             Assert.True(parameter.IsOptional, parameter.Name);
@@ -211,8 +219,28 @@ public class ApiShapeTests
         Assert.Empty(typeof(Config).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
         Assert.Empty(typeof(Config).GetNestedTypes(BindingFlags.Public));
         Assert.Equal(
-            new[] { "Clock", "Roots" },
+            new[] { "Clock", "Distrust", "RevocationIssuers", "RevocationLists", "Roots" },
             typeof(Config).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The verifier reports the revocation state the module stated
+    /// (docs/design/revocation.md §7, §9): the URLs as a read-only list, and
+    /// the valid-until instant as nullable epoch milliseconds, the type every
+    /// date of this library has (see <see cref="NoPublicPropertyIsADateType"/>).
+    /// </summary>
+    [Fact]
+    public void TheVerifierReportsItsRevocationStateAsTwoReadOnlyProperties()
+    {
+        PropertyInfo urls = typeof(IVerifier).GetProperty("RevocationUrls")!;
+        Assert.Equal(typeof(IReadOnlyList<string>), urls.PropertyType);
+        Assert.False(urls.CanWrite);
+        PropertyInfo until = typeof(IVerifier).GetProperty("RevocationValidUntilMs")!;
+        Assert.Equal(typeof(long?), until.PropertyType);
+        Assert.False(until.CanWrite);
+        Assert.Equal(
+            new[] { "Issuer", "Serial" },
+            typeof(RevokedCertificate).GetProperties().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Install\InstallException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
 use EminDeniz99\ApplePurchaseReceiptVerifier\SystemClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Fixtures07;
@@ -20,6 +21,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\RevocationState;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\VerificationResult;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
@@ -60,7 +62,7 @@ final class ApiShapeTest extends TestCase
         sort($expected);
         sort($actual);
 
-        self::assertCount(8, $schema['$defs']['reason']['enum']);
+        self::assertCount(9, $schema['$defs']['reason']['enum']);
         self::assertSame($expected, $actual, 'the Reason vocabulary drifted from the schema');
     }
 
@@ -132,6 +134,17 @@ final class ApiShapeTest extends TestCase
             /** @phpstan-ignore-next-line deliberate misuse */
             static fn () => Verifier::create(new Config(roots: [123]), FakeTransport::answering('{}')),
         ];
+        yield 'an empty revocation list' => [
+            static fn () => Verifier::create(new Config(revocationLists: ['']), FakeTransport::answering('{}')),
+        ];
+        yield 'a non-string revocation issuer' => [
+            /** @phpstan-ignore-next-line deliberate misuse */
+            static fn () => Verifier::create(new Config(revocationIssuers: [null]), FakeTransport::answering('{}')),
+        ];
+        yield 'a distrust entry that is not a RevokedCertificate' => [
+            /** @phpstan-ignore-next-line deliberate misuse */
+            static fn () => Verifier::create(new Config(distrust: [['issuer' => 'a', 'serial' => '1']]), FakeTransport::answering('{}')),
+        ];
     }
 
     /**
@@ -157,7 +170,7 @@ final class ApiShapeTest extends TestCase
             Verifier::class, Config::class,
             ReceiptPayload::class, InAppPurchase::class, JsonPayload::class,
             VerificationResult::class, Failure::class, Reason::class, Environment::class,
-            SystemClock::class,
+            SystemClock::class, RevokedCertificate::class, RevocationState::class,
             CliTransport::class, HttpTransport::class, Installer::class, InstallException::class,
             ModuleFaultException::class, ServerProcessException::class,
         ] as $class) {
@@ -295,8 +308,8 @@ final class ApiShapeTest extends TestCase
     /**
      * `new Config()` is the one way to get the defaults. `Config::defaults()`
      * only called it, and went on 2026-10-02 (DECISIONS.md R41), as 0.7's
-     * builder had: the constructor is the class's one method, so no
-     * `defaults()` and no `builder()`.
+     * builder had: the constructor is the class's one public method, so no
+     * `defaults()` and no `builder()`. Private helpers are not API.
      */
     public function testConfigIsBuiltWithItsConstructorAlone(): void
     {
@@ -304,7 +317,7 @@ final class ApiShapeTest extends TestCase
             ['__construct'],
             array_map(
                 static fn (\ReflectionMethod $method): string => $method->getName(),
-                (new ReflectionClass(Config::class))->getMethods(),
+                (new ReflectionClass(Config::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
             ),
         );
     }

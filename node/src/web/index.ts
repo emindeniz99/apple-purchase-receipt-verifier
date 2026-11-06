@@ -16,7 +16,7 @@ import type { VerificationResult } from '../errors.js';
 import type { JsonPayload, ReceiptPayload } from '../payload.js';
 import { createVerifier as createVerifierSync } from '../verifier.js';
 
-export type { Config, CreateConfigOptions, RootInput } from '../config.js';
+export type { Config, CreateConfigOptions, RevokedCertificate, RootInput } from '../config.js';
 export {
   Reason,
   type Failure,
@@ -39,6 +39,10 @@ export interface Verifier {
   verifyReceipt(base64: string): Promise<VerificationResult<ReceiptPayload>>;
   verifySignedData(jws: string): Promise<VerificationResult<JsonPayload>>;
   verifyReceiptEndpoint(environment: Environment, requestJson: string): Promise<string>;
+  /** The URLs of the revocation lists this verifier would use (README, "Revocation"). */
+  revocationUrls(): Promise<readonly string[]>;
+  /** The earliest `nextUpdate` of the lists held, or `null` when live revocation is not fully in force. */
+  revocationValidUntil(): Promise<Date | null>;
 }
 
 /**
@@ -53,7 +57,7 @@ export async function createConfig(options: CreateConfigOptions = {}): Promise<C
  * A `Verifier` for `config`.
  *
  * @throws {TypeError} if `config` is null/undefined, its roots are empty, or
- * aprv.wasm refuses one of them.
+ * aprv.wasm refuses one of them or a revocation setting.
  * @throws {Error} if aprv.wasm is not the module this package binds.
  */
 export function createVerifier(config: Config): Verifier {
@@ -63,5 +67,7 @@ export function createVerifier(config: Config): Verifier {
     verifySignedData: async (jws) => verifier.verifySignedData(jws),
     verifyReceiptEndpoint: async (environment, requestJson) =>
       verifier.verifyReceiptEndpoint(environment, requestJson),
+    revocationUrls: async () => verifier.revocationUrls(),
+    revocationValidUntil: async () => verifier.revocationValidUntil(),
   };
 }

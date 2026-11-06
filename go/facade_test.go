@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/host"
@@ -376,6 +377,8 @@ func TestMisuseIsAPlainErrorAtCreate(t *testing.T) {
 		"a nil root":           applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{nil}}),
 		"a root with no bytes": applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{{}}}),
 		"a root that is junk":  applereceipt.NewConfig(applereceipt.ConfigOptions{Roots: []*x509.Certificate{{Raw: []byte("not a certificate")}}}),
+		"a nil revocation issuer": applereceipt.NewConfig(applereceipt.ConfigOptions{
+			RevocationIssuers: []*x509.Certificate{nil}}),
 	} {
 		verifier, err := applereceipt.NewVerifier(config)
 		if err == nil || verifier != nil {
@@ -385,6 +388,110 @@ func TestMisuseIsAPlainErrorAtCreate(t *testing.T) {
 		if _, isFailure := applereceipt.ReasonOf(err); isFailure {
 			t.Errorf("%s: a verdict, not a programming error: %v", name, err)
 		}
+	}
+}
+
+func TestRevocationSettingsReachInitAsBytesAndStringsOnly(t *testing.T) {
+	root := parseFixtureCertificate(t, "jws-root")
+	rootB64 := applereceiptBase64(root.Raw)
+	settings := applereceipt.ConfigOptions{
+		RevocationLists:   [][]byte{{1, 2, 3}, {}},
+		RevocationIssuers: []*x509.Certificate{root},
+		// Passed exactly as given, malformed or not: the module judges them.
+		Distrust: []applereceipt.RevokedCertificate{{Issuer: "AB", Serial: "0x"}, {Issuer: "", Serial: "02"}},
+	}
+	const revocation = `"revocation_lists":["AQID",""],"revocation_issuers":["` + "%s" + `"],` +
+		`"distrust":[{"issuer":"AB","serial":"0x"},{"issuer":"","serial":"02"}]`
+	members := strings.Replace(revocation, "%s", rootB64, 1)
+	if got, want := applereceipt.InitConfigOf(applereceipt.NewConfig(settings)), "{"+members+"}"; got != want {
+		t.Errorf("Apple's roots with revocation settings send init\n %s\nwant\n %s", got, want)
+	}
+	settings.Roots = []*x509.Certificate{root}
+	if got, want := applereceipt.InitConfigOf(applereceipt.NewConfig(settings)), `{"roots":["`+rootB64+`"],`+members+"}"; got != want {
+		t.Errorf("own roots with revocation settings send init\n %s\nwant\n %s", got, want)
+	}
+	// Empty settings are no settings: the default Config still sends {}.
+	empty := applereceipt.ConfigOptions{RevocationLists: [][]byte{}, RevocationIssuers: []*x509.Certificate{}, Distrust: []applereceipt.RevokedCertificate{}}
+	if got := applereceipt.InitConfigOf(applereceipt.NewConfig(empty)); got != "{}" {
+		t.Errorf("empty revocation settings send init %q, want {}", got)
+	}
+}
+
+func TestTheVerifierReportsTheRevocationStateInitAnswered(t *testing.T) {
+	// {} gets the double's copy of the real module's answer for Apple's
+	// roots: the four list URLs, and no date since no list was passed.
+	verifier := mirrorVerifier(t, nil)
+	want := []string{
+		"http://crl.apple.com/root.crl", "http://crl.apple.com/applerootcag3.crl",
+		"http://crl.apple.com/wwdrg5.crl", "http://crl.apple.com/wwdrg6.crl",
+	}
+	if got := verifier.RevocationURLs(); !reflect.DeepEqual(got, want) {
+		t.Errorf("RevocationURLs %q, want %q", got, want)
+	}
+	if until, ok := verifier.RevocationValidUntil(); ok || !until.IsZero() {
+		t.Errorf("RevocationValidUntil %v, %v; want none", until, ok)
+	}
+
+	// A short configuration gets the double's other answer, with a date.
+	config := applereceipt.NewConfig(applereceipt.ConfigOptions{
+		Distrust: []applereceipt.RevokedCertificate{{Issuer: "a", Serial: "1"}}})
+	verifier = mirrorVerifier(t, config)
+	got := verifier.RevocationURLs()
+	if !reflect.DeepEqual(got, []string{"http://crl.example.test/a.crl", "https://crl.example.test/a.crl"}) {
+		t.Errorf("RevocationURLs %q, want the double's two, in its order", got)
+	}
+	until, ok := verifier.RevocationValidUntil()
+	if !ok || until.UnixMilli() != 1_795_046_400_000 || until.Location() != time.UTC {
+		t.Errorf("RevocationValidUntil %v, %v; want 2026-11-19T00:00:00Z in UTC", until, ok)
+	}
+	// A caller cannot change the Verifier's answer through the slice.
+	got[0] = "http://attacker.example/"
+	if verifier.RevocationURLs()[0] != "http://crl.example.test/a.crl" {
+		t.Error("RevocationURLs handed out the Verifier's own slice")
+	}
+}
+
+func TestAVerifierNotMadeByNewVerifierReportsNoRevocationState(t *testing.T) {
+	for _, verifier := range []*applereceipt.Verifier{nil, {}} {
+		if urls := verifier.RevocationURLs(); len(urls) != 0 {
+			t.Errorf("RevocationURLs %q", urls)
+		}
+		if _, ok := verifier.RevocationValidUntil(); ok {
+			t.Error("RevocationValidUntil stated a date")
+		}
+	}
+}
+
+func TestConfigKeepsItsOwnCopyOfTheRevocationSettings(t *testing.T) {
+	list := []byte{1, 2, 3}
+	root := parseFixtureCertificate(t, "jws-root")
+	options := applereceipt.ConfigOptions{
+		RevocationLists:   [][]byte{list},
+		RevocationIssuers: []*x509.Certificate{root},
+		Distrust:          []applereceipt.RevokedCertificate{{Issuer: "a", Serial: "1"}},
+	}
+	config := applereceipt.NewConfig(options)
+	list[0] = 9
+	options.RevocationLists[0] = []byte{7}
+	options.RevocationIssuers[0] = nil
+	options.Distrust[0].Serial = "2"
+	if got := config.RevocationLists(); !reflect.DeepEqual(got, [][]byte{{1, 2, 3}}) {
+		t.Errorf("RevocationLists %v after the caller changed its slices", got)
+	}
+	if got := config.RevocationIssuers(); len(got) != 1 || got[0] != root {
+		t.Errorf("RevocationIssuers %v after the caller changed its slice", got)
+	}
+	if got := config.Distrust(); !reflect.DeepEqual(got, []applereceipt.RevokedCertificate{{Issuer: "a", Serial: "1"}}) {
+		t.Errorf("Distrust %v after the caller changed its slice", got)
+	}
+	config.RevocationLists()[0][0] = 9
+	config.Distrust()[0].Serial = "3"
+	if config.RevocationLists()[0][0] != 1 || config.Distrust()[0].Serial != "1" {
+		t.Error("a getter handed out the Config's own storage")
+	}
+	defaults := applereceipt.NewConfig(applereceipt.ConfigOptions{})
+	if defaults.RevocationLists() == nil || defaults.RevocationIssuers() == nil || defaults.Distrust() == nil {
+		t.Error("an unset revocation setting reads as nil, want empty")
 	}
 }
 

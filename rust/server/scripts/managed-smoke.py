@@ -2,8 +2,9 @@
 """Drives one `aprv serve --managed` session the way a Java 8 or PHP parent
 does, and checks the contract of README.md ("Managed mode"):
 
-  1. the child reads a 256-bit token as its first stdin line and the roots
-     as its second, and reports its port as one stdout line;
+  1. the child reads a 256-bit token as its first stdin line and the
+     configuration (roots and revocation settings) as its second, and
+     reports its port as one stdout line;
   2. it listens on 127.0.0.1 only, on the port it reported;
   3. /v1/ routes refuse a request without the token (401 problem) and answer
      with it; the verdict is the module's JSON;
@@ -83,6 +84,13 @@ def main():
     check("with the token: 200 and a verdict", s == 200 and b'"verified":true' in body, f"{s} {body[:60]!r}")
     s, _, body = post(port, "/v1/receipt/verify", receipt, {"X-Aprv-Token": token.decode()[:-1] + "x"})
     check("a wrong token: 401", s == 401, str(s))
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    c.request("GET", "/v1/info", headers={"X-Aprv-Token": token.decode()})
+    info = json.loads(c.getresponse().read())
+    check("/v1/info states the Apple list URLs and no list held",
+          len(info.get("revocation_urls", [])) == 4 and info.get("revocation_valid_until_ms", 0) is None
+          and info.get("revocation_lists") == [] and info.get("distrust") == [],
+          json.dumps({k: info.get(k) for k in ("revocation_urls", "revocation_valid_until_ms")}))
     t = time.monotonic()
     p.stdin.close()
     try:
@@ -97,6 +105,8 @@ def main():
     check("a token under 32 bytes is refused", line == "" and p.wait(timeout=10) == 2, p.stderr.read().decode().strip())
     p, line, _ = start(a.aprv, token, '{"roots":[]}')
     check("an empty root list is refused", line == "" and p.wait(timeout=10) == 2, p.stderr.read().decode().strip())
+    p, line, _ = start(a.aprv, token, '{"distrust":[{"issuer":"ab","serial":"01"}]}')
+    check("a distrust entry init refuses stops the child", line == "" and p.wait(timeout=10) == 2, p.stderr.read().decode().strip())
 
     # 5: the parent dies with kill -9; the child must not outlive it.
     parent = subprocess.Popen(

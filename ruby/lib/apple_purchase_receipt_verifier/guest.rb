@@ -4,8 +4,9 @@ require "wasmtime"
 
 module ApplePurchaseReceiptVerifier
   # The module refused the configuration `init` was given: a root that is not
-  # a certificate, or a configuration that is not the JSON it expects.
-  # {Verifier.create} turns it into an ArgumentError.
+  # a certificate, a revocation setting it refuses, or a configuration that
+  # is not the JSON it expects. {Verifier.create} turns it into an
+  # ArgumentError.
   #
   # @api private
   class RootsRejected < StandardError; end
@@ -46,9 +47,15 @@ module ApplePurchaseReceiptVerifier
     # @return [Integer, nil]
     attr_reader :max_input_bytes
 
+    # Everything this instance's `init` answer stated, the revocation state
+    # included; nil until `init` has answered.
+    #
+    # @return [Wire::InitState, nil]
+    attr_reader :init_state
+
     # @param runtime [Runtime]
     # @param config_json [String, nil] `init`'s argument,
-    #   `{"roots":["<base64>", ...]}`, or `{}` for the built-in roots; nil
+    #   {Wire.init_config}'s JSON, `{}` for the built-in roots; nil
     #   skips `init` (for tests of what the module does before it)
     # @raise [AbiMismatchError] the module lacks the exports this wrapper binds
     # @raise [RootsRejected] `init` refused the configuration
@@ -57,6 +64,7 @@ module ApplePurchaseReceiptVerifier
     def initialize(runtime, config_json)
       @broken = false
       @max_input_bytes = nil
+      @init_state = nil
       @store = Wasmtime::Store.new(runtime.engine, limits: LIMITS)
       exports = instantiate(runtime)
       @memory = exports.fetch("memory").to_memory
@@ -139,7 +147,9 @@ module ApplePurchaseReceiptVerifier
     # the one compiled module, so each states the same number; it is read
     # from this instance's own answer rather than assumed.
     def start(config_json)
-      @max_input_bytes = Wire.init_answer(call("init", [], config_json))
+      state = Wire.init_answer(call("init", [], config_json))
+      @init_state = state
+      @max_input_bytes = state.max_input_bytes
     rescue RootsRejected, TrapError
       discard
       raise

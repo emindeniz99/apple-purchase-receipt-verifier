@@ -3,16 +3,22 @@ import Foundation
 /// Reads the module's answers (aprv-wire, docs/rust-core/ARCHITECTURE.md
 /// §4) into this package's types. It decides nothing: a verdict is whatever
 /// the module wrote, and an answer that is not in the wire's shape, or names
-/// a reason outside the eight, is unusable and becomes
+/// a reason outside the nine, is unusable and becomes
 /// ``Reason/internalError`` — this never guesses at what a module meant.
 enum Wire {
-    /// init's answer: `{"ok":true,"max_input_bytes":N}` or
-    /// `{"ok":false,"message":"..."}`. `N` is the most bytes of one input the
-    /// module needs (docs/rust-core/DECISIONS.md R42): a longer input is cut
-    /// to it, and the module answers TOO_LARGE for that. An accepting answer
-    /// without a positive integer there comes from a module of another ABI
-    /// version, and is unusable like any answer outside the wire's shape.
-    static func initAnswer(_ answer: String) throws(HostError) -> Int {
+    /// init's answer: `{"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+    /// "revocation_valid_until_ms":M}` or `{"ok":false,"message":"..."}`.
+    /// `N` is the most bytes of one input the module needs
+    /// (docs/rust-core/DECISIONS.md R42): a longer input is cut to it, and
+    /// the module answers TOO_LARGE for that. The two revocation members are
+    /// what the module worked out for the configuration
+    /// (docs/design/revocation.md §7): the URLs of the lists it expects, and
+    /// the earliest `nextUpdate` of the lists it holds for them, in epoch
+    /// milliseconds, or `null`. An accepting answer without a positive
+    /// integer for `N`, or without either revocation member, comes from a
+    /// module of another version, and is unusable like any answer outside
+    /// the wire's shape.
+    static func initAnswer(_ answer: String) throws(HostError) -> InitAnswer {
         let reply: InitReply
         do {
             reply = try JSONDecoder().decode(InitReply.self, from: Data(answer.utf8))
@@ -25,7 +31,13 @@ enum Wire {
                 export: "init",
                 detail: "init accepted the configuration but states no max_input_bytes: the module is of another ABI version")
         }
-        return maxInputBytes
+        guard let urls = reply.revocationUrls, reply.statesValidUntil else {
+            throw .unusableAnswer(
+                export: "init",
+                detail: "init states no revocation_urls or revocation_valid_until_ms: the module is of another version")
+        }
+        let revocation = RevocationState(urls: urls, validUntilMs: reply.revocationValidUntilMs)
+        return InitAnswer(maxInputBytes: maxInputBytes, revocation: revocation)
     }
 
     /// A verify answer: `{"verified":true,"payload":...,"environment":<E>}`
@@ -47,7 +59,7 @@ enum Wire {
             return VerificationResult(payload: make(payload, envelope.environment))
         case (false, nil, let token?) where !envelope.statesEnvironment:
             guard let reason = Reason(rawValue: token) else {
-                return unusable(export, "the reason \"\(token)\" is not one of the eight")
+                return unusable(export, "the reason \"\(token)\" is not one of the nine")
             }
             return VerificationResult(failure: Failure(reason, envelope.message ?? ""))
         default:
@@ -68,8 +80,25 @@ enum Wire {
         let ok: Bool
         let message: String?
         let maxInputBytes: Int?
+        let revocationUrls: [String]?
+        /// The member is present, `null` included.
+        let statesValidUntil: Bool
+        let revocationValidUntilMs: Int64?
 
-        enum CodingKeys: String, CodingKey { case ok, message, maxInputBytes = "max_input_bytes" }
+        enum CodingKeys: String, CodingKey {
+            case ok, message, maxInputBytes = "max_input_bytes", revocationUrls = "revocation_urls"
+            case revocationValidUntilMs = "revocation_valid_until_ms"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok = try c.decode(Bool.self, forKey: .ok)
+            message = try c.decodeIfPresent(String.self, forKey: .message)
+            maxInputBytes = try c.decodeIfPresent(Int.self, forKey: .maxInputBytes)
+            revocationUrls = try c.decodeIfPresent([String].self, forKey: .revocationUrls)
+            statesValidUntil = c.contains(.revocationValidUntilMs)
+            revocationValidUntilMs = try c.decodeIfPresent(Int64.self, forKey: .revocationValidUntilMs)
+        }
     }
 
     private struct Envelope<P: Decodable>: Decodable {
@@ -102,6 +131,24 @@ enum Wire {
             }
         }
     }
+}
+
+/// What an accepting init answer states.
+struct InitAnswer: Sendable, Equatable {
+    /// `max_input_bytes`: every verify input is cut to it.
+    let maxInputBytes: Int
+    let revocation: RevocationState
+}
+
+/// The revocation state init states for a configuration
+/// (docs/design/revocation.md §7). The module works both values out; this
+/// package only reads them. Every instance of one ``Pool`` runs init with
+/// the same configuration, so it states the same values.
+struct RevocationState: Sendable, Equatable {
+    /// `revocation_urls`, in the module's order.
+    let urls: [String]
+    /// `revocation_valid_until_ms`: epoch milliseconds, or `nil` for `null`.
+    let validUntilMs: Int64?
 }
 
 /// A key the wire does not define is refused rather than skipped.

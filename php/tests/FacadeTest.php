@@ -10,6 +10,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\JsonPayload;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Reason;
 use EminDeniz99\ApplePurchaseReceiptVerifier\ReceiptPayload;
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\CountingClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FakeTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\FrozenClock;
@@ -17,6 +18,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\Outcome;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Tests\Support\ThrowingClock;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ModuleFaultException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\RevocationState;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\ServerProcessException;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use InvalidArgumentException;
@@ -198,7 +200,7 @@ final class FacadeTest extends TestCase
         yield 'a scalar' => ['"x"'];
         yield 'an empty object' => ['{}'];
         yield 'verified as a string' => ['{"verified":"true","payload":{}}'];
-        yield 'a reason outside the eight' => ['{"verified":false,"reason":"INVALID_JWS_FORMAT","message":"m"}'];
+        yield 'a reason this package does not know' => ['{"verified":false,"reason":"INVALID_JWS_FORMAT","message":"m"}'];
         yield 'a failure without a message' => ['{"verified":false,"reason":"MALFORMED"}'];
         yield 'a verified receipt without a payload' => ['{"verified":true,"environment":null}'];
         yield 'a receipt payload that is a string' => ['{"verified":true,"payload":"x","environment":null}'];
@@ -340,6 +342,46 @@ final class FacadeTest extends TestCase
         $builtIn = FakeTransport::answering('{}');
         Verifier::create(new Config(), $builtIn);
         self::assertSame([null], $builtIn->opened, 'no roots given reaches the transport as null, the module\'s built-in roots');
+    }
+
+    /**
+     * The revocation settings reach the transport as given, and the
+     * verifier reports the state the transport read from `aprv`, the
+     * instant in UTC; a verifier with no list held reports null.
+     */
+    public function testRevocationSettingsGoThroughAndTheVerifierReportsTheTransportsState(): void
+    {
+        $entry = new RevokedCertificate('AB', '1');
+        $transport = new FakeTransport(
+            static fn (): string => '{}',
+            null,
+            new RevocationState(['http://crl.apple.com/root.crl'], 1796083200000),
+        );
+        $verifier = Verifier::create(
+            new Config(revocationLists: new \ArrayIterator(["\x30\x01"]), revocationIssuers: ["\x30\x02"], distrust: [$entry]),
+            $transport,
+        );
+        self::assertSame(["\x30\x01"], $transport->configs[0]->revocationLists);
+        self::assertSame(["\x30\x02"], $transport->configs[0]->revocationIssuers);
+        self::assertSame([$entry], $transport->configs[0]->distrust);
+        self::assertSame(['http://crl.apple.com/root.crl'], $verifier->revocationUrls());
+        self::assertSame('2026-12-01T00:00:00+00:00', $verifier->revocationValidUntil()?->format(DATE_ATOM));
+
+        $none = Verifier::create(new Config(), FakeTransport::answering('{}'));
+        self::assertSame([], $none->revocationUrls());
+        self::assertNull($none->revocationValidUntil());
+        self::assertSame([], (new Config())->revocationLists);
+        self::assertSame([], (new Config())->distrust);
+    }
+
+    /** A revoked certificate is the module's verdict: the ninth reason, no cause. */
+    public function testCertificateRevokedIsAVerdict(): void
+    {
+        $wire = '{"verified":false,"reason":"CERTIFICATE_REVOKED","message":"revoked: distrust, serial 02"}';
+        $failure = Verifier::create(new Config(), FakeTransport::answering($wire))->verifySignedData('x')->failure;
+        self::assertNotNull($failure);
+        self::assertSame(Reason::CertificateRevoked, $failure->reason);
+        self::assertNull($failure->cause);
     }
 
     /**

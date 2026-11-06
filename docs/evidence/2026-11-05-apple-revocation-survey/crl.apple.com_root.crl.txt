@@ -1,0 +1,32 @@
+Certificate Revocation List (CRL):
+        Version 2 (0x1)
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C = US, O = Apple Inc., OU = Apple Certification Authority, CN = Apple Root CA
+        Last Update: Aug 25 00:06:52 2026 GMT
+        Next Update: Jan  7 00:06:51 2027 GMT
+        CRL extensions:
+            X509v3 Authority Key Identifier: 
+                2B:D0:69:47:94:76:09:FE:F4:6B:8D:2E:40:A6:F7:47:4D:7F:08:5E
+Revoked Certificates:
+    Serial Number: 3EDF4E5729AECD39
+        Revocation Date: Dec 12 21:48:43 2024 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Cessation Of Operation
+    Signature Algorithm: sha1WithRSAEncryption
+    Signature Value:
+        0b:f3:97:10:1e:4a:63:a5:b4:54:cd:c6:e7:47:cb:0d:6f:f2:
+        eb:7b:24:46:63:ba:24:16:c1:13:84:e5:ea:88:e2:60:37:4d:
+        da:f5:33:f9:59:01:ca:cb:62:99:6a:25:c2:f2:98:43:e6:32:
+        ac:b0:88:61:8a:ee:d4:93:fc:26:9c:2c:0c:15:f9:80:65:5d:
+        bf:14:71:29:8a:aa:d2:0b:df:74:96:fa:35:cb:ae:98:dc:98:
+        15:ca:21:6f:e5:af:21:dd:49:36:a5:ce:a4:a8:d0:67:aa:30:
+        ed:73:eb:42:44:10:00:ca:9c:2b:3d:3d:31:9f:0c:54:92:0f:
+        76:fc:8f:72:92:f9:e9:66:35:c7:b0:18:1a:ae:e4:77:9f:85:
+        c5:18:a5:35:81:d2:f6:44:fc:8d:9b:2c:8a:a8:3b:9c:f0:53:
+        14:55:07:1a:bf:25:48:d7:b9:8c:04:e2:2a:56:17:4f:99:92:
+        1b:bd:fa:a0:7b:92:7a:79:71:70:5f:fa:0f:a9:ec:fe:f6:76:
+        92:7e:d3:76:99:7f:a9:54:9a:67:12:72:dd:05:0f:15:f4:48:
+        c6:4f:c1:18:cc:55:60:9c:49:66:46:5f:1d:05:28:6c:81:80:
+        14:ac:b1:2c:58:29:7f:2f:03:eb:e2:49:98:12:2d:a3:79:d3:
+        f2:08:1b:b9

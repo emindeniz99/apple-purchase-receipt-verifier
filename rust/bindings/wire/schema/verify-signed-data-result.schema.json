@@ -58,7 +58,7 @@
       }
     },
     "reason": {
-      "description": "The eight 0.7 reasons (docs/design/0.7-api.md, Result).",
+      "description": "The nine reasons: the eight of 0.7 (docs/design/0.7-api.md, Result) and CERTIFICATE_REVOKED (docs/design/revocation.md §3).",
       "type": "string",
       "enum": [
         "MALFORMED",
@@ -68,7 +68,8 @@
         "INVALID_CERTIFICATE",
         "INVALID_CERTIFICATE_PURPOSE",
         "UNREADABLE_PAYLOAD",
-        "INTERNAL_ERROR"
+        "INTERNAL_ERROR",
+        "CERTIFICATE_REVOKED"
       ]
     }
   }

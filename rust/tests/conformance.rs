@@ -1,6 +1,7 @@
 //! Runs every vector in `fixtures/cases.json`, the normative
 //! cross-language conformance set for the 0.7 API, through the three public
-//! [`Verifier`] methods and the two base64 decoders.
+//! [`Verifier`] methods, the two base64 decoders, and the [`Config`]
+//! builder with its revocation settings (`buildConfig`).
 //!
 //! The adapter below knows nothing about any individual case. It loads the
 //! file, resolves fixture ids to bytes and checks their recorded digest,
@@ -30,7 +31,9 @@ mod timing;
 use apple_purchase_receipt_verifier::__internal::{
     base64_encode, decode_receipt_data, decode_x5c_entry, keys_used_during,
 };
-use apple_purchase_receipt_verifier::{Config, Environment, Reason, TrustAnchor, Verifier};
+use apple_purchase_receipt_verifier::{
+    Config, ConfigBuilder, Environment, Reason, TrustAnchor, Verifier,
+};
 use base64::Engine as _;
 use libtest_mimic::{Arguments, Failed, Trial};
 use serde::Deserialize;
@@ -102,6 +105,12 @@ struct Case {
 struct Input {
     #[serde(default)]
     fixture: Option<String>,
+    /// `buildConfig` only: the configuration to build.
+    #[serde(default)]
+    trusted_roots: Option<TrustedRoots>,
+    /// `buildConfig` only.
+    #[serde(default)]
+    revocation: Option<RevocationSpec>,
     /// `verifyReceiptEndpoint` only: a text fixture that is the whole
     /// request body, handed over verbatim.
     #[serde(default)]
@@ -119,7 +128,29 @@ struct Input {
 struct CaseConfig {
     trusted_roots: TrustedRoots,
     #[serde(default)]
+    revocation: Option<RevocationSpec>,
+    #[serde(default)]
     environment: Option<String>,
+}
+
+/// The revocation settings of a configuration: lists and issuers by fixture
+/// id, distrust entries as written (some malformed on purpose).
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
+struct RevocationSpec {
+    #[serde(default)]
+    lists: Vec<String>,
+    #[serde(default)]
+    issuers: Vec<String>,
+    #[serde(default)]
+    distrust: Vec<DistrustSpec>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct DistrustSpec {
+    issuer: String,
+    serial: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -166,6 +197,13 @@ struct Expected {
     /// one, which an ok case of either operation must.
     #[serde(default, deserialize_with = "present")]
     environment: Option<Value>,
+    /// `buildConfig` only: `Verifier::revocation_urls`, in order.
+    #[serde(default)]
+    revocation_urls: Option<Vec<String>>,
+    /// `buildConfig` only: `Verifier::revocation_valid_until` as
+    /// `YYYY-MM-DDTHH:MM:SSZ`, or `null`. Outer `None` when not stated.
+    #[serde(default, deserialize_with = "present")]
+    revocation_valid_until: Option<Value>,
 }
 
 /// A member that is there, `null` included, as `Some`; serde leaves an
@@ -204,9 +242,9 @@ fn load_cases() -> Result<(PathBuf, CasesFile), Failed> {
         .map_err(|err| Failed::from(format!("harness error: cannot read {CASES}: {err}")))?;
     let parsed: CasesFile = serde_json::from_str(&text)
         .map_err(|err| Failed::from(format!("harness error: cannot parse {CASES}: {err}")))?;
-    if parsed.schema_version != 2 {
+    if parsed.schema_version != 3 {
         return Err(Failed::from(format!(
-            "harness error: {CASES} is schemaVersion {}, this adapter implements 2",
+            "harness error: {CASES} is schemaVersion {}, this adapter implements 3",
             parsed.schema_version
         )));
     }
@@ -310,25 +348,59 @@ fn expectations_keep_every_digit(file: &CasesFile) -> Result<(), Failed> {
 
 // --- config --------------------------------------------------------------
 
-/// The case's config: its trusted roots, and a clock fixed at `clock.now`
-/// when it pins one, else the default clock.
+/// The case's config: its trusted roots, its revocation settings, and a
+/// clock fixed at `clock.now` when it pins one, else the default clock.
 fn config(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Result<Config, Failed> {
     let spec = case
         .config
         .as_ref()
         .ok_or_else(|| Failed::from(format!("{}: harness error: no config", case.id)))?;
+    builder(
+        dir,
+        fixtures,
+        case,
+        &spec.trusted_roots,
+        spec.revocation.as_ref(),
+    )?
+    .build()
+    .map_err(|err| Failed::from(format!("{}: config refused: {err}", case.id)))
+}
+
+/// Certificates read from fixtures as a root is read.
+fn certificates(
+    dir: &Path,
+    fixtures: &BTreeMap<String, Fixture>,
+    case: &Case,
+    ids: &[String],
+) -> Result<Vec<TrustAnchor>, Failed> {
+    let mut read = Vec::new();
+    for id in ids {
+        let der = fixture_bytes(dir, fixtures, id)?;
+        read.extend(TrustAnchor::from_der_or_pem(&der).map_err(|err| {
+            Failed::from(format!(
+                "{}: certificate \"{id}\" does not parse: {err}",
+                case.id
+            ))
+        })?);
+    }
+    Ok(read)
+}
+
+/// A builder holding the trusted roots, the revocation settings and the
+/// case's clock.
+fn builder(
+    dir: &Path,
+    fixtures: &BTreeMap<String, Fixture>,
+    case: &Case,
+    trusted_roots: &TrustedRoots,
+    revocation: Option<&RevocationSpec>,
+) -> Result<ConfigBuilder, Failed> {
     let mut builder = Config::builder();
-    match spec.trusted_roots.source.as_str() {
+    match trusted_roots.source.as_str() {
         "defaults" => {}
         "fixtures" => {
-            let mut roots = Vec::new();
-            for id in spec.trusted_roots.fixtures.iter().flatten() {
-                let der = fixture_bytes(dir, fixtures, id)?;
-                roots.extend(TrustAnchor::from_der_or_pem(&der).map_err(|err| {
-                    Failed::from(format!("{}: root \"{id}\" does not parse: {err}", case.id))
-                })?);
-            }
-            builder = builder.roots(roots);
+            let ids = trusted_roots.fixtures.clone().unwrap_or_default();
+            builder = builder.roots(certificates(dir, fixtures, case, &ids)?);
         }
         other => {
             return Err(Failed::from(format!(
@@ -336,6 +408,22 @@ fn config(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Resu
                 case.id
             )))
         }
+    }
+    if let Some(revocation) = revocation {
+        let lists = revocation
+            .lists
+            .iter()
+            .map(|id| fixture_bytes(dir, fixtures, id))
+            .collect::<Result<Vec<_>, _>>()?;
+        builder = builder
+            .revocation_lists(lists)
+            .revocation_issuers(certificates(dir, fixtures, case, &revocation.issuers)?)
+            .distrust(
+                revocation
+                    .distrust
+                    .iter()
+                    .map(|entry| (entry.issuer.clone(), entry.serial.clone())),
+            );
     }
     if let Some(clock) = &case.clock {
         let now = parse_instant(&clock.now).ok_or_else(|| {
@@ -346,9 +434,100 @@ fn config(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Resu
         })?;
         builder = builder.clock(move || now);
     }
-    builder
-        .build()
-        .map_err(|err| Failed::from(format!("{}: config refused: {err}", case.id)))
+    Ok(builder)
+}
+
+/// `epoch milliseconds` as `YYYY-MM-DDTHH:MM:SSZ`, the form `buildConfig`
+/// states `revocationValidUntil` in.
+fn format_instant(millis: i64) -> String {
+    let seconds = millis.div_euclid(1000);
+    let days = seconds.div_euclid(86_400);
+    let of_day = seconds.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        of_day / 3600,
+        of_day % 3600 / 60,
+        of_day % 60
+    )
+}
+
+/// A `buildConfig` case: the configuration builds or is refused, and a
+/// built one reports the two revocation values.
+fn run_build_config(
+    dir: &Path,
+    fixtures: &BTreeMap<String, Fixture>,
+    case: &Case,
+) -> Result<(), Failed> {
+    let id = case.id.as_str();
+    let trusted_roots = case.input.trusted_roots.as_ref().ok_or_else(|| {
+        Failed::from(format!(
+            "{id}: harness error: buildConfig needs input.trustedRoots"
+        ))
+    })?;
+    let builder = builder(
+        dir,
+        fixtures,
+        case,
+        trusted_roots,
+        case.input.revocation.as_ref(),
+    )?;
+    let (built, panicked) = panics::panics_during(|| builder.build());
+    if panicked != 0 {
+        return Err(contained_panic(id, panicked));
+    }
+    let expected = &case.expected;
+    match (expected.status.as_deref(), built) {
+        (Some("error"), Ok(_)) => Err(Failed::from(format!(
+            "{id}: expected the configuration to be refused, but it built"
+        ))),
+        (Some("error"), Err(_)) => Ok(()),
+        (Some("ok"), Err(err)) => Err(Failed::from(format!(
+            "{id}: expected the configuration to build, but it was refused: {err}"
+        ))),
+        (Some("ok"), Ok(config)) => {
+            let verifier = Verifier::new(config);
+            let want_urls = expected
+                .revocation_urls
+                .as_ref()
+                .ok_or_else(|| Failed::from(format!("{id}: harness error: no revocationUrls")))?;
+            let mut failures = Vec::new();
+            if verifier.revocation_urls() != want_urls.as_slice() {
+                failures.push(format!(
+                    "{id}: revocationUrls: expected {want_urls:?} but got {:?}",
+                    verifier.revocation_urls()
+                ));
+            }
+            let want_until = expected.revocation_valid_until.as_ref().ok_or_else(|| {
+                Failed::from(format!("{id}: harness error: no revocationValidUntil"))
+            })?;
+            let got_until = verifier
+                .revocation_valid_until()
+                .map_or(Value::Null, |millis| Value::from(format_instant(millis)));
+            if *want_until != got_until {
+                failures.push(format!(
+                    "{id}: revocationValidUntil: expected {want_until} but got {got_until}"
+                ));
+            }
+            if failures.is_empty() {
+                Ok(())
+            } else {
+                Err(Failed::from(failures.join("\n")))
+            }
+        }
+        (other, _) => Err(Failed::from(format!(
+            "{id}: harness error: unknown status {other:?}"
+        ))),
+    }
 }
 
 /// `YYYY-MM-DDTHH:MM:SSZ` to epoch milliseconds, the only form the schema
@@ -652,6 +831,9 @@ fn run_case(dir: &Path, fixtures: &BTreeMap<String, Fixture>, case: &Case) -> Re
     let id = case.id.as_str();
     if case.operation == "decodeBase64" {
         return run_decode_base64(case);
+    }
+    if case.operation == "buildConfig" {
+        return run_build_config(dir, fixtures, case);
     }
     let config = config(dir, fixtures, case)?;
     let roots = config.roots().to_vec();

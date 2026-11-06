@@ -187,6 +187,7 @@ class KotlinInteropTest {
             Reason.UNTRUSTED_CHAIN -> "untrusted chain"
             Reason.INVALID_CERTIFICATE -> "bad cert"
             Reason.INVALID_CERTIFICATE_PURPOSE -> "wrong purpose"
+            Reason.CERTIFICATE_REVOKED -> "revoked"
             Reason.UNREADABLE_PAYLOAD -> "unreadable payload"
             Reason.INTERNAL_ERROR -> "internal error"
         }

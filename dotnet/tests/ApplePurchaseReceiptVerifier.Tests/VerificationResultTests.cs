@@ -118,6 +118,10 @@ public class VerificationResultTests
         public VerificationResult<JsonPayload> VerifySignedData(string jws) => _jws;
 
         public string VerifyReceiptEndpoint(AppleEnvironment environment, string requestJson) => "{\"status\":21002}";
+
+        public IReadOnlyList<string> RevocationUrls => Array.Empty<string>();
+
+        public long? RevocationValidUntilMs => null;
     }
 
     private static void AssertInvariant<T>(VerificationResult<T> result, string label)

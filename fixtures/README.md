@@ -1,7 +1,10 @@
 # Fixtures
 
 `cases.json` holds the shared conformance cases; `cases.schema.json`
-describes it, and `tools/lint-cases.mjs` checks both.
+describes it, and `tools/lint-cases.mjs` checks both. The revocation
+cases read the test PKI and lists in `generated-0.7/revocation/`, written
+by `RevocationFixtures` in `java/src/test/`, and two lists Apple serves
+in `apple-crls/`, whose README gives their source.
 
 `corpus.json` pins the calls of the parity corpus that the nightly
 `corpus` job runs: a release asset of this repository, by URL and

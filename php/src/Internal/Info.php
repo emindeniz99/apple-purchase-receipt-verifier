@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Internal;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\RevocationState;
 use RuntimeException;
 
 /**
@@ -68,5 +69,32 @@ final class Info
         }
 
         return $max;
+    }
+
+    /**
+     * The `revocation_urls` and `revocation_valid_until_ms` an info
+     * document states: what the module's `init` answered for the
+     * configuration (docs/design/revocation.md §7), passed on as they are.
+     *
+     * @param array<array-key, mixed> $info
+     *
+     * @throws RuntimeException when the binary states neither: it is not the one this package belongs to
+     */
+    public static function revocationState(array $info, string $where): RevocationState
+    {
+        $urls = $info['revocation_urls'] ?? null;
+        $until = $info['revocation_valid_until_ms'] ?? null;
+        if (
+            !is_array($urls) || !array_is_list($urls) || array_filter($urls, 'is_string') !== $urls
+            || !array_key_exists('revocation_valid_until_ms', $info) || !($until === null || is_int($until))
+        ) {
+            throw new RuntimeException(
+                "{$where} states no revocation_urls and revocation_valid_until_ms"
+                . ': install the aprv binary that belongs to this package version',
+            );
+        }
+
+        /** @var list<string> $urls */
+        return new RevocationState($urls, $until);
     }
 }

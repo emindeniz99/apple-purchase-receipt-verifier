@@ -17,6 +17,9 @@ type Pool struct {
 	mod    *module
 	config []byte
 	pool   sync.Pool
+	// state is what the first instance's init answered. Every instance
+	// runs init with the same configuration, so it is read once.
+	state InitState
 }
 
 // NewPool loads the embedded module (compiled once per process) and makes
@@ -37,9 +40,14 @@ func newPool(mod *module, config []byte) (*Pool, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.state = g.state
 	p.pool.Put(g)
 	return p, nil
 }
+
+// State is what init answered for the Pool's configuration: the
+// revocation state the module worked out. The caller must not change it.
+func (p *Pool) State() InitState { return p.state }
 
 func (p *Pool) get() (*Guest, error) {
 	if g, ok := p.pool.Get().(*Guest); ok {

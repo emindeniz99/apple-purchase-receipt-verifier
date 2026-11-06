@@ -18,9 +18,15 @@ pub(crate) const BIO_C_SET_MD: c_int = 111;
 pub(crate) const V_ASN1_UTF8STRING: c_int = 12;
 pub(crate) const V_ASN1_IA5STRING: c_int = 22;
 
+/// `V_ASN1_NEG_INTEGER`, the type OpenSSL gives a negative INTEGER
+/// (asn1.h).
+pub(crate) const V_ASN1_NEG_INTEGER: c_int = 0x102;
+
 /// `V_ASN1_UNIVERSAL`, the class value `ASN1_get_object` reports for a
 /// universal tag (asn1.h).
 pub(crate) const V_ASN1_UNIVERSAL: c_int = 0x00;
+/// `V_ASN1_CONTEXT_SPECIFIC`, the class value of a context-specific tag.
+pub(crate) const V_ASN1_CONTEXT_SPECIFIC: c_int = 0x80;
 /// The bits of `ASN1_get_object`'s answer: a constructed encoding, an
 /// indefinite length, an error (`asn1.h`, `asn1_lib.c`).
 pub(crate) const V_ASN1_CONSTRUCTED: c_int = 0x20;
@@ -66,12 +72,56 @@ const _: () = {
     assert!(core::mem::offset_of!(APRV_SIGNED_DATA, signer_infos) == 5 * POINTER);
 };
 
+/// `APRV_TBS_CERT_LIST` as `crl.c` declares it: its seven pointer members,
+/// in declaration order. The cached encoding after them is OpenSSL's alone
+/// and is never read here, so this type is never sized or built on this
+/// side: only a pointer to the C value is cast to it.
+#[repr(C)]
+pub(crate) struct APRV_TBS_CERT_LIST {
+    pub(crate) version: *mut ffi::ASN1_INTEGER,
+    pub(crate) signature: *mut ffi::X509_ALGOR,
+    pub(crate) issuer: *mut ffi::X509_NAME,
+    pub(crate) this_update: *mut ffi::ASN1_TIME,
+    pub(crate) next_update: *mut ffi::ASN1_TIME,
+    pub(crate) revoked: *mut ffi::stack_st_X509_REVOKED,
+    pub(crate) extensions: *mut ffi::stack_st_X509_EXTENSION,
+}
+
+/// `APRV_CERT_LIST` as `crl.c` declares it: three pointers.
+#[repr(C)]
+pub(crate) struct APRV_CERT_LIST {
+    pub(crate) tbs: *mut APRV_TBS_CERT_LIST,
+    pub(crate) algorithm: *mut ffi::X509_ALGOR,
+    pub(crate) signature: *mut ffi::ASN1_BIT_STRING,
+}
+
+const _: () = {
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, signature) == POINTER);
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, issuer) == 2 * POINTER);
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, this_update) == 3 * POINTER);
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, next_update) == 4 * POINTER);
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, revoked) == 5 * POINTER);
+    assert!(core::mem::offset_of!(APRV_TBS_CERT_LIST, extensions) == 6 * POINTER);
+    assert!(core::mem::size_of::<APRV_CERT_LIST>() == 3 * POINTER);
+    assert!(core::mem::offset_of!(APRV_CERT_LIST, algorithm) == POINTER);
+    assert!(core::mem::offset_of!(APRV_CERT_LIST, signature) == 2 * POINTER);
+};
+
 /// The verify callback of an `X509_STORE_CTX`.
 pub(crate) type VerifyCallback =
     Option<unsafe extern "C" fn(c_int, *mut ffi::X509_STORE_CTX) -> c_int>;
 
 extern "C" {
     pub(crate) fn OPENSSL_init_crypto(opts: u64, settings: *const c_void) -> c_int;
+
+    pub(crate) fn ASN1_item_verify(
+        it: *const ASN1_ITEM,
+        alg: *const ffi::X509_ALGOR,
+        signature: *const ffi::ASN1_BIT_STRING,
+        data: *const c_void,
+        pkey: *mut ffi::EVP_PKEY,
+    ) -> c_int;
+    pub(crate) fn X509_ALGOR_cmp(a: *const ffi::X509_ALGOR, b: *const ffi::X509_ALGOR) -> c_int;
 
     pub(crate) fn X509_STORE_CTX_set_verify_cb(ctx: *mut ffi::X509_STORE_CTX, cb: VerifyCallback);
     pub(crate) fn BASIC_CONSTRAINTS_free(bc: *mut c_void);
@@ -130,8 +180,12 @@ extern "C" {
         omax: c_long,
     ) -> c_int;
     pub(crate) fn ASN1_INTEGER_get_int64(out: *mut i64, a: *const ffi::ASN1_INTEGER) -> c_int;
+    pub(crate) fn ASN1_BIT_STRING_get_bit(a: *const ffi::ASN1_BIT_STRING, n: c_int) -> c_int;
     pub(crate) fn ASN1_OCTET_STRING_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_INTEGER_it() -> *const ASN1_ITEM;
+    pub(crate) fn ASN1_ENUMERATED_it() -> *const ASN1_ITEM;
+    pub(crate) fn AUTHORITY_KEYID_it() -> *const ASN1_ITEM;
+    pub(crate) fn CRL_DIST_POINTS_it() -> *const ASN1_ITEM;
     pub(crate) fn DISPLAYTEXT_it() -> *const ASN1_ITEM;
     /// Defined by `payload.c`.
     pub(crate) fn APRV_RECEIPT_PAYLOAD_it() -> *const ASN1_ITEM;
@@ -139,4 +193,8 @@ extern "C" {
     pub(crate) fn APRV_CONTENT_INFO_it() -> *const ASN1_ITEM;
     /// Defined by `envelope.c`.
     pub(crate) fn APRV_SIGNED_DATA_it() -> *const ASN1_ITEM;
+    /// Defined by `crl.c`.
+    pub(crate) fn APRV_CERT_LIST_it() -> *const ASN1_ITEM;
+    /// Defined by `crl.c`.
+    pub(crate) fn APRV_TBS_CERT_LIST_it() -> *const ASN1_ITEM;
 }

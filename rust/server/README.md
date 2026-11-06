@@ -22,14 +22,17 @@ design is in `docs/rust-core/ARCHITECTURE.md` §7.7 and
 | `aprv verify-receipt` | stdin: the receipt's `receipt-data` string (base64 of the DER) |
 | `aprv verify-signed-data` | stdin: a compact JWS |
 | `aprv verify-receipt-endpoint production\|sandbox` | stdin: a verifyReceipt request body; stdout: Apple's response |
-| `aprv info` | JSON: the component's SHA-256, the Wasmtime version and features, the limits (`max_input_bytes` from one `init` with the built-in roots) |
+| `aprv info` | JSON: the component's SHA-256, the Wasmtime version and features, the limits (`max_input_bytes` from one `init`), and for the configuration flags given (`--roots` and the revocation flags; none means the built-in roots) the roots' fingerprints and the members `GET /v1/info` states about revocation. A configuration `init` refuses exits 2, with the module's answer on stderr |
 | `aprv precompile C.wasm --target T -o F.ccwasm` | The full build only; see [The precompile rule](#the-precompile-rule) |
 
 ### Flags and environment
 
 | Flag | Commands | Meaning |
 |---|---|---|
-| `--roots FILE` | serve, CLI | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes), or PEM `CERTIFICATE` blocks; `#` comments and blank lines are skipped. PEM, in a block or in a base64 line, is unwrapped with the `pem` crate to the DER of each certificate in it, and only that DER reaches `init`, so `/v1/info` reports the SHA-256 of each certificate `init` anchors, one per certificate of a bundle. PEM in a base64 line holds `CERTIFICATE` blocks and blank lines only; other text is refused. An empty file is refused. Without the flag, the three Apple roots built into the module |
+| `--roots FILE` | serve, CLI, info | A file of trusted roots; repeat the flag for several files, whose roots add up in order. A file whose first byte is 0x30 (an ASN.1 SEQUENCE, the rule the core uses) is one DER certificate, such as Apple's `.cer` files, passed to `init` as it is. Any other file is text: one base64 root per line (DER, or PEM bytes), or PEM `CERTIFICATE` blocks; `#` comments and blank lines are skipped. PEM, in a block or in a base64 line, is unwrapped with the `pem` crate to the DER of each certificate in it, and only that DER reaches `init`, so `/v1/info` reports the SHA-256 of each certificate `init` anchors, one per certificate of a bundle. PEM in a base64 line holds `CERTIFICATE` blocks and blank lines only; other text is refused. An empty file is refused. Without the flag, the three Apple roots built into the module |
+| `--revocation-list FILE` | serve, CLI, info | A certificate revocation list, a DER CRL file exactly as downloaded; repeat the flag for several. Passed to `init` as it is: the module judges it (docs/design/revocation.md §4) and a list it refuses stops the server at start (exit 2). Apple's list URLs are `/v1/info`'s `revocation_urls`. Default: none |
+| `--revocation-issuer FILE` | serve, CLI, info | A CA certificate that signs revocation lists, added to the built-in WWDR G5 and G6; repeatable. The `--roots` file format, PEM unwrapped to DER the same way. Default: none |
+| `--distrust ISSUER:SERIAL` | serve, CLI, info | A certificate to refuse: the issuer id (64 hex digits, revocation.md §2), a colon, the serial in hex. Repeatable. Split at the first colon and passed to `init` as written; `init` refuses a malformed entry. Default: none |
 | `--now-ms N` | CLI | The verification clock, ms since the Unix epoch, 0 to 9223372036854775807 (the WIT `now-ms` is an `s64`). Default: the system clock |
 | `--listen ADDR` | serve | The bind address; overrides `APRV_LISTEN`. Default `127.0.0.1:8080` |
 | `--token-file FILE` | serve | The token `/v1/` routes require (trimmed). Overrides `APRV_TOKEN`. A file that holds no token stops the server (exit 2) |
@@ -64,7 +67,7 @@ server reachable from beyond loopback should have a token (the root
 | Code | Meaning |
 |---|---|
 | 0 | A result: the module's JSON is on stdout, verified or not |
-| 2 | Usage or configuration: a bad flag, an unreadable `--roots` file, roots `init` refused |
+| 2 | Usage or configuration: a bad flag, an unreadable `--roots`, `--revocation-list` or `--revocation-issuer` file, a configuration `init` refused |
 | 3 | stdin is over the module's size cap: `max_input_bytes` long or longer, the length the module's `init` answer states (3,145,729, one over its 3,145,728-byte cap; `aprv info` shows it). The module got that many bytes and its answer, its own size refusal, is on stdout as for 0 |
 | 70 | A trap, an ABI fault or a load failure; the message is on stderr |
 
@@ -81,7 +84,7 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
 | `POST /v1/signed-data/verify` | the compact JWS | `verify-signed-data(now-ms, body)` |
 | `POST /v1/verify-receipt/production` | a verifyReceipt request | `verify-receipt-endpoint(production, now-ms, body)` |
 | `POST /v1/verify-receipt/sandbox` | a verifyReceipt request | `verify-receipt-endpoint(sandbox, now-ms, body)` |
-| `GET /v1/info` | | the component's SHA-256, the roots' SHA-256 fingerprints, the engine and limits |
+| `GET /v1/info` | | the component's SHA-256, the roots' SHA-256 fingerprints, the revocation state, the engine and limits |
 | `GET /healthz`, `GET /readyz` | | `ok`, `ready` (the server listens only after its first `init` succeeded) |
 | `GET /openapi.json` | | [`openapi.yaml`](openapi.yaml) as JSON, the wire schemas bundled |
 
@@ -113,6 +116,21 @@ process (`docs/evidence/2026-09-27-static-musl-server.md` §3).
   instance gets them through `init`. `GET /v1/info` serves each root's
   SHA-256 (of the DER) and the component's SHA-256, so a client can refuse
   a server that runs something else.
+- **Revocation settings** are fixed at start too (`--revocation-list`,
+  `--revocation-issuer`, `--distrust`, or the managed configuration line;
+  docs/design/revocation.md). The server parses none of them: `init`
+  judges every one. `GET /v1/info` states what `init` answered,
+  `revocation_urls` (the lists the configuration expects, for the host to
+  download) and `revocation_valid_until_ms` (the earliest `nextUpdate`
+  among the lists held, null when an expected issuer has none; a past
+  instant means a list is stale), and what the server was given:
+  `revocation_lists` (each list's SHA-256, sorted), `revocation_issuers`
+  (each issuer's DER SHA-256, in order) and `distrust` (the entries as
+  written). The Java `-wasm` server engine and PHP refuse a server whose
+  three given members differ from their `Config`. A revoked certificate is
+  the module's `CERTIFICATE_REVOKED`, a 200 like any verdict, and 21003 at
+  the endpoint routes. New lists take effect when the server restarts (or
+  a parent starts a new managed child).
 
 ### Problems
 
@@ -161,12 +179,19 @@ A client maps both 500 codes and a failed connection to `INTERNAL_ERROR`
 2. It writes the token as the first stdin line: at least 32 bytes; send
    256 random bits (64 hex digits). Never in argv (world-readable in
    `/proc`) or the environment.
-3. It writes the roots as the second line, in `init`'s own shape
+3. It writes the configuration as the second line, one JSON object in
+   `init`'s own shape
    (`rust/bindings/wire/schema/init-config.schema.json`):
    `{"roots":["<base64>", ...]}`, each root DER or PEM bytes, or `{}`
    for the Apple roots. An
    empty list is refused. A PEM root is unwrapped to DER as a `--roots`
-   base64 line is, so `/v1/info` fingerprints each certificate in it.
+   base64 line is, so `/v1/info` fingerprints each certificate in it. The
+   optional revocation members are `init`'s too:
+   `"revocation_lists":["<base64 of a DER CRL>", ...]`,
+   `"revocation_issuers":["<base64 of DER or PEM>", ...]` (PEM unwrapped
+   as for a root) and `"distrust":[{"issuer":"...","serial":"..."}, ...]`;
+   an empty array is no setting. The line may be up to 32 MiB (base64 of
+   16 lists of 1 MiB, plus roots and issuers).
 4. The child binds `127.0.0.1:0` whatever `APRV_LISTEN` says and prints
    one line, `APRV_LISTEN=127.0.0.1:<port>`, on stdout.
 5. The parent sends every `/v1/` request with `X-Aprv-Token`.

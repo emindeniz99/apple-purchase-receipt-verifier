@@ -5,7 +5,9 @@ import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -128,6 +130,47 @@ final class ServerVerifier implements Verifier, Closeable {
      */
     private static byte[] bytes(@Nullable String text, ServerConnection connection) {
         return WasmVerifier.bytes(text, connection.maxInputBytes());
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>As the server's {@code GET /v1/info} stated its module's
+     * {@code init} answer. With the runtime probe off, the first call of
+     * this method or of a verify method starts or reaches the server.</p>
+     *
+     * @throws IllegalArgumentException with the probe off, if the module
+     *     refuses the configuration
+     * @throws IllegalStateException with the probe off, if no source works,
+     *     or once the verifier is closed
+     */
+    @Override
+    public List<String> revocationUrls() {
+        return initAnswer().revocationUrls;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>As the server's {@code GET /v1/info} stated it; throws as
+     * {@link #revocationUrls()}.</p>
+     */
+    @Override
+    public @Nullable Instant revocationValidUntil() {
+        return initAnswer().revocationValidUntil();
+    }
+
+    private InitAnswer initAnswer() {
+        try {
+            return holder.get().initAnswer();
+        } catch (ServerProcessFailure e) {
+            // With the probe off, Engine.Server wraps what create would have thrown.
+            Throwable cause = e.getCause();
+            if (cause instanceof IllegalArgumentException || cause instanceof IllegalStateException) {
+                throw (RuntimeException) cause;
+            }
+            throw new IllegalStateException(e.getMessage(), e);
+        }
     }
 
     /** Stops a managed child now; later calls answer {@link Reason#INTERNAL_ERROR}. Idempotent. */

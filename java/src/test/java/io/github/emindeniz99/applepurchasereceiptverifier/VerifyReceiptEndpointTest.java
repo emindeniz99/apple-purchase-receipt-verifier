@@ -325,6 +325,7 @@ class VerifyReceiptEndpointTest {
         assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, Endpoint.status(Reason.UNTRUSTED_CHAIN));
         assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, Endpoint.status(Reason.INVALID_CERTIFICATE));
         assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, Endpoint.status(Reason.INVALID_CERTIFICATE_PURPOSE));
+        assertEquals(AppleStatus.RECEIPT_NOT_AUTHENTICATED, Endpoint.status(Reason.CERTIFICATE_REVOKED));
         assertEquals(AppleStatus.INTERNAL_DATA_ACCESS_ERROR, Endpoint.status(Reason.UNREADABLE_PAYLOAD));
         assertEquals(AppleStatus.INTERNAL_DATA_ACCESS_ERROR, Endpoint.status(Reason.INTERNAL_ERROR));
         for (Reason reason : Reason.values()) {

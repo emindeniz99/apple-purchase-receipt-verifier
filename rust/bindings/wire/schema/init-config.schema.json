@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/init-config.schema.json",
   "title": "The configuration init takes",
-  "description": "The argument of aprv.wasm's init export: the roots a chain must reach, each in padded standard base64: one DER certificate, or PEM text holding one or more certificates, which the core tells apart by the decoded bytes. {} (the one spelling a wrapper sends) or no bytes at all mean the three Apple roots compiled into the module. An empty roots list is refused (\"roots must not be empty\"), so a root set that came up empty fails at create instead of reading as the Apple roots; Verifier.create refuses a caller's empty root set before init all the same.",
+  "description": "The argument of aprv.wasm's init export: the roots a chain must reach, and the revocation settings (docs/design/revocation.md §4, §8), each in padded standard base64: one DER certificate, or PEM text holding one or more certificates, which the core tells apart by the decoded bytes. {} (the one spelling a wrapper sends) or no bytes at all mean the three Apple roots compiled into the module. An empty roots list is refused (\"roots must not be empty\"), so a root set that came up empty fails at create instead of reading as the Apple roots; Verifier.create refuses a caller's empty root set before init all the same. The revocation members are optional and default to empty; the core judges every list, issuer and distrust entry when init runs, and refuses the configuration naming the first problem and its index.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -14,6 +14,44 @@
         "type": "string",
         "minLength": 1,
         "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      }
+    },
+    "revocation_lists": {
+      "description": "Certificate revocation lists exactly as downloaded (DER), padded standard base64, any order. At most 16, each at most 1 MiB, 100,000 entries in all.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      }
+    },
+    "revocation_issuers": {
+      "description": "CA certificates that sign lists, added to the built-in ones: DER or PEM, padded standard base64, as a root is given.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+      }
+    },
+    "distrust": {
+      "description": "Revocation keys to refuse: the issuer id (SHA-256 over the issuing certificate's subject and subjectPublicKeyInfo as encoded, 64 hex digits) and the revoked certificate's serial in hex, either letter case. At most 1,000. The core checks the strings when init runs.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "issuer",
+          "serial"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "serial": {
+            "type": "string"
+          }
+        }
       }
     }
   }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 /// Why a verification failed.
 ///
-/// The set is closed: these eight values are the whole contract, and adding
+/// The set is closed: these nine values are the whole contract, and adding
 /// one is a breaking change in every language. Match on the reason, never
 /// on a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -32,6 +32,12 @@ pub enum Reason {
     UnreadablePayload,
     /// The library failed before it could decide. Alert; do not retry.
     InternalError,
+    /// A certificate on the verified path below the anchor is revoked: by
+    /// the built-in list, by the configuration's `distrust`, or by a
+    /// revocation list the configuration holds (docs/design/revocation.md
+    /// §3). Checked after the signature and before the signed content is
+    /// read.
+    CertificateRevoked,
 }
 
 /// A [`Reason::Malformed`] failure: the input's structure is broken.
@@ -53,6 +59,7 @@ impl Reason {
             Reason::InvalidCertificatePurpose => "INVALID_CERTIFICATE_PURPOSE",
             Reason::UnreadablePayload => "UNREADABLE_PAYLOAD",
             Reason::InternalError => "INTERNAL_ERROR",
+            Reason::CertificateRevoked => "CERTIFICATE_REVOKED",
         }
     }
 
@@ -68,6 +75,7 @@ impl Reason {
             Reason::InvalidCertificatePurpose,
             Reason::UnreadablePayload,
             Reason::InternalError,
+            Reason::CertificateRevoked,
         ]
     }
 }
@@ -191,7 +199,8 @@ impl Error for Failure {
 }
 
 /// A programming mistake in how a [`Config`](crate::Config) was built: no
-/// trust anchors, or bytes that are not a certificate.
+/// trust anchors, bytes that are not a certificate, or a revocation setting
+/// that is refused (docs/design/revocation.md §4).
 ///
 /// Deliberately not a [`Failure`]: misconfiguration is not a verdict about
 /// any input, and happens once, at startup.

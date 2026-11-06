@@ -21,7 +21,8 @@ import org.jspecify.annotations.Nullable;
  * never a verdict.
  *
  * <ul>
- *   <li>{@code init}: {@code {"ok":true,"max_input_bytes":N}} or
+ *   <li>{@code init}: {@code {"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+ *       "revocation_valid_until_ms":N|null}} or
  *       {@code {"ok":false,"message":"..."}}.</li>
  *   <li>{@code verify-receipt}:
  *       {@code {"verified":true,"payload":<ReceiptPayload>,"environment":<E>}}, the
@@ -49,19 +50,26 @@ final class Wire {
             .build();
 
     /**
-     * The {@code max_input_bytes} of an {@code init} answer: the most bytes of
-     * one input the module needs (DECISIONS.md R42). A longer input is cut to
-     * this length, and the module answers {@code TOO_LARGE} for it.
+     * An accepting {@code init} answer: the {@code max_input_bytes}, the most
+     * bytes of one input the module needs (DECISIONS.md R42; a longer input
+     * is cut to this length, and the module answers {@code TOO_LARGE} for
+     * it), and the revocation state the module stated for the configuration
+     * (docs/design/revocation.md §7).
      *
      * @throws InitRefused  when the module answered {@code {"ok":false}}
      * @throws GuestFailure when the answer is not an {@code init} answer, an
-     *     accepting one without a positive {@code max_input_bytes} included
+     *     accepting one without its four members, each of its type, included
      */
-    static int initAnswer(String answer) {
+    static InitAnswer initAnswer(String answer) {
         Map<String, Object> object = object(parse(answer), "init answer");
         Object ok = object.get("ok");
-        if (Boolean.TRUE.equals(ok) && object.size() == 2) {
-            return maxInputBytes(object.get("max_input_bytes"), "init answer \"max_input_bytes\"");
+        if (Boolean.TRUE.equals(ok)) {
+            keys(object, "init answer", "ok", "max_input_bytes", "revocation_urls", "revocation_valid_until_ms");
+            return new InitAnswer(
+                    maxInputBytes(object.get("max_input_bytes"), "init answer \"max_input_bytes\""),
+                    strings(object.get("revocation_urls"), "init answer \"revocation_urls\""),
+                    epochMillisOrNull(
+                            object.get("revocation_valid_until_ms"), "init answer \"revocation_valid_until_ms\""));
         }
         if (Boolean.FALSE.equals(ok) && object.size() == 2 && object.get("message") instanceof String) {
             throw new InitRefused((String) object.get("message"));
@@ -99,6 +107,32 @@ final class Wire {
             throw malformed(what);
         }
         return (int) (long) (Long) value;
+    }
+
+    /** A JSON array of strings, as a new list. */
+    static List<String> strings(@Nullable Object value, String what) {
+        if (!(value instanceof List)) {
+            throw malformed(what);
+        }
+        List<String> out = new ArrayList<>();
+        for (Object item : (List<?>) value) {
+            if (!(item instanceof String)) {
+                throw malformed(what);
+            }
+            out.add((String) item);
+        }
+        return out;
+    }
+
+    /** A JSON integer, or {@code null} for a JSON null. */
+    static @Nullable Long epochMillisOrNull(@Nullable Object value, String what) {
+        if (value == NULL) {
+            return null;
+        }
+        if (!(value instanceof Long)) {
+            throw malformed(what);
+        }
+        return (Long) value;
     }
 
     /** Apple's response JSON, unchanged; only an empty answer is refused. */

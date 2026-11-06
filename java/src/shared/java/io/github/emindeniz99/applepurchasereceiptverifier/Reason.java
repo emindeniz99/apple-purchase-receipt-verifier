@@ -51,5 +51,18 @@ public enum Reason {
      * that threw. {@link Failure#cause()} carries the exception. Deterministic
      * for the same input: alert, do not retry.
      */
-    INTERNAL_ERROR
+    INTERNAL_ERROR,
+    /**
+     * A certificate below the trust anchor on the verified path is revoked:
+     * it is on the built-in revocation list, it matches a
+     * {@link Config.Builder#distrust distrust} entry, or a list passed with
+     * {@link Config.Builder#revocationLists} lists it. Decided after the
+     * chain, the marker OIDs and the signature have passed, and before the
+     * signed content is read, so a payload signed with a revoked key is
+     * never judged. Dates do not matter: whoever holds a leaked key picks
+     * the payload's date. The message names the layer ("built-in list",
+     * "distrust", "Apple's list") and the certificate's serial. The
+     * endpoint answers 21003 for it.
+     */
+    CERTIFICATE_REVOKED
 }

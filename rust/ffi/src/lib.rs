@@ -118,6 +118,9 @@ pub enum AprvReason {
     /// A trusted signer signed content the library cannot read, found only
     /// after the chain and the signature passed. Not the caller's fault.
     UnreadablePayload = 16,
+    /// A certificate on the verified path is revoked: by the built-in
+    /// revocation list (this ABI passes no other revocation setting).
+    CertificateRevoked = 17,
 
     /// A required pointer argument was `NULL`. Nothing was verified.
     NullPointer = 100,
@@ -259,7 +262,7 @@ fn guard_ptr<T, F: FnOnce() -> *mut T>(body: F) -> *mut T {
 /// position, so a retired reason retires its number instead of shifting
 /// every later one. `reason_codes_mirror_the_library` asserts this against
 /// `Reason::all()`.
-const REASON_CODES: [(i32, &str); 8] = [
+const REASON_CODES: [(i32, &str); 9] = [
     (13, "MALFORMED"),
     (14, "TOO_LARGE"),
     (5, "INVALID_SIGNATURE"),
@@ -268,6 +271,7 @@ const REASON_CODES: [(i32, &str); 8] = [
     (3, "INVALID_CERTIFICATE_PURPOSE"),
     (16, "UNREADABLE_PAYLOAD"),
     (12, "INTERNAL_ERROR"),
+    (17, "CERTIFICATE_REVOKED"),
 ];
 
 /// The ABI code for a library reason, looked up by token so the table above
@@ -894,6 +898,7 @@ mod tests {
             (AprvReason::TooLarge, 14),
             (AprvReason::UntrustedChain, 15),
             (AprvReason::UnreadablePayload, 16),
+            (AprvReason::CertificateRevoked, 17),
         ] {
             assert_eq!(variant as i32, code);
         }

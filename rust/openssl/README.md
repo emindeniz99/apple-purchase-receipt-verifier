@@ -21,7 +21,8 @@ into reasons. A security review covers it together with the core.
 
 | Item | What it does |
 |---|---|
-| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability (`test-seams` only), the readability rules the 0.7 reader applied (version, octet-aligned signature, no duplicate extension, decodable basicConstraints and keyUsage) |
+| `Certificate` | one X.509 certificate (`d2i_X509`, whole input): comparison, issuance (`X509_check_issued` then `X509_verify`), key usability, extensions, validity at a second, CA capability (`test-seams` only), the readability rules the 0.7 reader applied (version, octet-aligned signature, no duplicate extension, decodable basicConstraints and keyUsage); for revocation, the `subject` and `subjectPublicKeyInfo` as encoded in the `TBSCertificate` (the issuer id), the serial, the cA flag, `cRLSign`, the SubjectKeyIdentifier and the cRLDistributionPoints URIs |
+| `RevocationList` | one certificate revocation list through the templates in `crl.c`, whole input: issuer Name as encoded, version, `thisUpdate`, `nextUpdate`, CRL Number, AuthorityKeyIdentifier, extensions with their critical flags, entries (serial, reasonCode, entry extensions) and the signature under a given certificate's key |
 | `__internal::verify_path` | builds and validates a path to the caller's anchors at a given second, and reports every problem with its depth. Internal (`#[doc(hidden)]`, no semver): it checks the path's signatures with the keys of the certificates passed as untrusted, so the caller must pass only certificates a pinned anchor already vouched for, top-down, never a raw bag or `x5c` list |
 | `SignedData` | a CMS `SignedData`: `parse` bounds the envelope (`EnvelopeLimits`) before `d2i_CMS_ContentInfo`; then content, embedded certificates, per-`SignerInfo` signer matching, signed-attribute facts and the signature check |
 | `payload::*` | the receipt payload through the templates in `payload.c`, after the header walk, within a `Budget` |
@@ -65,7 +66,22 @@ turn on; `aprv.wasm`, the C ABI and `aprv-server` are built without them.
   policy, revocation or host check is asked for.
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
   `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
-  the signature's unused bits).
+  the signature's unused bits), `X509_get_extension_flags`,
+  `X509_get_key_usage`, `X509_get0_subject_key_id`. The issuer id's
+  `subject` and `subjectPublicKeyInfo` are the `TBSCertificate`'s own
+  fields as `i2d_X509` writes them back from OpenSSL's cached original
+  encoding, split by the header walk; neither is re-encoded.
+- **Revocation lists**: not `d2i_X509_CRL`. Its post-decode callback
+  interprets the extensions while decoding and, in 4.0, refuses a list
+  whose entry carries a certificateIssuer without an indirect
+  IssuingDistributionPoint; the core must read such a genuine list and
+  ignore it (docs/design/revocation.md §4). `crl.c` declares OpenSSL's own
+  `CertificateList` grammar (x_crl.c) without that callback, with the
+  `TBSCertList`'s original encoding cached, and the signature is checked
+  as `X509_CRL_verify` checks it: the two signature algorithms compared
+  (`X509_ALGOR_cmp`), then `ASN1_item_verify` over the `TBSCertList`.
+  Extensions are read with `X509V3_get_d2i` and
+  `X509_REVOKED_get_ext_d2i`.
 - **Templates**: `ASN1_item_d2i` with items declared in C, the way OpenSSL
   declares its own. `payload.c` is the receipt payload (a SET OF
   attributes, each a `SEQUENCE OF ANY` whose first three fields the adapter
@@ -73,9 +89,9 @@ turn on; `aprv.wasm`, the C ABI and `aprv-server` are built without them.
   `ContentInfo` and `SignedData` whose members stay raw `ANY` values: it
   names the content type and gives the certificate and `SignerInfo`
   counts before `d2i_CMS_ContentInfo` builds every embedded certificate's
-  public key. Both declare their items' prototypes, and `envelope.c`
-  asserts the layout `src/sys.rs` mirrors (`_Static_assert` there, `const`
-  assertions here).
+  public key. `crl.c` is a revocation list (above). Each declares its
+  items' prototypes, and `envelope.c` and `crl.c` assert the layout
+  `src/sys.rs` mirrors (`_Static_assert` there, `const` assertions here).
 - **The header walk** (`src/walk.rs`): `ASN1_get_object`, OpenSSL's TLV
   header decoder, over raw BER. It reads tags and lengths and decodes no
   value, allocates nothing and copies nothing. It is the only file of the
@@ -196,7 +212,7 @@ OPENSSL_NO_VENDOR=1 OPENSSL_DIR=<wasm OpenSSL prefix> OPENSSL_STATIC=1 \
   cargo build --target wasm32-wasip1 --lib
 ```
 
-`payload.c` and `envelope.c` are compiled by `cc` with the headers of the
+`payload.c`, `envelope.c` and `crl.c` are compiled by `cc` with the headers of the
 OpenSSL openssl-sys found, for the same target.
 
 ## Tests

@@ -76,6 +76,10 @@ module ApplePurchaseReceiptVerifier
     class ClockError < StandardError
     end
 
+    @clock_proc: clock
+    @pool: InstancePool
+    @revocation_valid_until_ms: Integer?
+
     def initialize: (Config config, ?runtime: Runtime) -> void
 
     private
@@ -92,8 +96,11 @@ module ApplePurchaseReceiptVerifier
     private
 
     def none: () -> Array[String]
-    def normalize: (untyped roots) -> Array[String]
-    def bytes_of: (untyped root) -> String
+    def normalize: (untyped roots, ?String name) -> Array[String]
+    def lists_of: (untyped lists) -> Array[String]
+    def distrust_of: (untyped entries) -> Array[RevokedCertificate]
+    def text: (String value) -> String
+    def bytes_of: (untyped root, String name) -> String
   end
 
   class RootsRejected < StandardError
@@ -131,12 +138,14 @@ module ApplePurchaseReceiptVerifier
 
     @broken: bool
     @max_input_bytes: Integer?
+    @init_state: Wire::InitState?
     @store: Wasmtime::Store
     @memory: Wasmtime::Memory
     @realloc: Wasmtime::Func
     @operations: Hash[String, [Wasmtime::Func, Wasmtime::Func]]
 
     attr_reader max_input_bytes: Integer?
+    attr_reader init_state: Wire::InitState?
 
     def initialize: (Runtime runtime, String? config_json) -> void
     def broken?: () -> bool
@@ -161,6 +170,8 @@ module ApplePurchaseReceiptVerifier
     @config_json: String
     @idle: Thread::Queue
 
+    attr_reader init_state: Wire::InitState
+
     def initialize: (Runtime runtime, String config_json) -> void
     def with_guest: [T] () { (Guest) -> T } -> T
     def idle_count: () -> Integer
@@ -176,7 +187,20 @@ module ApplePurchaseReceiptVerifier
     REASON_TOKEN: Regexp
     ENVIRONMENTS: Hash[String?, String?]
 
-    def self.init_answer: (String text) -> Integer
+    class InitState
+      attr_reader max_input_bytes: Integer
+      attr_reader revocation_urls: Array[String]
+      attr_reader revocation_valid_until_ms: Integer?
+      def initialize: (max_input_bytes: Integer, revocation_urls: Array[String],
+                       revocation_valid_until_ms: Integer?) -> void
+    end
+
+    def self.init_config: (Config config) -> String
+    def self.init_answer: (String text) -> InitState
+    def self.base64_all: (Array[String] strings) -> Array[String]
+    def self.max_input_bytes: (Hash[String, untyped] answer) -> Integer
+    def self.revocation_urls: (Hash[String, untyped] answer) -> Array[String]
+    def self.revocation_valid_until_ms: (Hash[String, untyped] answer) -> Integer?
     def self.receipt_result: (String text) -> VerificationResult
     def self.signed_data_result: (String text) -> VerificationResult
 

@@ -1,7 +1,8 @@
 // Package host runs aprv.wasm under wazero. It holds no verification
 // logic: it compiles the module once, creates instances, hands each
-// instance its trust anchors through init, moves bytes in and JSON out
-// through the canonical ABI, and throws an instance away when it traps.
+// instance its trust anchors and revocation settings through init, moves
+// bytes in and JSON out through the canonical ABI, and throws an instance
+// away when it traps.
 //
 // The ABI is aprv:verifier@0.2.0 (docs/rust-core/ARCHITECTURE.md §4). wazero
 // has no Component Model, so the four exports are called by hand: the

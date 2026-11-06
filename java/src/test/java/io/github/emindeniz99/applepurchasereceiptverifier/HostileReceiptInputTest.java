@@ -146,10 +146,12 @@ class HostileReceiptInputTest {
     void anUncheckedExceptionBeforeTrustIsTheCauseOfItsMalformed() throws Exception {
         byte[] wrongShape = hostileBlobs().get("signerInfos[0] is the wrong shape");
         Set<TrustAnchor> anchors = AppleTrust.anchors(Collections.singleton(pki.root));
+        Revocation revocation =
+                Revocation.build(Collections.singleton(pki.root), Config.defaults(), BuiltInRevocations.apple());
         long now = System.currentTimeMillis();
 
-        VerificationException thrown =
-                assertThrows(VerificationException.class, () -> ReceiptCore.verifyDer(wrongShape, anchors, now));
+        VerificationException thrown = assertThrows(
+                VerificationException.class, () -> ReceiptCore.verifyDer(wrongShape, anchors, revocation, now));
         Throwable raised = thrown.getCause();
         assertTrue(raised instanceof RuntimeException, String.valueOf(raised));
         assertSame(raised, thrown.toFailure().cause());
@@ -170,8 +172,8 @@ class HostileReceiptInputTest {
         assertNull(empty.cause());
 
         byte[] truncated = hostileBlobs().get("truncated SEQUENCE header");
-        VerificationException refused =
-                assertThrows(VerificationException.class, () -> ReceiptCore.verifyDer(truncated, anchors, now));
+        VerificationException refused = assertThrows(
+                VerificationException.class, () -> ReceiptCore.verifyDer(truncated, anchors, revocation, now));
         assertEquals(Reason.MALFORMED, refused.reason());
         assertNotNull(refused.getCause(), "the parser's exception stands behind it");
         assertNull(refused.toFailure().cause());

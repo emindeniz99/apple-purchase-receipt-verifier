@@ -347,6 +347,14 @@ workspace and `rust/fuzz`; `rust/ffi` has no lockfile of its own now.
   the run instead. It reports only. What it watches and what to do on
   an alert: CONTRIBUTING.md, "Apple PKI watch". `apple-root-watch.yml`
   still checks the three pinned roots' bytes against `certs/`.
+- `apple-revocation-watch.yml`: weekly (Monday) and on demand, runs
+  `tools/refresh-apple-revocations.mjs --check` with `contents: read`
+  only. It fails on a new, vanished or reappearing entry on one of
+  Apple's revocation lists, a changed reason, a list the tool refuses,
+  or a WWDR intermediate on the PKI page that is not an issuer in
+  `certs/revocations.json`; a newer list alone goes to the job summary.
+  The owner then runs the tool without `--check` and opens the pull
+  request (docs/design/revocation.md §5).
 - `scorecard.yml`: OpenSSF Scorecard, weekly and on pushes to `main`,
   with `publish_results` (so the workflow keeps to Scorecard's
   restrictions) and its SARIF uploaded to code scanning.

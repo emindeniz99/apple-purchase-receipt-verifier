@@ -7,6 +7,7 @@ use crate::receipt_payload::{
     creation_date, parse_payload_attributes, parse_receipt_payload, Attribute, PayloadError,
     ReceiptPayload, MAX_ASN1_DEPTH, MAX_ASN1_NODES,
 };
+use crate::revocation::Revocation;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::Clock;
 use aprv_openssl::{Certificate, CmsError, EnvelopeLimits, SignedData};
@@ -53,6 +54,7 @@ pub(crate) fn decode_receipt_data(text: &[u8]) -> Result<Vec<u8>, Failure> {
 pub(crate) fn verify(
     base64: &[u8],
     anchors: &[TrustAnchor],
+    revocation: &Revocation,
     clock: &Clock<'_>,
 ) -> Result<ReceiptPayload, Failure> {
     // Before the decode, which would otherwise allocate the bytes it decodes
@@ -64,7 +66,7 @@ pub(crate) fn verify(
         ));
     }
     let der = decode_receipt_data(base64)?;
-    decode_signed_payload(verify_envelope(&der, anchors, clock)?)
+    decode_signed_payload(verify_envelope(&der, anchors, revocation, clock)?)
 }
 
 /// The payload a passing signature hands on, decoded.
@@ -131,11 +133,13 @@ fn envelope_failure(err: CmsError) -> Failure {
 /// interpreted, or why that SET did not parse.
 type SignedAttributes = Result<Vec<Attribute>, PayloadError>;
 
-/// Every check up to and including a signature: the envelope, the bag, the
-/// chain and each `SignerInfo` in turn until one passes.
+/// Every check up to and including a signature and the revocation check
+/// after it: the envelope, the bag, the chain and each `SignerInfo` in turn
+/// until one passes.
 fn verify_envelope(
     der: &[u8],
     anchors: &[TrustAnchor],
+    revocation: &Revocation,
     clock: &Clock<'_>,
 ) -> Result<SignedAttributes, Failure> {
     // The adapter bounds the envelope before its full decode, which builds
@@ -184,13 +188,17 @@ fn verify_envelope(
             // match is tried as the SignerInfos are: one passing is enough,
             // and only when none does is the first one's failure the
             // verdict. No match's key is used before its chain has passed.
-            let first_verdict =
-                verify_signer(&mut cms, index, &first, authenticated, anchors, at_millis);
+            let trust = Trust {
+                authenticated,
+                anchors,
+                revocation,
+                clock,
+            };
+            let first_verdict = verify_signer(&mut cms, index, &first, &trust, at_millis);
             if first_verdict.is_err()
-                && others.iter().any(|signer| {
-                    verify_signer(&mut cms, index, signer, authenticated, anchors, at_millis)
-                        .is_ok()
-                })
+                && others
+                    .iter()
+                    .any(|signer| verify_signer(&mut cms, index, signer, &trust, at_millis).is_ok())
             {
                 return Ok(());
             }
@@ -242,14 +250,24 @@ impl Embedded {
     }
 }
 
+/// What a signer is judged against: the embedded certificates a pinned
+/// anchor vouched for, the anchors, the revocation state and the call's
+/// clock.
+struct Trust<'a> {
+    authenticated: &'a [Certificate],
+    anchors: &'a [TrustAnchor],
+    revocation: &'a Revocation,
+    clock: &'a Clock<'a>,
+}
+
 fn verify_signer(
     cms: &mut SignedData,
     index: usize,
     signer: &Certificate,
-    authenticated: &[Certificate],
-    anchors: &[TrustAnchor],
+    trust: &Trust<'_>,
     at_millis: i64,
 ) -> Result<(), Failure> {
+    let authenticated = trust.authenticated;
     // Java's order (`ReceiptCore.validateChain`): a signer no pinned anchor
     // vouched for is judged no further, and a vouched-for signer's key is
     // judged before its path. Its key is used to check the CMS signature,
@@ -272,7 +290,7 @@ fn verify_signer(
             "receipt signer certificate has a public key this library cannot use",
         ));
     }
-    let path = receipt_path(signer, authenticated, anchors, at_millis)?;
+    let path = receipt_path(signer, authenticated, trust.anchors, at_millis)?;
     // Checked after the chain, so a foreign chain still reports
     // UNTRUSTED_CHAIN rather than INVALID_CERTIFICATE_PURPOSE.
     if !signer.has_extension(SIGNING_LEAF_OID) {
@@ -281,10 +299,12 @@ fn verify_signer(
             format!("receipt signer certificate lacks Apple receipt-signing marker OID {SIGNING_LEAF_OID}"),
         ));
     }
-    // The certificate after the signer on the path. A signer issued straight
-    // by a root has no WWDR certificate to carry the marker.
+    // The certificate after the signer on the path, below the anchor. A
+    // signer issued straight by a root has no WWDR certificate to carry the
+    // marker.
     if !path
-        .get(1)
+        .split_last()
+        .and_then(|(_anchor, below)| below.get(1))
         .is_some_and(|intermediate| intermediate.has_extension(WWDR_INTERMEDIATE_OID))
     {
         return Err(Failure::new(
@@ -295,7 +315,11 @@ fn verify_signer(
     // The chain is checked BEFORE the signature on purpose: checking the
     // signature first would run the attacker's own key (their choice of RSA
     // size and exponent) before anything about it is trusted.
-    verify_cms_signature(cms, index, signer)
+    verify_cms_signature(cms, index, signer)?;
+    // Revocation after this signer's signature and before the content is
+    // read (docs/design/revocation.md §3): a revoked key's content is never
+    // judged, and another signer may still verify the receipt.
+    trust.revocation.check(&path, trust.clock)
 }
 
 /// The certificates `SignerInfo` `index` names as its signer, each once and
