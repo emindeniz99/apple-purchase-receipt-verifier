@@ -17545,7 +17545,7 @@
     },
     {
       "id": "revocation/jws-intermediate-revoked-by-the-root-list",
-      "description": "The root's list (signed by the configured root, which is a candidate signer, \u00a74) revokes the intermediate, serial 1A. No issuer is added: an added issuer on its own root's list would be refused (\u00a76).",
+      "description": "The root's list (signed by the configured root, which is a candidate signer, \u00a74) revokes the intermediate, serial 1A. No issuer is added; revocation/jws-through-a-set-aside-added-issuer-is-revoked adds it (\u00a76).",
       "operation": "verifySignedData",
       "input": {
         "fixture": "revocation-jws"
@@ -20545,8 +20545,8 @@
       ]
     },
     {
-      "id": "revocation/refuse-issuer-revoked-by-the-root-list",
-      "description": "An added issuer (serial 1C) that the root's list, also passed, revokes (\u00a76). Building the configuration fails.",
+      "id": "revocation/issuer-revoked-by-the-root-list-is-set-aside",
+      "description": "An added issuer (serial 1C) that the root's list, also passed, revokes (\u00a76). Since the owner's decision of 2026-11-06 a revoked added issuer is set aside, as a revoked built-in one is, not refused: refusing it would keep a host that refreshes on its old verifier, which accepts the issuer. The configuration builds. A set-aside issuer is not an expected issuer (\u00a77), and under the test root nothing else is expected, so revocationValidUntil is null. Its cRLDistributionPoints name the root's list, where its own revocation is published, so that URL stays in revocationUrls.",
       "operation": "buildConfig",
       "input": {
         "trustedRoots": {
@@ -20568,21 +20568,25 @@
         "now": "2026-11-05T00:00:00Z"
       },
       "expected": {
-        "status": "error"
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
       },
       "fault": "issuer-revoked-by-list",
       "tags": [
         "revocation",
         "build-config",
-        "negative",
-        "refused",
+        "positive",
         "issuer",
+        "owner-decision",
         "new-in-0-14"
       ]
     },
     {
-      "id": "revocation/refuse-issuer-revoked-by-distrust",
-      "description": "An added issuer (serial 1C) whose revocation key, under the root that signed it, is in distrust (\u00a76). Building the configuration fails.",
+      "id": "revocation/issuer-revoked-by-distrust-is-set-aside",
+      "description": "An added issuer (serial 1C) whose revocation key, under the root that signed it, is in distrust (\u00a76). Since the owner's decision of 2026-11-06 a revoked added issuer is set aside, as a revoked built-in one is, not refused: refusing it would keep a host that refreshes on its old verifier, which accepts the issuer. The configuration builds. A set-aside issuer is not an expected issuer (\u00a77), and under the test root nothing else is expected, so revocationValidUntil is null. Its cRLDistributionPoints name the root's list, where its own revocation is published, so that URL stays in revocationUrls.",
       "operation": "buildConfig",
       "input": {
         "trustedRoots": {
@@ -20607,21 +20611,25 @@
         "now": "2026-11-05T00:00:00Z"
       },
       "expected": {
-        "status": "error"
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
       },
       "fault": "issuer-revoked-by-distrust",
       "tags": [
         "revocation",
         "build-config",
-        "negative",
-        "refused",
+        "positive",
         "issuer",
+        "owner-decision",
         "new-in-0-14"
       ]
     },
     {
-      "id": "revocation/refuse-issuer-held-by-the-root-list",
-      "description": "An added issuer (serial 1C) that the root's list, also passed, holds (certificateHold). The configuration has no clock, so a hold counts against an issuer (\u00a76). Building the configuration fails.",
+      "id": "revocation/issuer-held-by-the-root-list-is-set-aside",
+      "description": "An added issuer (serial 1C) that the root's list, also passed, holds (certificateHold). The configuration has no clock, so a hold counts against an issuer (\u00a76). Since the owner's decision of 2026-11-06 a revoked added issuer is set aside, as a revoked built-in one is, not refused: refusing it would keep a host that refreshes on its old verifier, which accepts the issuer. The configuration builds. A set-aside issuer is not an expected issuer (\u00a77), and under the test root nothing else is expected, so revocationValidUntil is null. Its cRLDistributionPoints name the root's list, where its own revocation is published, so that URL stays in revocationUrls.",
       "operation": "buildConfig",
       "input": {
         "trustedRoots": {
@@ -20643,15 +20651,148 @@
         "now": "2026-11-05T00:00:00Z"
       },
       "expected": {
-        "status": "error"
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
       },
       "fault": "issuer-held-by-list",
       "tags": [
         "revocation",
         "build-config",
-        "negative",
-        "refused",
+        "positive",
         "issuer",
+        "owner-decision",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/revoked-added-issuers-own-list-is-set-aside",
+      "description": "The intermediate (serial 1A) is an added issuer, and the root's list revokes it (\u00a76); its own fresh list (nextUpdate 2026-12-01) is passed first, before the root's. The issuer is set aside, not refused (owner decision 2026-11-06), and so is its own list: neither held nor refused. The configuration builds. Neither the set-aside issuer nor the test root is an expected issuer (\u00a77), so revocationValidUntil is null, not the own list's 2026-12-01. The intermediate's cRLDistributionPoints (the root's list, http and https) stay in revocationUrls: they are where its own revocation is published.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-fresh-empty",
+            "revocation-root-crl-revokes-intermediate"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "fault": "intermediate-revoked-by-list",
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "issuer",
+        "owner-decision",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/jws-through-a-set-aside-added-issuer-is-revoked",
+      "description": "The configuration of revocation/revoked-added-issuers-own-list-is-set-aside: the intermediate (serial 1A) added, revoked by the root's list, and its own list set aside. Setting the issuer aside takes nothing away: the JWS's path runs through it, and the root's held list revokes it there (\u00a73).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-fresh-empty",
+            "revocation-root-crl-revokes-intermediate"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "intermediate-revoked-by-list",
+      "tags": [
+        "revocation",
+        "jws",
+        "negative",
+        "issuer",
+        "owner-decision",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/receipt-through-a-set-aside-added-issuer-is-revoked",
+      "description": "The intermediate (serial 1A) is an added issuer whose revocation key is in distrust, with its own fresh list passed: the issuer and its list are set aside (owner decision 2026-11-06) and the configuration builds. The receipt's path runs through the intermediate, which distrust revokes there (\u00a73).",
+      "operation": "verifyReceipt",
+      "input": {
+        "fixture": "revocation-receipt"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-fresh-empty"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ],
+          "distrust": [
+            {
+              "issuer": "c8141c84b50a0c9de9858aa932bda43827085af1284e521b7ba1937a66ff52e1",
+              "serial": "1A"
+            }
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "intermediate-revoked-by-distrust",
+      "tags": [
+        "revocation",
+        "receipt",
+        "negative",
+        "issuer",
+        "owner-decision",
         "new-in-0-14"
       ]
     },
