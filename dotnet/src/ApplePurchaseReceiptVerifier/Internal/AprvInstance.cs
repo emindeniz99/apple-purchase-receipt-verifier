@@ -92,7 +92,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// answer the whole input would. <see langword="null"/> before
         /// <see cref="Start"/>, and an input is then passed whole.
         /// </summary>
-        internal int? MaxInputBytes { get; private set; }
+        internal int? MaxInputBytes => Stated?.MaxInputBytes;
 
         /// <summary>
         /// What this instance's <c>init</c> answer stated, the revocation state
@@ -115,9 +115,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <exception cref="ModuleAnswers.AnswerException">The answer is not init's, or states no input length or no revocation state.</exception>
         internal void Start(byte[] configJson)
         {
-            ModuleAnswers.InitAnswer answer = ModuleAnswers.CheckInit(Init(configJson));
-            MaxInputBytes = answer.MaxInputBytes;
-            Stated = answer;
+            Stated = ModuleAnswers.CheckInit(Init(configJson));
         }
 
         /// <summary><c>verify-receipt</c>: the module's JSON answer.</summary>
