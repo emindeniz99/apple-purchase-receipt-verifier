@@ -1,7 +1,6 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
 import java.io.ByteArrayInputStream;
-import java.math.BigInteger;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -51,12 +50,19 @@ final class Revocation {
     /** The list held for one issuer. */
     private static final class Held {
         final long nextUpdate;
+        /** The list's entries but its removeFromCRL ones, which revoke nothing. */
         final Map<String, Integer> entries;
 
         Held(RevocationList list) {
             // Only a list with a nextUpdate is held (§4).
             this.nextUpdate = list.nextUpdate == null ? Long.MIN_VALUE : list.nextUpdate;
-            this.entries = list.entries;
+            Map<String, Integer> listed = new HashMap<>();
+            for (Map.Entry<String, Integer> entry : list.entries.entrySet()) {
+                if (entry.getValue() != RevocationList.REMOVE_FROM_CRL) {
+                    listed.put(entry.getKey(), entry.getValue());
+                }
+            }
+            this.entries = listed;
         }
     }
 
@@ -100,10 +106,6 @@ final class Revocation {
         Candidate(Signer signer, Signer root) {
             this.signer = signer;
             this.root = root;
-        }
-
-        String revocationKey() {
-            return BuiltInRevocations.key(root.id, Der.serialHex(signer.certificate.getSerialNumber()));
         }
     }
 
@@ -199,6 +201,7 @@ final class Revocation {
 
         Set<String> builtInKeys = builtInList.revoked;
         List<Candidate> accepted = new ArrayList<>();
+        Set<String> acceptedBuiltIn = new HashSet<>();
         // §6: a built-in issuer dropped because it is revoked; its own list is set aside below.
         List<Signer> revokedBuiltIn = new ArrayList<>();
         for (Candidate issuer : builtInIssuers) {
@@ -206,6 +209,7 @@ final class Revocation {
                 revokedBuiltIn.add(issuer.signer);
             } else {
                 accepted.add(issuer);
+                acceptedBuiltIn.add(issuer.signer.id);
             }
         }
         for (int i = 0; i < addedIssuers.size(); i++) {
@@ -254,10 +258,6 @@ final class Revocation {
         Set<String> expected = new LinkedHashSet<>();
         Set<String> urls = new LinkedHashSet<>();
         Set<String> rootIds = new HashSet<>(anchorIds.values());
-        Set<String> acceptedBuiltIn = new HashSet<>();
-        for (Candidate issuer : accepted.subList(0, accepted.size() - addedIssuers.size())) {
-            acceptedBuiltIn.add(issuer.signer.id);
-        }
         for (BuiltInRevocations.Issuer issuer : builtInList.issuers) {
             if (issuer.certificate == null ? rootIds.contains(issuer.id) : acceptedBuiltIn.contains(issuer.id)) {
                 expected.add(issuer.id);
@@ -268,27 +268,29 @@ final class Revocation {
             expected.add(issuer.signer.id);
             urls.addAll(distributionPoints(issuer.signer.certificate));
         }
-        Instant validUntil = null;
-        if (!expected.isEmpty()) {
-            long earliest = Long.MAX_VALUE;
-            for (String id : expected) {
-                Held list = held.get(id);
-                if (list == null) {
-                    earliest = Long.MIN_VALUE;
-                    break;
-                }
-                earliest = Math.min(earliest, list.nextUpdate);
-            }
-            validUntil = earliest == Long.MIN_VALUE ? null : Instant.ofEpochMilli(earliest);
-        }
-
         return new Revocation(
                 builtInKeys,
                 Collections.unmodifiableSet(distrust),
                 Collections.unmodifiableMap(held),
                 Collections.unmodifiableMap(anchorIds),
                 Collections.unmodifiableList(new ArrayList<>(urls)),
-                validUntil);
+                validUntil(expected, held));
+    }
+
+    /**
+     * §7: the earliest nextUpdate among the expected issuers' held lists;
+     * null when one of them has none, or when no issuer is expected.
+     */
+    private static @Nullable Instant validUntil(Set<String> expected, Map<String, Held> held) {
+        long earliest = Long.MAX_VALUE;
+        for (String id : expected) {
+            Held list = held.get(id);
+            if (list == null) {
+                return null;
+            }
+            earliest = Math.min(earliest, list.nextUpdate);
+        }
+        return expected.isEmpty() ? null : Instant.ofEpochMilli(earliest);
     }
 
     /**
@@ -320,9 +322,7 @@ final class Revocation {
             } else {
                 Held list = held.get(issuerId);
                 Integer reason = list == null ? null : list.entries.get(serial);
-                if (reason != null
-                        && reason != RevocationList.REMOVE_FROM_CRL
-                        && (reason != RevocationList.CERTIFICATE_HOLD || now <= list.nextUpdate)) {
+                if (reason != null && (reason != RevocationList.CERTIFICATE_HOLD || now <= list.nextUpdate)) {
                     layer = "Apple's list";
                 }
             }
@@ -505,17 +505,16 @@ final class Revocation {
      */
     private static boolean issuerRevoked(
             Candidate issuer, Set<String> builtIn, Set<String> distrust, Map<String, Held> rootLists) {
-        BigInteger serial = issuer.signer.certificate.getSerialNumber();
-        if (Der.serialHex(serial) == null) {
+        String serial = Der.serialHex(issuer.signer.certificate.getSerialNumber());
+        if (serial == null) {
             return false;
         }
-        String key = issuer.revocationKey();
+        String key = BuiltInRevocations.key(issuer.root.id, serial);
         if (builtIn.contains(key) || distrust.contains(key)) {
             return true;
         }
         Held list = rootLists.get(issuer.root.id);
-        Integer reason = list == null ? null : list.entries.get(Der.serialHex(serial));
-        return reason != null && reason != RevocationList.REMOVE_FROM_CRL;
+        return list != null && list.entries.containsKey(serial);
     }
 
     /** The certificate as BouncyCastle reads it, which {@link AppleTrust#signedBy} needs. */
