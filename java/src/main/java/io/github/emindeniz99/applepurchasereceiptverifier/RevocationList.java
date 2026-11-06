@@ -155,14 +155,15 @@ final class RevocationList {
         }
         AlgorithmIdentifier.getInstance(field(fields, at++));
         X500Name.getInstance(field(fields, at++));
-        this.thisUpdate = Time.getInstance(field(fields, at++)).getDate().getTime();
+        this.thisUpdate = time(field(fields, at++)).getDate().getTime();
         String unsupported = null;
         Long next = null;
         if (at < fields.size()
                 && (fields.getObjectAt(at) instanceof ASN1UTCTime
                         || fields.getObjectAt(at) instanceof ASN1GeneralizedTime)) {
+            Time nextTime = time(fields.getObjectAt(at));
             try {
-                next = Time.getInstance(fields.getObjectAt(at)).getDate().getTime();
+                next = nextTime.getDate().getTime();
             } catch (RuntimeException e) {
                 unsupported = "its nextUpdate does not read";
             }
@@ -250,7 +251,7 @@ final class RevocationList {
             }
             count++;
             BigInteger serial = ASN1Integer.getInstance(entry.getObjectAt(0)).getValue();
-            Time.getInstance(entry.getObjectAt(1));
+            time(entry.getObjectAt(1));
             if (!seen.add(serial) && unsupported == null) {
                 unsupported = "it lists a serial twice";
             }
@@ -289,6 +290,39 @@ final class RevocationList {
         this.unsupported = unsupported;
         this.entryCount = count;
         this.entries = Collections.unmodifiableMap(listed);
+    }
+
+    /**
+     * A thisUpdate, nextUpdate or revocationDate, after the length floors
+     * OpenSSL's decoder applies to the two time types: a UTCTime of at least
+     * 13 octets, a GeneralizedTime of at least 15 (tasn_dec.c). A shorter
+     * one (no seconds, no zone) is not RFC 5280's DER form, the core refuses
+     * the list as not a DER CRL, and so does this; BouncyCastle alone would
+     * read it, a zoneless GeneralizedTime in the JVM's own time zone. Only
+     * the floors are applied, not a full DER check, which would refuse what
+     * OpenSSL reads (a 15-octet UTCTime with a {@code +0000} offset).
+     */
+    private static Time time(ASN1Encodable value) {
+        ASN1Primitive primitive = value.toASN1Primitive();
+        int floor;
+        if (primitive instanceof ASN1UTCTime) {
+            floor = 13;
+        } else if (primitive instanceof ASN1GeneralizedTime) {
+            floor = 15;
+        } else {
+            throw new IllegalArgumentException("not a Time");
+        }
+        byte[] encoded;
+        try {
+            encoded = primitive.getEncoded();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("not a Time", e);
+        }
+        // A content of 128 octets or more has a long-form length and is over either floor.
+        if ((encoded[1] & 0x80) == 0 && encoded[1] < floor) {
+            throw new IllegalArgumentException("a time shorter than its DER form");
+        }
+        return Time.getInstance(primitive);
     }
 
     /** The TBSCertList field at {@code index}, which must be there. */
