@@ -94,8 +94,8 @@ each list's size, DER and running entry total, then each list's issuer, signatur
   GeneralizedTime under 15, without seconds or without a zone, makes it not one: OpenSSL refuses those while
   decoding, and Java applies the same floors), is over 1 MiB, or there are more than 16 lists or more than 100,000 entries in all (Apple's
   frozen 2.3 MB WWDR G1 list, still linked from the PKI page, is refused here);
-- no candidate issuer verifies it, unless the key that verifies it belongs to a built-in issuer dropped because it is
-  revoked (§6: that list is set aside). Candidates are every configured root and authenticated issuer (§6) whose `subject`
+- no candidate issuer verifies it, unless the key that verifies it belongs to an issuer, built-in or added, dropped
+  because it is revoked (§6: that list is set aside). Candidates are every configured root and authenticated issuer (§6) whose `subject`
   is byte-identical to the list's `issuer` Name, and, when the list has an AuthorityKeyIdentifier, whose
   SubjectKeyIdentifier equals its keyIdentifier (a candidate without a SubjectKeyIdentifier is then not a
   candidate; an AuthorityKeyIdentifier without a keyIdentifier, or one that is repeated or does not read, refuses
@@ -107,7 +107,8 @@ each list's size, DER and running entry total, then each list's issuer, signatur
 - a list is older than the newest list the built-in file records for that issuer (§5, `newest`): lower CRL Number, or,
   when either lacks a number, earlier `thisUpdate`. This refuses the stale `www.apple.com/appleca/root.crl` (2025)
   that Apple's PKI page still links;
-- a `revocationIssuers` certificate does not chain to a configured root, or is itself revoked (§6);
+- a `revocationIssuers` certificate does not chain to a configured root or otherwise fails §6 (one that is itself
+  revoked is set aside, not refused);
 - a `distrust` entry is not a 64-hex-digit issuer id plus a hex serial, or there are more than 1,000.
 
 A list that is genuine but uses something this profile does not support is **ignored**, not refused, so a format
@@ -206,29 +207,36 @@ already judged at its payload's date. An issuer whose own revocation key (§2, u
 the built-in list, in `distrust`, or on a held list of that root (any reason except `removeFromCRL`; with no clock, a
 `certificateHold` counts) is not accepted. An issuer whose serial is negative has no revocation key that can match
 (§2), so it is accepted and nothing revokes it. A built-in issuer that does not
-chain to the configured roots (custom roots, a test PKI), or is revoked, is dropped silently; an added one is
-refused (§4).
+chain to the configured roots (custom roots, a test PKI) is dropped silently; an added one is refused (§4). An issuer
+of either kind that is revoked is set aside.
 
-The own list of a built-in issuer dropped because it is revoked is set aside: not held, not refused. A host refreshes
-by downloading the URLs the running verifier reports, which still include that issuer's list on the day its root's
-list starts revoking it; refusing the list would fail every rebuild and keep the host on the old verifier, which
-accepts the issuer. Nothing is lost: every path through the issuer fails on the issuer itself (step 1 or 2 of §3). A
-built-in issuer that does not chain under custom roots is not set aside the same way: its URL was never reported
-under those roots, so a host that passes its list has misconfigured them. An added issuer that is revoked stays
-refused: the caller named it in `revocationIssuers`, and the refusal says which entry to remove.
+A set-aside issuer is not accepted, and its own list is set aside with it: not held, not refused. The configuration
+builds. A host refreshes by downloading the URLs the running verifier reports, which still include that issuer's list
+on the day its root's list starts revoking it; refusing the list, or the issuer, would fail every rebuild and keep the
+host on the old verifier, which accepts the issuer. Nothing is lost: every path through the issuer fails on the issuer
+itself (step 1 or 2 of §3). A revoked added issuer was refused until 2026-11-06; the owner reversed that because the
+same loop applies: a host keeps passing the issuers it was configured with. A built-in issuer that does not chain
+under custom roots is not set aside the same way: its URL was never reported under those roots, so a host that passes
+its list has misconfigured them.
 
 ## 7. What a verifier reports
 
 - `revocationUrls()`: the `list` URLs of the built-in issuers that chain to the configured roots, then the
-  cRLDistributionPoints URIs (http and https only) of added issuers, de-duplicated, in that order. With the default
+  cRLDistributionPoints URIs (http and https only) of added issuers, set-aside ones included, de-duplicated, in that
+  order. A set-aside built-in issuer's `list` URL is dropped, but its root's URL stays. A set-aside added issuer's
+  cRLDistributionPoints stay for the same reason: they name where the issuer's own revocation is published (its
+  root's list), not the issuer's own list. Dropping them would, under custom roots, stop the host fetching the list
+  that revokes the issuer, and the next rebuild would accept it again. With the default
   roots: `http://crl.apple.com/root.crl`, `http://crl.apple.com/applerootcag3.crl`,
   `http://crl.apple.com/wwdrg5.crl`, `http://crl.apple.com/wwdrg6.crl`. An added issuer's own list URL cannot be
   known (Apple names it only on the leaves it signs); the README says to add it by hand.
 - `revocationValidUntil()`: the earliest `nextUpdate` among the lists held for the expected issuers (the issuers of
-  `certs/revocations.json` that are, or chain to, a configured root, plus added issuers), or null when any expected
+  `certs/revocations.json` that are, or chain to, a configured root, plus added issuers; a set-aside issuer, built-in
+  or added, is not expected, since its list is never held), or null when any expected
   issuer has no list held (none passed, ignored, or refused). A caller's own root is a candidate signer of lists but
   never an expected issuer, so under custom roots with nothing added there is none to expect and the value is null
-  (and `revocationUrls()` is empty). Null means "live revocation is not fully in force"; a date in the past means a
+  (and `revocationUrls()` is empty); the same holds when every added issuer is set aside, though their
+  distribution points are still reported. Null means "live revocation is not fully in force"; a date in the past means a
   list is stale. Monitoring alerts on either.
 
 ## 8. Wire format (no WIT type change)
@@ -283,7 +291,8 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
   a non-JSON payload (`CERTIFICATE_REVOKED`, not `UNREADABLE_PAYLOAD`); a receipt with two SignerInfos, the first
   revoked, the second genuine (ok); two configured roots with one subject and a list without an AKI; a `distrust`
   entry naming the anchor's key (builds, never matches); a stale list for an issuer on no path
-  (`revocationValidUntil` in the past, verify ok); an added issuer that is revoked (refused); serial zero and a
+  (`revocationValidUntil` in the past, verify ok); an added issuer that is revoked (set aside with its own list,
+  builds; a path through it is `CERTIFICATE_REVOKED`); serial zero and a
   serial whose DER is `00 80`.
 - Every package runs every case. Rust tests inject a built-in list through a test-only constructor; Java the same.
 - Not shared cases, because the inputs would be too large for `fixtures/` or need an injected built-in list: the
