@@ -90,7 +90,9 @@ Which problem is named when there are several is not part of the contract: the c
 each list's size, DER and running entry total, then each list's issuer, signature and age), then added issuers, then
 `distrust`; Java checks `distrust` first. Only whether the configuration builds is pinned (DECISIONS.md R47).
 
-- a list is not a DER CRL, is over 1 MiB, or there are more than 16 lists or more than 100,000 entries in all (Apple's
+- a list is not a DER CRL (a thisUpdate, nextUpdate or revocationDate that is a UTCTime under 13 octets or a
+  GeneralizedTime under 15, without seconds or without a zone, makes it not one: OpenSSL refuses those while
+  decoding, and Java applies the same floors), is over 1 MiB, or there are more than 16 lists or more than 100,000 entries in all (Apple's
   frozen 2.3 MB WWDR G1 list, still linked from the PKI page, is refused here);
 - no candidate issuer verifies it, unless the key that verifies it belongs to a built-in issuer dropped because it is
   revoked (§6: that list is set aside). Candidates are every configured root and authenticated issuer (§6) whose `subject`
