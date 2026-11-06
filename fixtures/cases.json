@@ -2985,6 +2985,24 @@
       "codec": "raw",
       "contentSha256": "092710b5b67e4be7d1558e06148d65c54d606e32ed3e9494be62e1961d867564"
     },
+    "revocation-crl-refused-short-utc-next-update": {
+      "path": "generated-0.7/revocation/crl-refused-short-utc-next-update.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "41937674948b87c3572a20aa3a4e9762084de89e47cb68fdced82c3fe70ccef2"
+    },
+    "revocation-crl-refused-generalized-this-update-without-zone": {
+      "path": "generated-0.7/revocation/crl-refused-generalized-this-update-without-zone.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "e327bcf2ef7cdabd99c6005b7c7b67d3e04926dbaec056d0aa0e71edf5d6afaa"
+    },
+    "revocation-crl-refused-short-utc-revocation-date": {
+      "path": "generated-0.7/revocation/crl-refused-short-utc-revocation-date.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "a5453b12f22eb8f479dde19d483f350803ce93ff6a44496232fd07f1ed9a4992"
+    },
     "apple-crl-appleca-root-2025-03-10": {
       "path": "apple-crls/appleca-root-2025-03-10.crl",
       "role": "revocation-list",
@@ -19802,6 +19820,114 @@
         "build-config",
         "negative",
         "refused",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-list-utc-next-update-without-seconds",
+      "description": "The intermediate's list, genuinely signed, whose nextUpdate is the UTCTime 2612010000Z: 11 octets, without seconds. RFC 5280 DER times are a 13-octet UTCTime and a 15-octet GeneralizedTime, and OpenSSL refuses a shorter one while decoding, so the list is not a DER CRL and is refused (\u00a74). Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-refused-short-utc-next-update"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "list-not-a-crl",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "time-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-list-generalized-this-update-without-zone",
+      "description": "The intermediate's list, genuinely signed, whose thisUpdate is the GeneralizedTime 20261101000000: 14 octets, without its Z, so a reader would have to pick a time zone. The list is not a DER CRL and is refused (\u00a74). Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-refused-generalized-this-update-without-zone"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "list-not-a-crl",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "time-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-list-utc-revocation-date-without-seconds",
+      "description": "The intermediate's list, genuinely signed, with an entry whose revocationDate is the UTCTime 2610150000Z: 11 octets, without seconds. A revocationDate is never judged (\u00a73), but the list is still not a DER CRL and is refused (\u00a74). Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-refused-short-utc-revocation-date"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "list-not-a-crl",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "time-encoding",
         "new-in-0-14"
       ]
     },

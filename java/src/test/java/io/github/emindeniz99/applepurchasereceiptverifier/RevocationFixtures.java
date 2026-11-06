@@ -860,6 +860,30 @@ public final class RevocationFixtures {
                 "crl-of-issuer-with-proxy-cert-info-empty.der",
                 list(proxyInfo, secondKeys).number(1).build());
 
+        // Times shorter than RFC 5280's DER forms (§4): a UTCTime without seconds (11 octets) and a
+        // GeneralizedTime without its Z (14 octets). OpenSSL refuses a UTCTime under 13 octets and a
+        // GeneralizedTime under 15 while decoding, so the list is not a DER CRL and is refused.
+        write(
+                "crl-refused-short-utc-next-update.der",
+                list(inter, interKeys)
+                        .number(40)
+                        .rawTimes(null, rawTime(0x17, "2612010000Z"))
+                        .build());
+        write(
+                "crl-refused-generalized-this-update-without-zone.der",
+                list(inter, interKeys)
+                        .number(41)
+                        .rawTimes(rawTime(0x18, "20261101000000"), null)
+                        .build());
+        write(
+                "crl-refused-short-utc-revocation-date.der",
+                list(inter, interKeys)
+                        .number(42)
+                        .entry(new Entry(jwsSerial)
+                                .reason(CRLReason.keyCompromise)
+                                .revocationDate(rawTime(0x17, "2610150000Z")))
+                        .build());
+
         System.out.println("issuer id, root: " + issuerId(root.getEncoded()));
         System.out.println("issuer id, intermediate: " + issuerId(inter.getEncoded()));
         System.out.println("issuer id, twin: " + issuerId(twin.getEncoded()));
@@ -1073,10 +1097,17 @@ public final class RevocationFixtures {
         boolean invalidity;
         boolean criticalUnknown;
         X500Name certificateIssuer;
+        ASN1Encodable revocationDate;
         final List<ASN1Encodable> raw = new ArrayList<ASN1Encodable>();
 
         Entry(BigInteger serial) {
             this.serial = serial;
+        }
+
+        /** A revocationDate written as given, instead of {@link #REVOKED_AT}. */
+        Entry revocationDate(ASN1Encodable time) {
+            this.revocationDate = time;
+            return this;
         }
 
         Entry reason(int code) {
@@ -1109,7 +1140,7 @@ public final class RevocationFixtures {
         ASN1Encodable encode() throws Exception {
             ASN1EncodableVector entry = new ASN1EncodableVector();
             entry.add(new ASN1Integer(serial));
-            entry.add(new Time(REVOKED_AT));
+            entry.add(revocationDate != null ? revocationDate : new Time(REVOKED_AT));
             ExtensionsGenerator extensions = new ExtensionsGenerator();
             if (reason != null) {
                 extensions.addExtension(Extension.reasonCode, false, reason);
@@ -1152,6 +1183,8 @@ public final class RevocationFixtures {
         final List<Entry> entries = new ArrayList<Entry>();
         final ExtensionsGenerator extra = new ExtensionsGenerator();
         final List<ASN1Encodable> raw = new ArrayList<ASN1Encodable>();
+        ASN1Encodable rawThisUpdate;
+        ASN1Encodable rawNextUpdate;
 
         CrlSpec(X509Certificate issuer, PrivateKey key) {
             this.issuer = issuer;
@@ -1171,6 +1204,13 @@ public final class RevocationFixtures {
         CrlSpec times(Date thisUpdate, Date nextUpdate) {
             this.thisUpdate = thisUpdate;
             this.nextUpdate = nextUpdate;
+            return this;
+        }
+
+        /** thisUpdate and nextUpdate written as given, either null for the default. */
+        CrlSpec rawTimes(ASN1Encodable thisUpdate, ASN1Encodable nextUpdate) {
+            this.rawThisUpdate = thisUpdate;
+            this.rawNextUpdate = nextUpdate;
             return this;
         }
 
@@ -1219,8 +1259,10 @@ public final class RevocationFixtures {
             }
             tbs.add(signature);
             tbs.add(ASN1Primitive.fromByteArray(issuer.getSubjectX500Principal().getEncoded()));
-            tbs.add(new Time(thisUpdate));
-            if (nextUpdate != null) {
+            tbs.add(rawThisUpdate != null ? rawThisUpdate : new Time(thisUpdate));
+            if (rawNextUpdate != null) {
+                tbs.add(rawNextUpdate);
+            } else if (nextUpdate != null) {
                 tbs.add(new Time(nextUpdate));
             }
             if (!entries.isEmpty()) {
@@ -1268,7 +1310,10 @@ public final class RevocationFixtures {
             list.add(new DERBitString(value));
             byte[] der = new DERSequence(list).getEncoded("DER");
             boolean verifies;
-            if (raw.isEmpty() && entries.stream().allMatch(entry -> entry.raw.isEmpty())) {
+            if (raw.isEmpty()
+                    && rawThisUpdate == null
+                    && rawNextUpdate == null
+                    && entries.stream().allMatch(entry -> entry.raw.isEmpty() && entry.revocationDate == null)) {
                 X509CRL parsed =
                         (X509CRL) CertificateFactory.getInstance("X.509").generateCRL(new ByteArrayInputStream(der));
                 try {
@@ -1278,8 +1323,8 @@ public final class RevocationFixtures {
                     verifies = false;
                 }
             } else {
-                // A list with an extension written as given may repeat one, which a CRL parser can
-                // refuse: check the signature over the TBSCertList directly.
+                // A list with an extension or a time written as given may repeat one, or not be DER,
+                // which a CRL parser can refuse: check the signature over the TBSCertList directly.
                 Signature check = Signature.getInstance(algorithm);
                 check.initVerify(issuer.getPublicKey());
                 check.update(tbsDer);
@@ -1294,6 +1339,11 @@ public final class RevocationFixtures {
     }
 
     // --- DER plumbing -------------------------------------------------------
+
+    /** A UTCTime (0x17) or GeneralizedTime (0x18) holding {@code text} as given, unchecked. */
+    private static ASN1Encodable rawTime(int tag, String text) throws Exception {
+        return ASN1Primitive.fromByteArray(tlv(tag, text.getBytes(StandardCharsets.US_ASCII)));
+    }
 
     /** One Extension, encoded as given: an INTEGER where an ENUMERATED belongs, a negative number. */
     private static ASN1Encodable extension(ASN1ObjectIdentifier oid, boolean critical, ASN1Encodable value)
