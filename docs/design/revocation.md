@@ -187,7 +187,9 @@ certificates, pinned by SHA-256 in `rust/src/roots.rs` and in Java), plus the co
 An issuer certificate is accepted when, with no clock (the module's `init` has none): its `issuer` Name is
 byte-identical to a configured root's `subject` (as a list is matched to its candidates in §4, not compared in
 canonical form) and that root's key verifies its signature; it is a CA (basicConstraints cA true); its
-keyUsage, when present, has `cRLSign`; it carries the WWDR intermediate marker `1.2.840.113635.100.6.2.1`. Its
+keyUsage, when present, has `cRLSign`; it carries the WWDR intermediate marker `1.2.840.113635.100.6.2.1`. Nothing else about its extensions is judged: an
+extension OpenSSL would flag as invalid (a proxyCertInfo on a CA, say) neither refuses it nor hides its keyUsage or
+SubjectKeyIdentifier. Its
 validity dates are not judged here: a list it signed is used only for certificates it issued on a path that was
 already judged at its payload's date. An issuer whose own revocation key (§2, under the root that signed it) is in
 the built-in list, in `distrust`, or on a held list of that root (any reason except `removeFromCRL`; with no clock, a
