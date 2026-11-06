@@ -203,12 +203,17 @@ impl Revocation {
             .iter()
             .map(|d| crate::manifest::sha256_hex(d))
             .collect();
-        let distrust: Vec<Value> = self
-            .distrust
+        (json!(lists), json!(issuers), self.distrust_json())
+    }
+
+    /// The distrust entries as given, each `{"issuer":...,"serial":...}`:
+    /// the one shape `init` receives and `GET /v1/info` states, which a
+    /// client compares with what it sent.
+    fn distrust_json(&self) -> Value {
+        self.distrust
             .iter()
             .map(|(i, s)| json!({ "issuer": i, "serial": s }))
-            .collect();
-        (json!(lists), json!(issuers), json!(distrust))
+            .collect()
     }
 }
 
@@ -237,12 +242,7 @@ impl Settings {
             m.insert("revocation_issuers".into(), json!(b64(&r.issuers)));
         }
         if !r.distrust.is_empty() {
-            let d: Vec<Value> = r
-                .distrust
-                .iter()
-                .map(|(i, s)| json!({ "issuer": i, "serial": s }))
-                .collect();
-            m.insert("distrust".into(), Value::Array(d));
+            m.insert("distrust".into(), r.distrust_json());
         }
         Value::Object(m).to_string().into_bytes()
     }
