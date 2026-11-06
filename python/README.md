@@ -222,9 +222,11 @@ def refresh_revocation() -> None:
   when a list is not a CRL, is over 1 MiB, is signed by no issuer the
   verifier knows, or is older than the list this release was built with;
   when there are more than 16 lists; when a `revocation_issuers` certificate
-  does not chain to your roots or is itself revoked; or when a `distrust`
-  entry is malformed or there are more than 1,000. A genuine list in a form
-  the module does not support is ignored instead, and counts as missing.
+  does not chain to your roots; or when a `distrust` entry is malformed or
+  there are more than 1,000. A genuine list in a form the module does not
+  support is ignored instead, and counts as missing. A `revocation_issuers`
+  certificate that is itself revoked is set aside with its own list, not
+  refused: a path through it fails with `Reason.CERTIFICATE_REVOKED`.
 - **`distrust`** takes `RevokedCertificate(issuer, serial)` entries, or
   tuples of two strings: `issuer` is the SHA-256, in hex, of the issuing
   certificate's subject Name followed by its subjectPublicKeyInfo, both as
