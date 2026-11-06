@@ -199,8 +199,12 @@ final class Revocation {
 
         Set<String> builtInKeys = builtInList.revoked;
         List<Candidate> accepted = new ArrayList<>();
+        // §6: a built-in issuer dropped because it is revoked; its own list is set aside below.
+        List<Signer> revokedBuiltIn = new ArrayList<>();
         for (Candidate issuer : builtInIssuers) {
-            if (!issuerRevoked(issuer, builtInKeys, distrust, rootLists)) {
+            if (issuerRevoked(issuer, builtInKeys, distrust, rootLists)) {
+                revokedBuiltIn.add(issuer.signer);
+            } else {
                 accepted.add(issuer);
             }
         }
@@ -221,6 +225,12 @@ final class Revocation {
                 continue;
             }
             Signer issuer = verifiedBy(lists.get(i), issuerSigners);
+            if (issuer == null && verifiedBy(lists.get(i), revokedBuiltIn) != null) {
+                // The list of a revoked built-in issuer is neither held nor refused: every path through
+                // that issuer already fails on the issuer itself, and refusing would leave a host that
+                // refreshes from the URLs it was given on its old verifier.
+                continue;
+            }
             if (issuer == null) {
                 boolean named = false;
                 for (Signer signer : rootSigners) {

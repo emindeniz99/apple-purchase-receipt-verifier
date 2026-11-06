@@ -280,6 +280,49 @@ class RevocationTest {
     }
 
     /**
+     * §6: a built-in issuer that its root's list (any reason but
+     * removeFromCRL, certificateHold included) or distrust revokes is
+     * dropped, and its own list, which a host keeps downloading from the URL
+     * the previous verifier reported, is set aside rather than refusing the
+     * configuration. The issuer's paths fail on the issuer itself. The core
+     * judges it the same way.
+     */
+    @Test
+    void aRevokedBuiltInIssuersOwnListIsSetAsideNotRefused() throws Exception {
+        String issuer = "{\"id\":\"" + TEST_INTERMEDIATE + "\",\"certificate\":\"intermediate\","
+                + "\"list\":\"http://crl.example.test/injected.crl\","
+                + "\"newest\":{\"crlNumber\":null,\"thisUpdate\":\"2026-01-01T00:00:00Z\"}}";
+        BuiltInRevocations injected = builtIn("[" + issuer + "]", "[]");
+        String jws = testText("jws.jws");
+        byte[] ownList = testBytes("crl-fresh-empty.der");
+
+        DefaultVerifier accepted =
+                new DefaultVerifier(testConfig().revocationLists(Collections.singletonList(ownList)).build(), injected);
+        assertEquals(Collections.singletonList("http://crl.example.test/injected.crl"), accepted.revocationUrls());
+        assertTrue(accepted.verifySignedData(jws).verified());
+
+        List<Config> revoking = Arrays.asList(
+                testConfig()
+                        .revocationLists(Arrays.asList(testBytes("root-crl-revokes-intermediate.der"), ownList))
+                        .build(),
+                testConfig()
+                        .revocationLists(Arrays.asList(ownList, testBytes("root-crl-revokes-intermediate.der")))
+                        .build(),
+                testConfig()
+                        .revocationLists(Collections.singletonList(ownList))
+                        .distrust(Collections.singletonList(new RevokedCertificate(TEST_ROOT, "1A")))
+                        .build());
+        for (Config config : revoking) {
+            DefaultVerifier verifier = new DefaultVerifier(config, injected);
+            assertEquals(Collections.<String>emptyList(), verifier.revocationUrls());
+            Failure failure = verifier.verifySignedData(jws).failure();
+            assertNotNull(failure);
+            assertEquals(Reason.CERTIFICATE_REVOKED, failure.reason());
+            assertTrue(failure.message().startsWith("x5c certificate with serial 1A is revoked"), failure.message());
+        }
+    }
+
+    /**
      * A list whose CRL Number is negative is outside the profile (§4): it
      * has no number, so its age against {@code newest} is judged by
      * thisUpdate, as the core judges it, never by comparing -1 with the
