@@ -9,11 +9,12 @@ import org.jspecify.annotations.Nullable;
  * built-in issuers of Apple's lists that are not roots, WWDR G5 and G6
  * ({@code certs/revocation-issuers/}). Compiled in, like
  * {@link AppleRootCerts}, so no resource on the classpath can stand in for
- * them. {@code AppleRevocationsTest} pins each constant byte for byte to its
+ * them. {@code RevocationTest} pins each constant byte for byte to its
  * file in {@code certs/} and the certificates to their SHA-256
- * fingerprints. {@code tools/refresh-apple-revocations.mjs} rewrites
- * {@code certs/revocations.json}; copy it here by hand, line for line (the
- * test prints the constant when they differ). Append-only, like the file.
+ * fingerprints. {@code tools/refresh-apple-revocations.mjs} writes
+ * {@code certs/revocations.json} and {@code JSON_LINES} together, so
+ * neither is edited by hand; when the two differ, the test prints the
+ * constant that matches the file. Append-only, like the file.
  */
 final class AppleRevocations {
 
