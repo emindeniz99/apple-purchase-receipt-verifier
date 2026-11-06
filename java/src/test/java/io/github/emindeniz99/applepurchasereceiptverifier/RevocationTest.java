@@ -296,8 +296,8 @@ class RevocationTest {
         String jws = testText("jws.jws");
         byte[] ownList = testBytes("crl-fresh-empty.der");
 
-        DefaultVerifier accepted =
-                new DefaultVerifier(testConfig().revocationLists(Collections.singletonList(ownList)).build(), injected);
+        DefaultVerifier accepted = new DefaultVerifier(
+                testConfig().revocationLists(Collections.singletonList(ownList)).build(), injected);
         assertEquals(Collections.singletonList("http://crl.example.test/injected.crl"), accepted.revocationUrls());
         assertTrue(accepted.verifySignedData(jws).verified());
 
