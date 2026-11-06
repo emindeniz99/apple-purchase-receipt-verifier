@@ -76,13 +76,20 @@ final readonly class Config
         iterable $revocationIssuers = [],
         iterable $distrust = [],
     ) {
-        if ($roots !== null) {
-            $roots = is_array($roots) ? array_values($roots) : iterator_to_array($roots, false);
-        }
-        $this->roots = $roots;
+        $this->roots = $roots === null ? null : self::toList($roots);
         $this->clock = $clock;
-        $this->revocationLists = is_array($revocationLists) ? array_values($revocationLists) : iterator_to_array($revocationLists, false);
-        $this->revocationIssuers = is_array($revocationIssuers) ? array_values($revocationIssuers) : iterator_to_array($revocationIssuers, false);
-        $this->distrust = is_array($distrust) ? array_values($distrust) : iterator_to_array($distrust, false);
+        $this->revocationLists = self::toList($revocationLists);
+        $this->revocationIssuers = self::toList($revocationIssuers);
+        $this->distrust = self::toList($distrust);
+    }
+
+    /**
+     * @template T
+     * @param iterable<T> $values
+     * @return list<T>
+     */
+    private static function toList(iterable $values): array
+    {
+        return is_array($values) ? array_values($values) : iterator_to_array($values, false);
     }
 }
