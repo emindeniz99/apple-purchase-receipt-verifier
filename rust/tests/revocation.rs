@@ -468,6 +468,96 @@ fn an_issuer_its_root_holds_is_refused_when_the_configuration_is_built() {
 }
 
 #[test]
+fn a_revoked_built_in_issuers_own_list_is_set_aside_not_refused() {
+    // A built-in issuer that its root's list or distrust revokes is dropped
+    // (§6). Its own list, which a host keeps downloading from the URL the
+    // previous verifier reported, must not refuse the configuration: that
+    // would keep the host on its old verifier, which accepts the issuer. The
+    // list is set aside; the issuer's path fails on the issuer itself.
+    let setup = setup();
+    let root_id = issuer_id(&setup.pki.root);
+    let intermediate_serial = pki::cert_fields(&setup.pki.intermediate).serial;
+    let built_in = serde_json::json!({
+        "comment": "a test list",
+        "issuers": [
+            {"id": root_id, "name": "Fake Apple Inc Root", "certificate": null,
+             "list": "http://crl.example.test/root.crl",
+             "newest": {"crlNumber": null, "thisUpdate": "2026-01-01T00:00:00Z"}},
+            {"id": issuer_id(&setup.pki.intermediate), "name": "Fake WWDR", "certificate": "wwdr.cer",
+             "list": "http://crl.example.test/wwdr.crl",
+             "newest": {"crlNumber": null, "thisUpdate": "2026-01-01T00:00:00Z"}},
+        ],
+        "revoked": [],
+    })
+    .to_string()
+    .into_bytes();
+    let own_list = setup.intermediate_list(1, &[], KEY_COMPROMISE);
+    let builder = || {
+        setup
+            .builder()
+            .built_in_revocations(&built_in, &[&setup.pki.intermediate])
+    };
+    // Not revoked: the issuer is accepted and its list held.
+    let verifier = Verifier::new(
+        builder()
+            .revocation_lists([own_list.clone()])
+            .build()
+            .expect("the configuration builds"),
+    );
+    assert_eq!(verifier.revocation_valid_until(), None, "no root list held");
+    assert_eq!(
+        verifier.revocation_urls(),
+        [
+            "http://crl.example.test/root.crl",
+            "http://crl.example.test/wwdr.crl"
+        ]
+    );
+    let intermediate_hex = serial_hex(&setup.pki.intermediate);
+    for (reason, layer) in [
+        (Some(KEY_COMPROMISE), "Apple's list"),
+        (Some(CERTIFICATE_HOLD), "Apple's list"),
+        (None, "distrust"),
+    ] {
+        let mut lists = vec![own_list.clone()];
+        let mut builder = builder();
+        if let Some(reason) = reason {
+            lists.push(list(
+                &subject(&setup.pki.root),
+                &setup.pki.root_key,
+                NOW - DAY_MS,
+                NOW + 30 * DAY_MS,
+                Some(1),
+                &[Entry {
+                    serial: intermediate_serial.clone(),
+                    reason: Some(reason),
+                }],
+            ));
+        } else {
+            builder = builder.distrust([(root_id.clone(), intermediate_hex.clone())]);
+        }
+        let config = builder
+            .revocation_lists(lists)
+            .build()
+            .unwrap_or_else(|error| panic!("{reason:?}: {}", error.detail()));
+        let verifier = Verifier::new(config);
+        assert_eq!(
+            verifier.revocation_urls(),
+            ["http://crl.example.test/root.crl"],
+            "{reason:?}: the dropped issuer's URL is no longer reported"
+        );
+        let failure = verifier.verify_receipt(&setup.receipt).unwrap_err();
+        assert_eq!(
+            (failure.reason(), failure.message()),
+            (
+                Reason::CertificateRevoked,
+                format!("revoked: {layer}, serial {intermediate_hex}").as_str()
+            ),
+            "{reason:?}"
+        );
+    }
+}
+
+#[test]
 fn an_issuer_with_a_negative_serial_is_accepted_and_never_revoked() {
     // A negative serial is never matched (§2), so an added issuer whose
     // serial is negative is accepted (Java judges it the same way) and no

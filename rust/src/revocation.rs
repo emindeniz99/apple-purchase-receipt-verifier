@@ -425,6 +425,10 @@ impl Candidate {
     }
 }
 
+/// Why `authenticate` refuses an issuer that passes every other test of §6
+/// but is itself revoked.
+const ISSUER_REVOKED: &str = "the certificate is revoked";
+
 /// Why a certificate is not accepted as a list issuer (§6), or `Ok` with
 /// the root that signed it: the first root whose `subject` is
 /// byte-identical to the certificate's `issuer` Name, as §4 matches a list
@@ -455,7 +459,7 @@ fn authenticate<'a>(
     // and can never be revoked, as Java judges it.
     let serial = certificate.serial().as_ref().and_then(integer_hex);
     if serial.is_some_and(|serial| revoked(&root.id, &serial)) {
-        return Err("the certificate is revoked");
+        return Err(ISSUER_REVOKED);
     }
     Ok(root)
 }
@@ -594,9 +598,12 @@ impl Revocation {
                     .is_some_and(|held| held.entries.contains_key(serial))
         };
 
-        // The built-in issuers that chain to the configured roots.
+        // The built-in issuers that chain to the configured roots, and the
+        // ones dropped because they are revoked, whose own lists are set
+        // aside below.
         let mut chaining: Vec<&BuiltInIssuer> = Vec::new();
         let mut accepted: Vec<Candidate> = Vec::new();
+        let mut revoked_built_in: Vec<Candidate> = Vec::new();
         for issuer in &built_in.issuers {
             match &issuer.certificate {
                 None => {
@@ -604,14 +611,16 @@ impl Revocation {
                         chaining.push(issuer);
                     }
                 }
-                Some(certificate) => {
-                    if authenticate(certificate, &roots, revoked_under).is_ok() {
+                Some(certificate) => match authenticate(certificate, &roots, revoked_under) {
+                    Ok(_) => {
                         if let Some(candidate) = Candidate::of(certificate) {
                             chaining.push(issuer);
                             accepted.push(candidate);
                         }
                     }
-                }
+                    Err(ISSUER_REVOKED) => revoked_built_in.extend(Candidate::of(certificate)),
+                    Err(_) => {}
+                },
             }
         }
         // The added issuers; a refusal is reported after the lists'.
@@ -645,6 +654,14 @@ impl Revocation {
             let (name, key_identifier) =
                 name.as_ref().map_err(|detail| list_error(index, detail))?;
             let Some(owner) = owner else {
+                // The list of a built-in issuer dropped because it is
+                // revoked (§6) is set aside, neither held nor refused: every
+                // path through that issuer already fails on the issuer
+                // itself, and refusing would leave a host that refreshes
+                // from the URLs it was given on its old configuration.
+                if owner_among(index, &revoked_built_in).is_some() {
+                    continue;
+                }
                 let named_any = roots
                     .iter()
                     .chain(&issuers)
