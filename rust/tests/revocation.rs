@@ -364,7 +364,7 @@ fn distrust_takes_at_most_1000_well_formed_entries() {
     for (issuer, serial) in [
         (&intermediate[..63], "02"),
         (&format!("{intermediate}0")[..], "02"),
-        (&intermediate.replacen('a', "g", 1)[..], "02"),
+        (&format!("g{}", &intermediate[1..])[..], "02"),
         (&intermediate[..], ""),
         (&intermediate[..], "0x02"),
         (&intermediate[..], "02 "),
