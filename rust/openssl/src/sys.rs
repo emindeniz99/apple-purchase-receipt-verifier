@@ -180,6 +180,7 @@ extern "C" {
         omax: c_long,
     ) -> c_int;
     pub(crate) fn ASN1_INTEGER_get_int64(out: *mut i64, a: *const ffi::ASN1_INTEGER) -> c_int;
+    pub(crate) fn ASN1_BIT_STRING_get_bit(a: *const ffi::ASN1_BIT_STRING, n: c_int) -> c_int;
     pub(crate) fn ASN1_OCTET_STRING_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_INTEGER_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_ENUMERATED_it() -> *const ASN1_ITEM;

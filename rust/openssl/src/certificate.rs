@@ -1,5 +1,6 @@
 //! One X.509 certificate, parsed by OpenSSL.
 
+use crate::item::Decoded;
 use crate::{d2i_whole, drain_errors, init};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
@@ -306,59 +307,81 @@ impl Certificate {
     }
 
     /// Whether `basicConstraints` marks the certificate a CA (`cA` true),
-    /// as OpenSSL's cached extension flags record it. A certificate whose
-    /// extensions OpenSSL finds invalid is not one.
+    /// as OpenSSL's cached extension flags record it (`EXFLAG_CA`, set from
+    /// that one extension). `EXFLAG_INVALID` is not consulted: OpenSSL sets
+    /// it for things unrelated to `basicConstraints` (a `proxyCertInfo` on a
+    /// CA, an undecodable `SubjectAltName`), which no caller here judges.
     #[must_use]
     pub fn is_ca(&self) -> bool {
         // SAFETY: reads, and on first use caches under OpenSSL's own lock,
         // the live certificate's extension flags.
         let flags = unsafe { ffi::X509_get_extension_flags(self.0.as_ptr()) };
         drain_errors();
-        flags & ffi::EXFLAG_INVALID == 0 && flags & ffi::EXFLAG_CA != 0
+        flags & ffi::EXFLAG_CA != 0
     }
 
     /// Whether the certificate's `keyUsage`, when it has one, includes
-    /// `cRLSign`. True when it has none.
+    /// `cRLSign`. True when it has none. Read from the extension itself:
+    /// `X509_get_key_usage` answers 0 for a certificate OpenSSL flags as
+    /// invalid for any reason, and only `cRLSign` is asked here.
     #[must_use]
     pub fn key_usage_permits_crl_sign(&self) -> bool {
-        // SAFETY: as in `is_ca`; all bits are set when there is no
-        // keyUsage.
-        let usage = unsafe { ffi::X509_get_key_usage(self.0.as_ptr()) };
+        let mut critical: c_int = 0;
+        // SAFETY: X509_get_ext_d2i decodes the keyUsage into a new BIT
+        // STRING the caller owns, or returns null and sets `critical` to -1
+        // when it is absent.
+        let decoded = unsafe {
+            ffi::X509_get_ext_d2i(
+                self.0.as_ptr(),
+                ffi::NID_key_usage,
+                &raw mut critical,
+                ptr::null_mut(),
+            )
+        };
+        if decoded.is_null() {
+            drain_errors();
+            return critical == -1;
+        }
+        let bits = decoded.cast::<ffi::ASN1_BIT_STRING>();
+        // SAFETY: reads the live BIT STRING decoded above (bit 6 is
+        // cRLSign, RFC 5280 section 4.2.1.3; a shorter string answers 0),
+        // then frees it, once.
+        let crl_sign = unsafe {
+            let bit = crate::sys::ASN1_BIT_STRING_get_bit(bits, 6);
+            ffi::ASN1_BIT_STRING_free(bits);
+            bit
+        } == 1;
         drain_errors();
-        usage & ffi::X509v3_KU_CRL_SIGN != 0
+        crl_sign
     }
 
-    /// The `SubjectKeyIdentifier` extension's value, when there is one.
+    /// The `SubjectKeyIdentifier` extension's value, when there is one that
+    /// reads: one OCTET STRING filling its `extnValue`. Read from the
+    /// extension itself: `X509_get0_subject_key_id` answers null for a
+    /// certificate OpenSSL flags as invalid for any reason, and passes over
+    /// octets left after the value.
     #[must_use]
     pub fn subject_key_identifier(&self) -> Option<Vec<u8>> {
-        // SAFETY: the identifier is owned by the live certificate's cached
-        // extensions, or null.
-        let identifier = unsafe { ffi::X509_get0_subject_key_id(self.0.as_ptr()) };
-        drain_errors();
-        // OpenSSL caches the value with octets left after it passed over;
-        // such an extension does not read.
-        (!identifier.is_null()
-            && self.extension_is_exact(
-                ffi::NID_subject_key_identifier,
-                // SAFETY: the item getter returns a static ASN1_ITEM.
-                unsafe { crate::sys::ASN1_OCTET_STRING_it() },
-            ))
-        .then(|| crate::crl::string_octets(identifier.cast()))
+        // SAFETY: the item getter returns a static ASN1_ITEM.
+        let item = unsafe { crate::sys::ASN1_OCTET_STRING_it() };
+        let decoded = self.exact_extension(ffi::NID_subject_key_identifier, item)?;
+        Some(crate::crl::string_octets(decoded.value().cast()))
     }
 
-    /// Whether the first extension with `nid` holds exactly one value of
-    /// `item` ([`crate::crl::value_is_exact`]); false when there is none.
-    fn extension_is_exact(&self, nid: c_int, item: *const crate::sys::ASN1_ITEM) -> bool {
+    /// The first extension with `nid`, decoded as exactly one value of
+    /// `item` ([`crate::crl::exact_value`]); `None` when there is none or
+    /// it does not read.
+    fn exact_extension(&self, nid: c_int, item: *const crate::sys::ASN1_ITEM) -> Option<Decoded> {
         // SAFETY: looks the extension up in the live certificate, which
         // owns it.
         let extension = unsafe {
             let location = ffi::X509_get_ext_by_NID(self.0.as_ptr(), nid, -1);
             if location < 0 {
-                return false;
+                return None;
             }
             ffi::X509_get_ext(self.0.as_ptr(), location)
         };
-        crate::crl::value_is_exact(extension, item)
+        crate::crl::exact_value(extension, item)
     }
 
     /// Every URI among the `fullName`s of the certificate's
@@ -368,13 +391,17 @@ impl Certificate {
     #[must_use]
     pub fn crl_distribution_uris(&self) -> Vec<String> {
         init();
-        // SAFETY: as in `extension_is_exact`, read-only.
+        // SAFETY: as in `exact_extension`, read-only.
         let present = unsafe {
             ffi::X509_get_ext_by_NID(self.0.as_ptr(), ffi::NID_crl_distribution_points, -1)
         } >= 0;
         // SAFETY: the item getter returns a static ASN1_ITEM.
         let item = unsafe { crate::sys::CRL_DIST_POINTS_it() };
-        if present && !self.extension_is_exact(ffi::NID_crl_distribution_points, item) {
+        if present
+            && self
+                .exact_extension(ffi::NID_crl_distribution_points, item)
+                .is_none()
+        {
             return Vec::new();
         }
         let uris = self

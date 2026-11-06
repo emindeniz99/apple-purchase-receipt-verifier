@@ -421,17 +421,26 @@ pub(crate) fn value_is_exact(
     extension: *mut ffi::X509_EXTENSION,
     item: *const sys::ASN1_ITEM,
 ) -> bool {
+    exact_value(extension, item).is_some()
+}
+
+/// A live extension's `extnValue` decoded as exactly one value of `item`
+/// ([`value_is_exact`]), or `None`.
+pub(crate) fn exact_value(
+    extension: *mut ffi::X509_EXTENSION,
+    item: *const sys::ASN1_ITEM,
+) -> Option<Decoded> {
     if extension.is_null() {
-        return false;
+        return None;
     }
     // SAFETY: the value is owned by the live extension.
     let data = unsafe { ffi::X509_EXTENSION_get_data(extension) };
     if data.is_null() {
-        return false;
+        return None;
     }
-    let exact = decode_exact(&string_octets(data.cast()), item).is_some();
+    let decoded = decode_exact(&string_octets(data.cast()), item);
     drain_errors();
-    exact
+    decoded
 }
 
 /// The OID and the critical flag of a live extension.
