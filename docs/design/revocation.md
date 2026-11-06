@@ -154,6 +154,9 @@ certificates as base64), pinned byte for byte to `certs/` by `RevocationTest`. F
 
 - An entry may also carry `"delisted": {"crlNumber": ..., "thisUpdate": ...}`, naming the first list of its issuer
   that no longer lists it. The tool writes it; the entry still revokes, and both implementations ignore the member.
+  Likewise `"listedAs": {"reason": ..., "crlNumber": ..., "thisUpdate": ...}` names the first list that shows the
+  entry as `certificateHold` or `removeFromCRL`: the entry keeps its reason and still revokes, the watch reports the
+  change once, and the member goes when the recorded reason comes back.
 - `issuers` holds Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6 (the four whose lists exist and can sit on an
   APRV path). `certificate` is null for a root (the root's file in `certs/` is used). `list` is the URL of the list
   that issuer signs.
