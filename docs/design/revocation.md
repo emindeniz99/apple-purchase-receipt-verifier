@@ -118,7 +118,9 @@ the list kept for its issuer; it is still refused when it is older than `newest`
 does not read counts as no number there. An entry whose reasonCode is unknown (7, or above 10) or does not read
 revokes. An extension that appears twice does not read: a repeated CRL Number puts the list outside the profile, a
 repeated reasonCode revokes, and a repeated extension the profile does not read changes nothing beyond what one copy
-would. Only the AuthorityKeyIdentifier, the CRL Number and the reasonCode are decoded; the value of any other
+would. A value with octets left after it in its `extnValue` does not read either, whatever its leading value says
+(OpenSSL's extension decoders read the leading value and pass over the rest, so the core checks that the value fills
+the `extnValue`); the same holds for the SubjectKeyIdentifier and cRLDistributionPoints of an issuer (§6, §7). Only the AuthorityKeyIdentifier, the CRL Number and the reasonCode are decoded; the value of any other
 extension is never read.
 
 Several lists for one issuer: the one kept has the highest CRL Number; if any of them lacks a number, the latest
