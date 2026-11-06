@@ -17,7 +17,11 @@
 //     When it is no longer on its issuer's list it gains a `delisted`
 //     member naming the first list without it, so the watch reports a
 //     disappearance once and not every week after;
-//   - a changed reason is reported and recorded;
+//   - a changed reason is reported and recorded. A change to
+//     certificateHold or removeFromCRL leaves the entry revoked with its
+//     reason and gains a `listedAs` member naming the reason and the first
+//     list that shows it, so it is reported once and not every week after;
+//     `listedAs` goes, reported, when the recorded reason comes back;
 //   - `newest` moves to the downloaded list.
 //
 // With --check nothing is written. It also reads Apple's PKI page and
@@ -414,11 +418,20 @@ export function applyList(doc, issuer, crl) {
     }
     if (now.reason !== r.reason) {
       if (NOT_ADDED.has(now.reason)) {
-        changes.push(`${label}: ${r.serial} changed reason from ${r.reason} to ${now.reason}; the entry stays revoked, decide by hand`);
+        // The entry stays revoked (the file is append-only); `listedAs`
+        // records that the change was seen, as `delisted` does.
+        if (r.listedAs?.reason !== now.reason) {
+          changes.push(`${label}: ${r.serial} changed reason from ${r.reason} to ${now.reason}; the entry stays revoked, recorded as listedAs`);
+          r.listedAs = { reason: now.reason, crlNumber: crl.crlNumber, thisUpdate: crl.thisUpdate };
+        }
       } else {
         changes.push(`${label}: ${r.serial} changed reason from ${r.reason} to ${now.reason}`);
         r.reason = now.reason;
+        delete r.listedAs;
       }
+    } else if (r.listedAs) {
+      changes.push(`${label}: ${r.serial} is listed as ${r.reason} again`);
+      delete r.listedAs;
     }
   }
   for (const e of crl.entries) {

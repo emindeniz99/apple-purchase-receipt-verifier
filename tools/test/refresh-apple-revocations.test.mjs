@@ -232,15 +232,23 @@ test('the file is append-only: an entry dropped from a newer list stays, reporte
   assert.equal(doc.revoked[0].delisted, undefined);
 });
 
-test('a changed reason is reported and recorded; to certificateHold it is left for a person', () => {
+test('a changed reason is reported and recorded; to certificateHold it is reported once', () => {
   const doc = fresh();
   applyList(doc, doc.issuers[0], listOf('10', [{ serial: '2', reason: 4 }]));
   const r = applyList(doc, doc.issuers[0], listOf('11', [{ serial: '2', reason: KEY_COMPROMISE }]));
   assert.match(r.changes.join('\n'), /changed reason from superseded to keyCompromise/);
   assert.equal(doc.revoked[0].reason, 'keyCompromise');
+  // To certificateHold: the entry stays revoked with its reason, and the
+  // change is recorded so the weekly --check does not fail on it again.
   const hold = applyList(doc, doc.issuers[0], listOf('12', [{ serial: '2', reason: HOLD }]));
-  assert.match(hold.changes.join('\n'), /decide by hand/);
+  assert.match(hold.changes.join('\n'), /changed reason from keyCompromise to certificateHold; the entry stays revoked/);
   assert.equal(doc.revoked[0].reason, 'keyCompromise');
+  assert.deepEqual(doc.revoked[0].listedAs, { reason: 'certificateHold', crlNumber: '0C', thisUpdate: '2026-11-05T13:36:46Z' });
+  assert.deepEqual(applyList(doc, doc.issuers[0], listOf('13', [{ serial: '2', reason: HOLD }])).changes, []);
+  // Back to the recorded reason: reported, and the marker goes.
+  const back = applyList(doc, doc.issuers[0], listOf('14', [{ serial: '2', reason: KEY_COMPROMISE }]));
+  assert.match(back.changes.join('\n'), /02 is listed as keyCompromise again/);
+  assert.equal(doc.revoked[0].listedAs, undefined);
 });
 
 test('a list older than newest is refused; the same list is no change', () => {
