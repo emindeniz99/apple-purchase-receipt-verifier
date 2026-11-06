@@ -3003,6 +3003,18 @@
       "codec": "raw",
       "contentSha256": "a5453b12f22eb8f479dde19d483f350803ce93ff6a44496232fd07f1ed9a4992"
     },
+    "revocation-crl-no-number-fractional-times-revokes": {
+      "path": "generated-0.7/revocation/crl-no-number-fractional-times-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "b3071b39556ce4c37a28c09d28ff2a355c8f84ed73051992c792f41b915f5b82"
+    },
+    "revocation-crl-no-number-whole-second-times-empty": {
+      "path": "generated-0.7/revocation/crl-no-number-whole-second-times-empty.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "2d6ecc4ab9c6cf901ef15667e284fde6ef12e0905cd24dc5166eec8b4c7eae47"
+    },
     "apple-crl-appleca-root-2025-03-10": {
       "path": "apple-crls/appleca-root-2025-03-10.crl",
       "role": "revocation-list",
@@ -18296,6 +18308,91 @@
         "jws",
         "positive",
         "list-selection",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/fractional-this-update-ties-at-the-whole-second",
+      "description": "Two lists of the intermediate without CRL Numbers: one with thisUpdate 20261104000000.5Z and nextUpdate 20261204000000.999Z (GeneralizedTime with fractional seconds, which RFC 5280 forbids) revoking the JWS leaf, given first; one with thisUpdate 2026-11-04T00:00:00Z and nextUpdate 2026-12-04T00:00:00Z, empty. List times are read to the whole second, so the two thisUpdate values tie and the list whose DER sorts first, the empty one, is kept (\u00a74): the leaf is not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-no-number-fractional-times-revokes",
+            "revocation-crl-no-number-whole-second-times-empty"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "selection",
+        "time-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/fractional-next-update-is-read-to-the-whole-second",
+      "description": "The root's fresh list (nextUpdate 2027-01-01) and the intermediate's list whose nextUpdate is the GeneralizedTime 20261204000000.999Z. List times are read to the whole second, so revocationValidUntil is 2026-12-04T00:00:00Z, not 2026-12-04T00:00:00.999Z (\u00a74, \u00a77).",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-no-number-fractional-times-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": "2026-12-04T00:00:00Z"
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "valid-until",
+        "time-encoding",
         "new-in-0-14"
       ]
     },

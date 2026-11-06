@@ -884,6 +884,21 @@ public final class RevocationFixtures {
                                 .revocationDate(rawTime(0x17, "2610150000Z")))
                         .build());
 
+        // Fractional seconds in a list's times (RFC 5280 forbids them; OpenSSL reads them and drops the
+        // fraction). Both lists lack a CRL Number and their thisUpdate differs only by half a second, so
+        // read to the whole second they tie and the DER that sorts first, the empty one, is kept.
+        write(
+                "crl-no-number-fractional-times-revokes.der",
+                list(inter, interKeys)
+                        .rawTimes(rawTime(0x18, "20261104000000.5Z"), rawTime(0x18, "20261204000000.999Z"))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        write(
+                "crl-no-number-whole-second-times-empty.der",
+                list(inter, interKeys)
+                        .times(date("2026-11-04T00:00:00Z"), date("2026-12-04T00:00:00Z"))
+                        .build());
+
         System.out.println("issuer id, root: " + issuerId(root.getEncoded()));
         System.out.println("issuer id, intermediate: " + issuerId(inter.getEncoded()));
         System.out.println("issuer id, twin: " + issuerId(twin.getEncoded()));
