@@ -2973,6 +2973,18 @@
       "codec": "raw",
       "contentSha256": "f4d404152891a0a33d216f5c4764a6bf545caa0a5060e69b43751c158d380f95"
     },
+    "revocation-intermediate-with-proxy-cert-info": {
+      "path": "generated-0.7/revocation/intermediate-with-proxy-cert-info.der",
+      "role": "revocation-issuer",
+      "codec": "raw",
+      "contentSha256": "e8ec32c41503daf5b8109e04e0ad297f0d89d04f1a53eabd9c8f379f1f1e019a"
+    },
+    "revocation-crl-of-issuer-with-proxy-cert-info-empty": {
+      "path": "generated-0.7/revocation/crl-of-issuer-with-proxy-cert-info-empty.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "092710b5b67e4be7d1558e06148d65c54d606e32ed3e9494be62e1961d867564"
+    },
     "apple-crl-appleca-root-2025-03-10": {
       "path": "apple-crls/appleca-root-2025-03-10.crl",
       "role": "revocation-list",
@@ -20268,6 +20280,43 @@
         "build-config",
         "negative",
         "refused",
+        "issuer",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/issuer-with-proxy-cert-info-is-accepted",
+      "description": "An added issuer that meets \u00a76 (signed by the root, basicConstraints cA true, keyUsage with cRLSign, the WWDR marker) and also carries a well-formed non-critical proxyCertInfo, which OpenSSL flags as invalid on a CA; the root's fresh list (nextUpdate 2027-01-01) and the issuer's own fresh list (2026-12-01). \u00a76 tests only basicConstraints cA for \"is a CA\", so the issuer is accepted and its list held: the configuration builds and revocationValidUntil is the issuer's nextUpdate. It has no cRLDistributionPoints, so revocationUrls is empty.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-of-issuer-with-proxy-cert-info-empty"
+          ],
+          "issuers": [
+            "revocation-intermediate-with-proxy-cert-info"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [],
+        "revocationValidUntil": "2026-12-01T00:00:00Z"
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
         "issuer",
         "new-in-0-14"
       ]

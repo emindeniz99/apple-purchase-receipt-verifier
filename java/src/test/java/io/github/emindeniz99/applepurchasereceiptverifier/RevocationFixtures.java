@@ -834,6 +834,32 @@ public final class RevocationFixtures {
                 .getEncoded());
         write("intermediate-crldp-trailing-octets.der", crldpTrailing.getEncoded());
 
+        // An issuer that meets §6 and also carries a well-formed proxyCertInfo (RFC 3820), which OpenSSL
+        // flags as invalid on a CA. §6 asks only for basicConstraints cA, so it is accepted, and its list
+        // held. It reuses the second issuer's key under a name of its own.
+        X509Certificate proxyInfo = cert(caWith(
+                        "CN=APRV Revocation Test WWDR CA With proxyCertInfo,O=APRV Test",
+                        secondKeys,
+                        0x27,
+                        root,
+                        rootKeys,
+                        new Extension(
+                                Extension.subjectKeyIdentifier,
+                                false,
+                                new JcaX509ExtensionUtils()
+                                        .createSubjectKeyIdentifier(secondKeys.getPublic())
+                                        .getEncoded("DER")),
+                        new Extension(
+                                new ASN1ObjectIdentifier("1.3.6.1.5.5.7.1.14"),
+                                false,
+                                new DERSequence(new DERSequence(new ASN1ObjectIdentifier("1.3.6.1.5.5.7.21.1")))
+                                        .getEncoded("DER")))
+                .getEncoded());
+        write("intermediate-with-proxy-cert-info.der", proxyInfo.getEncoded());
+        write(
+                "crl-of-issuer-with-proxy-cert-info-empty.der",
+                list(proxyInfo, secondKeys).number(1).build());
+
         System.out.println("issuer id, root: " + issuerId(root.getEncoded()));
         System.out.println("issuer id, intermediate: " + issuerId(inter.getEncoded()));
         System.out.println("issuer id, twin: " + issuerId(twin.getEncoded()));
