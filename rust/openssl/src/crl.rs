@@ -9,7 +9,10 @@
 //! those checks refuse can still be read and set aside), and every value
 //! is read through OpenSSL's own accessors and decoders
 //! (`X509V3_get_d2i`, `X509_REVOKED_get_ext_d2i`, `ASN1_item_verify`);
-//! nothing here walks the list's bytes.
+//! nothing here walks the list's bytes. Those two extension decoders read
+//! the leading value of an extension and pass over octets left after it
+//! (`X509V3_EXT_d2i`, `v3_lib.c`), so every decoded value is also checked to
+//! fill its `extnValue` exactly ([`value_is_exact`]).
 
 use crate::certificate::Certificate;
 use crate::item::{decode_exact, Decoded};
@@ -181,10 +184,15 @@ impl RevocationList {
         self.member(|tbs| tbs.extensions)
     }
 
-    /// One list extension decoded by OpenSSL (`X509V3_get_d2i`): a new
-    /// value the caller owns, or `Err` with -1 when the extension is
-    /// absent, -2 when it is repeated, and 0 or 1 when it does not decode.
-    fn decoded_extension(&self, nid: c_int) -> Result<*mut libc::c_void, c_int> {
+    /// One list extension decoded by OpenSSL (`X509V3_get_d2i`) as `item`:
+    /// a new value the caller owns, or `Err` with -1 when the extension is
+    /// absent, -2 when it is repeated, and 0 or 1 when it does not decode
+    /// or leaves octets of its `extnValue` over.
+    fn decoded_extension(
+        &self,
+        nid: c_int,
+        item: *const sys::ASN1_ITEM,
+    ) -> Result<*mut libc::c_void, c_int> {
         let mut critical: c_int = -1;
         let stack = self.extension_stack();
         if stack.is_null() {
@@ -196,16 +204,26 @@ impl RevocationList {
             unsafe { ffi::X509V3_get_d2i(stack, nid, &raw mut critical, ptr::null_mut()) };
         if decoded.is_null() {
             drain_errors();
-            Err(critical)
-        } else {
+            return Err(critical);
+        }
+        // SAFETY: the extension decoded above is in the live stack, once.
+        let extension =
+            unsafe { ffi::X509v3_get_ext(stack, ffi::X509v3_get_ext_by_NID(stack, nid, -1)) };
+        if value_is_exact(extension, item) {
             Ok(decoded)
+        } else {
+            // SAFETY: `decoded` is a value of `item` (X509V3_EXT_d2i decodes
+            // these extensions with their method's item), owned here alone.
+            unsafe { sys::ASN1_item_free(decoded.cast(), item) };
+            Err(0)
         }
     }
 
     /// The CRL Number extension (RFC 5280 section 5.2.3).
     #[must_use]
     pub fn number(&self) -> ListField<Integer> {
-        match self.decoded_extension(ffi::NID_crl_number) {
+        // SAFETY: the item getter returns a pointer to a static ASN1_ITEM.
+        match self.decoded_extension(ffi::NID_crl_number, unsafe { sys::ASN1_INTEGER_it() }) {
             Err(-1) => ListField::Absent,
             Err(_) => ListField::Unreadable,
             Ok(decoded) => {
@@ -222,7 +240,9 @@ impl RevocationList {
     /// The `AuthorityKeyIdentifier` extension's keyIdentifier.
     #[must_use]
     pub fn authority_key_identifier(&self) -> KeyIdentifier {
-        match self.decoded_extension(ffi::NID_authority_key_identifier) {
+        // SAFETY: the item getter returns a pointer to a static ASN1_ITEM.
+        let item = unsafe { sys::AUTHORITY_KEYID_it() };
+        match self.decoded_extension(ffi::NID_authority_key_identifier, item) {
             Err(-1) => KeyIdentifier::Absent,
             Err(_) => KeyIdentifier::Unreadable,
             Ok(decoded) => {
@@ -361,9 +381,21 @@ fn entry_of(entry: *mut ffi::X509_REVOKED) -> Option<ListEntry> {
         }
     } else {
         let enumerated = decoded.cast::<ffi::ASN1_ENUMERATED>();
+        // SAFETY: the reasonCode decoded above is among the live entry's
+        // extensions, once; the item getter returns a static ASN1_ITEM.
+        let exact = unsafe {
+            value_is_exact(
+                ffi::X509_REVOKED_get_ext(
+                    entry,
+                    ffi::X509_REVOKED_get_ext_by_NID(entry, ffi::NID_crl_reason, -1),
+                ),
+                sys::ASN1_ENUMERATED_it(),
+            )
+        };
         let mut value: i64 = 0;
         // SAFETY: reads the live value decoded above.
-        let read = unsafe { ffi::ASN1_ENUMERATED_get_int64(&raw mut value, enumerated) } == 1;
+        let read =
+            exact && unsafe { ffi::ASN1_ENUMERATED_get_int64(&raw mut value, enumerated) } == 1;
         // SAFETY: owned here alone and freed once.
         unsafe { ffi::ASN1_ENUMERATED_free(enumerated) };
         drain_errors();
@@ -378,6 +410,28 @@ fn entry_of(entry: *mut ffi::X509_REVOKED) -> Option<ListEntry> {
         reason,
         extensions,
     })
+}
+
+/// Whether a live extension's `extnValue` is exactly one value of `item`,
+/// as OpenSSL's template decoder reads it, with no octet left over: the
+/// value OpenSSL's extension decoders take from it, not merely its leading
+/// part (docs/design/revocation.md §4, "does not read"). False for a null
+/// extension.
+pub(crate) fn value_is_exact(
+    extension: *mut ffi::X509_EXTENSION,
+    item: *const sys::ASN1_ITEM,
+) -> bool {
+    if extension.is_null() {
+        return false;
+    }
+    // SAFETY: the value is owned by the live extension.
+    let data = unsafe { ffi::X509_EXTENSION_get_data(extension) };
+    if data.is_null() {
+        return false;
+    }
+    let exact = decode_exact(&string_octets(data.cast()), item).is_some();
+    drain_errors();
+    exact
 }
 
 /// The OID and the critical flag of a live extension.

@@ -335,15 +335,48 @@ impl Certificate {
         // extensions, or null.
         let identifier = unsafe { ffi::X509_get0_subject_key_id(self.0.as_ptr()) };
         drain_errors();
-        (!identifier.is_null()).then(|| crate::crl::string_octets(identifier.cast()))
+        // OpenSSL caches the value with octets left after it passed over;
+        // such an extension does not read.
+        (!identifier.is_null()
+            && self.extension_is_exact(
+                ffi::NID_subject_key_identifier,
+                // SAFETY: the item getter returns a static ASN1_ITEM.
+                unsafe { crate::sys::ASN1_OCTET_STRING_it() },
+            ))
+        .then(|| crate::crl::string_octets(identifier.cast()))
+    }
+
+    /// Whether the first extension with `nid` holds exactly one value of
+    /// `item` ([`crate::crl::value_is_exact`]); false when there is none.
+    fn extension_is_exact(&self, nid: c_int, item: *const crate::sys::ASN1_ITEM) -> bool {
+        // SAFETY: looks the extension up in the live certificate, which
+        // owns it.
+        let extension = unsafe {
+            let location = ffi::X509_get_ext_by_NID(self.0.as_ptr(), nid, -1);
+            if location < 0 {
+                return false;
+            }
+            ffi::X509_get_ext(self.0.as_ptr(), location)
+        };
+        crate::crl::value_is_exact(extension, item)
     }
 
     /// Every URI among the `fullName`s of the certificate's
-    /// cRLDistributionPoints, in order; empty when it has none. The scheme
-    /// is not judged here.
+    /// cRLDistributionPoints, in order; empty when it has none, or when its
+    /// value leaves octets over (it does not read). The scheme is not
+    /// judged here.
     #[must_use]
     pub fn crl_distribution_uris(&self) -> Vec<String> {
         init();
+        // SAFETY: as in `extension_is_exact`, read-only.
+        let present = unsafe {
+            ffi::X509_get_ext_by_NID(self.0.as_ptr(), ffi::NID_crl_distribution_points, -1)
+        } >= 0;
+        // SAFETY: the item getter returns a static ASN1_ITEM.
+        let item = unsafe { crate::sys::CRL_DIST_POINTS_it() };
+        if present && !self.extension_is_exact(ffi::NID_crl_distribution_points, item) {
+            return Vec::new();
+        }
         let uris = self
             .0
             .crl_distribution_points()

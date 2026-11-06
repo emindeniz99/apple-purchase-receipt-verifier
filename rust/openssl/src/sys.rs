@@ -182,6 +182,9 @@ extern "C" {
     pub(crate) fn ASN1_INTEGER_get_int64(out: *mut i64, a: *const ffi::ASN1_INTEGER) -> c_int;
     pub(crate) fn ASN1_OCTET_STRING_it() -> *const ASN1_ITEM;
     pub(crate) fn ASN1_INTEGER_it() -> *const ASN1_ITEM;
+    pub(crate) fn ASN1_ENUMERATED_it() -> *const ASN1_ITEM;
+    pub(crate) fn AUTHORITY_KEYID_it() -> *const ASN1_ITEM;
+    pub(crate) fn CRL_DIST_POINTS_it() -> *const ASN1_ITEM;
     pub(crate) fn DISPLAYTEXT_it() -> *const ASN1_ITEM;
     /// Defined by `payload.c`.
     pub(crate) fn APRV_RECEIPT_PAYLOAD_it() -> *const ASN1_ITEM;
