@@ -748,6 +748,92 @@ public final class RevocationFixtures {
         otherSpellingResigned.verify(rootKeys.getPublic());
         write("intermediate-issuer-name-other-spelling.der", otherSpellingResigned.getEncoded());
 
+        // Extension values with two octets left after the value (§4): such a value is not the DER of its
+        // type, so it does not read, even where its leading value would. A reasonCode that spells
+        // removeFromCRL revokes; a CRL Number puts the list outside the profile; an AuthorityKeyIdentifier
+        // refuses the list; an issuer's SubjectKeyIdentifier makes it no candidate for a list that names
+        // its key; an issuer's cRLDistributionPoints names no URL.
+        byte[] trailing = {0, 0};
+        write(
+                "crl-reason-code-trailing-octets-revokes.der",
+                list(inter, interKeys)
+                        .number(37)
+                        .entry(new Entry(jwsSerial)
+                                .raw(new Extension(
+                                        Extension.reasonCode,
+                                        false,
+                                        concat(
+                                                CRLReason.lookup(CRLReason.removeFromCRL)
+                                                        .getEncoded("DER"),
+                                                trailing))))
+                        .build());
+        write(
+                "crl-ignored-crl-number-trailing-octets-revokes.der",
+                list(inter, interKeys)
+                        .raw(new Extension(
+                                Extension.cRLNumber, false, concat(new ASN1Integer(38).getEncoded("DER"), trailing)))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        write(
+                "crl-refused-aki-trailing-octets.der",
+                list(inter, interKeys)
+                        .number(39)
+                        .noAki()
+                        .raw(new Extension(
+                                Extension.authorityKeyIdentifier,
+                                false,
+                                concat(
+                                        new JcaX509ExtensionUtils()
+                                                .createAuthorityKeyIdentifier(interKeys.getPublic())
+                                                .getEncoded("DER"),
+                                        trailing)))
+                        .entry(new Entry(jwsSerial).reason(CRLReason.keyCompromise))
+                        .build());
+        // Both reuse the second issuer's key, under names of their own.
+        X509Certificate skiTrailing = cert(caWith(
+                        "CN=APRV Revocation Test WWDR CA SKI With Trailing Octets,O=APRV Test",
+                        secondKeys,
+                        0x25,
+                        root,
+                        rootKeys,
+                        new Extension(
+                                Extension.subjectKeyIdentifier,
+                                false,
+                                concat(
+                                        new JcaX509ExtensionUtils()
+                                                .createSubjectKeyIdentifier(secondKeys.getPublic())
+                                                .getEncoded("DER"),
+                                        trailing)))
+                .getEncoded());
+        write("intermediate-ski-trailing-octets.der", skiTrailing.getEncoded());
+        write(
+                "crl-of-issuer-with-ski-trailing-octets.der",
+                list(skiTrailing, secondKeys).number(1).build());
+        X509Certificate crldpTrailing = cert(caWith(
+                        "CN=APRV Revocation Test WWDR CA CRLDP With Trailing Octets,O=APRV Test",
+                        secondKeys,
+                        0x26,
+                        root,
+                        rootKeys,
+                        new Extension(
+                                Extension.subjectKeyIdentifier,
+                                false,
+                                new JcaX509ExtensionUtils()
+                                        .createSubjectKeyIdentifier(secondKeys.getPublic())
+                                        .getEncoded("DER")),
+                        new Extension(
+                                Extension.cRLDistributionPoints,
+                                false,
+                                concat(
+                                        new CRLDistPoint(new DistributionPoint[] {
+                                                    point(Collections.singletonList(new GeneralName(
+                                                            GeneralName.uniformResourceIdentifier, URL_ROOT_HTTP)))
+                                                })
+                                                .getEncoded("DER"),
+                                        trailing)))
+                .getEncoded());
+        write("intermediate-crldp-trailing-octets.der", crldpTrailing.getEncoded());
+
         System.out.println("issuer id, root: " + issuerId(root.getEncoded()));
         System.out.println("issuer id, intermediate: " + issuerId(inter.getEncoded()));
         System.out.println("issuer id, twin: " + issuerId(twin.getEncoded()));
@@ -831,6 +917,40 @@ public final class RevocationFixtures {
         return new JcaX509CertificateConverter()
                 .getCertificate(
                         builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(issuerKeys.getPrivate())));
+    }
+
+    /**
+     * A WWDR-marked CA certificate (basicConstraints cA, keyUsage
+     * keyCertSign and cRLSign, an AuthorityKeyIdentifier) with
+     * {@code extensions} written as given, issued by {@code issuer}, as a
+     * holder: nothing parses its extensions before it is written.
+     */
+    private static org.bouncycastle.cert.X509CertificateHolder caWith(
+            String subject,
+            KeyPair keys,
+            long serial,
+            X509Certificate issuer,
+            KeyPair issuerKeys,
+            Extension... extensions)
+            throws Exception {
+        X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                X500Name.getInstance(issuer.getSubjectX500Principal().getEncoded()),
+                BigInteger.valueOf(serial),
+                NOT_BEFORE,
+                NOT_AFTER,
+                new X500Name(subject),
+                keys.getPublic());
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+        builder.addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
+        builder.addExtension(
+                Extension.authorityKeyIdentifier,
+                false,
+                new JcaX509ExtensionUtils().createAuthorityKeyIdentifier(issuer.getPublicKey()));
+        for (Extension extension : extensions) {
+            builder.addExtension(extension);
+        }
+        builder.addExtension(new ASN1ObjectIdentifier(WWDR_OID), false, DERNull.INSTANCE);
+        return builder.build(new JcaContentSignerBuilder("SHA256withRSA").build(issuerKeys.getPrivate()));
     }
 
     private static DistributionPoint point(List<GeneralName> names) {

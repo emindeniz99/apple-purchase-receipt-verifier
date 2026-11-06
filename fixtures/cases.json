@@ -2937,6 +2937,42 @@
       "codec": "raw",
       "contentSha256": "637114e0d0eeeff8f3aaca560597de8ed5b77f3c9af3c61200c0550279e4ef6b"
     },
+    "revocation-crl-reason-code-trailing-octets-revokes": {
+      "path": "generated-0.7/revocation/crl-reason-code-trailing-octets-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "9b2a662e1f0ca74958aa45c1985ca282493807f515d55543534f46ec82e1bb6d"
+    },
+    "revocation-crl-ignored-crl-number-trailing-octets-revokes": {
+      "path": "generated-0.7/revocation/crl-ignored-crl-number-trailing-octets-revokes.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "d87d72d39817f6247d6b8b8d78243d6db1fbae10938ec30d0506cafb5bb02dd3"
+    },
+    "revocation-crl-refused-aki-trailing-octets": {
+      "path": "generated-0.7/revocation/crl-refused-aki-trailing-octets.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "abdb31201ca0a8327cea54cf4aa65c3f671e2d92b609ac82bbbf75a6699457fe"
+    },
+    "revocation-intermediate-ski-trailing-octets": {
+      "path": "generated-0.7/revocation/intermediate-ski-trailing-octets.der",
+      "role": "revocation-issuer",
+      "codec": "raw",
+      "contentSha256": "184e1361107863ffa380f9255f1e020f7de0d2e52a8c2eea2f3821d2d13f5824"
+    },
+    "revocation-crl-of-issuer-with-ski-trailing-octets": {
+      "path": "generated-0.7/revocation/crl-of-issuer-with-ski-trailing-octets.der",
+      "role": "revocation-list",
+      "codec": "raw",
+      "contentSha256": "5299b5e9226105143e09595c9717fb8d72563f6dadcfcf4101be706e0e5034f8"
+    },
+    "revocation-intermediate-crldp-trailing-octets": {
+      "path": "generated-0.7/revocation/intermediate-crldp-trailing-octets.der",
+      "role": "revocation-issuer",
+      "codec": "raw",
+      "contentSha256": "f4d404152891a0a33d216f5c4764a6bf545caa0a5060e69b43751c158d380f95"
+    },
     "apple-crl-appleca-root-2025-03-10": {
       "path": "apple-crls/appleca-root-2025-03-10.crl",
       "role": "revocation-list",
@@ -19488,6 +19524,236 @@
         "revocation",
         "build-config",
         "positive",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/reason-code-with-trailing-octets-revokes",
+      "description": "A fresh list of the intermediate with an entry for the JWS leaf whose reasonCode extnValue is the ENUMERATED 8 (removeFromCRL) followed by two zero octets. A value with octets left after it is not the DER of its type, so the reasonCode does not read, and an entry whose reasonCode does not read revokes; it is not read as its leading value, removeFromCRL (\u00a74).",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-reason-code-trailing-octets-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error",
+        "reason": "CERTIFICATE_REVOKED"
+      },
+      "fault": "leaf-revoked-by-list",
+      "tags": [
+        "revocation",
+        "jws",
+        "negative",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-crl-number-with-trailing-octets-does-not-revoke",
+      "description": "A genuine list of the intermediate revoking the JWS leaf whose CRL Number extnValue is the INTEGER 38 followed by two zero octets. The CRL Number does not read, which puts the list outside the profile: it is ignored, not refused (\u00a74), so the configuration builds and the leaf is not revoked.",
+      "operation": "verifySignedData",
+      "input": {
+        "fixture": "revocation-jws"
+      },
+      "config": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-ignored-crl-number-trailing-octets-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "environment": "Sandbox",
+        "fields": {
+          "/bundleId": "com.example.app",
+          "/signedDate": 1722945600000
+        }
+      },
+      "tags": [
+        "revocation",
+        "jws",
+        "positive",
+        "ignored-list",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/ignored-list-crl-number-with-trailing-octets-counts-as-missing",
+      "description": "The root's fresh list (nextUpdate 2027-01-01) and the intermediate's list whose CRL Number extnValue is the INTEGER 38 followed by two zero octets. The configuration builds; the ignored list counts as missing, so revocationValidUntil is null (\u00a74, \u00a77).",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-root-crl-empty",
+            "revocation-crl-ignored-crl-number-trailing-octets-revokes"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [
+          "http://crl.example.test/aprv-test-root.crl",
+          "https://crl.example.test/aprv-test-root.crl"
+        ],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "ignored-list",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-list-authority-key-identifier-with-trailing-octets",
+      "description": "The intermediate's list whose AuthorityKeyIdentifier extnValue is the intermediate's own AuthorityKeyIdentifier followed by two zero octets. An AuthorityKeyIdentifier that does not read refuses the list (\u00a74), even though its leading value names the right key. Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-refused-aki-trailing-octets"
+          ],
+          "issuers": [
+            "revocation-intermediate"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "list-aki-does-not-read",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/refuse-list-of-issuer-whose-subject-key-identifier-has-trailing-octets",
+      "description": "An added issuer whose SubjectKeyIdentifier extnValue is its key identifier followed by two zero octets, and a list it signed whose AuthorityKeyIdentifier names that key identifier. The SubjectKeyIdentifier does not read, so the issuer is no candidate for a list that has an AuthorityKeyIdentifier (\u00a74). Building the configuration fails.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "lists": [
+            "revocation-crl-of-issuer-with-ski-trailing-octets"
+          ],
+          "issuers": [
+            "revocation-intermediate-ski-trailing-octets"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "error"
+      },
+      "fault": "list-name-matches-no-candidate",
+      "tags": [
+        "revocation",
+        "build-config",
+        "negative",
+        "refused",
+        "issuer",
+        "extension-encoding",
+        "new-in-0-14"
+      ]
+    },
+    {
+      "id": "revocation/added-issuer-whose-distribution-points-have-trailing-octets-reports-no-url",
+      "description": "An added issuer whose cRLDistributionPoints extnValue names http://crl.example.test/aprv-test-root.crl and is followed by two zero octets, no list. The extension does not read, so it names no URL (\u00a77): revocationUrls is empty and, with no list held for the issuer, revocationValidUntil is null.",
+      "operation": "buildConfig",
+      "input": {
+        "trustedRoots": {
+          "source": "fixtures",
+          "fixtures": [
+            "revocation-root"
+          ]
+        },
+        "revocation": {
+          "issuers": [
+            "revocation-intermediate-crldp-trailing-octets"
+          ]
+        }
+      },
+      "clock": {
+        "now": "2026-11-05T00:00:00Z"
+      },
+      "expected": {
+        "status": "ok",
+        "revocationUrls": [],
+        "revocationValidUntil": null
+      },
+      "tags": [
+        "revocation",
+        "build-config",
+        "positive",
+        "urls",
         "extension-encoding",
         "new-in-0-14"
       ]
