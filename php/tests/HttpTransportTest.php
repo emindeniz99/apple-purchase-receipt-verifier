@@ -50,6 +50,18 @@ final class HttpTransportTest extends TestCase
     }
 
     /**
+     * The default server's info with these revocation members.
+     *
+     * @param array<string, mixed> $members
+     *
+     * @return array<string, mixed>
+     */
+    private static function served(array $members): array
+    {
+        return self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, $members);
+    }
+
+    /**
      * @param list<string> $fingerprints
      * @param array<string, mixed> $revocation members that replace the server's revocation defaults
      *
@@ -388,8 +400,7 @@ final class HttpTransportTest extends TestCase
         $sorted = [$h1, $h2];
         sort($sorted);
         $entry = new RevokedCertificate('AB', '01');
-        /** @param array<string, mixed> $members */
-        $served = static fn (array $members): array => self::info('defaults', [], 'aprv:verifier@0.2.0', 3145729, $members);
+        $served = self::served(...);
 
         yield 'nothing on either side' => [new Config(), self::info(), true];
         yield 'the same lists in another order' => [new Config(revocationLists: [$l2, $l1]), $served(['revocation_lists' => $sorted]), true];
