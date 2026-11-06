@@ -92,7 +92,8 @@ each list's size, DER and running entry total, then each list's issuer, signatur
 
 - a list is not a DER CRL, is over 1 MiB, or there are more than 16 lists or more than 100,000 entries in all (Apple's
   frozen 2.3 MB WWDR G1 list, still linked from the PKI page, is refused here);
-- no candidate issuer verifies it. Candidates are every configured root and authenticated issuer (§6) whose `subject`
+- no candidate issuer verifies it, unless the key that verifies it belongs to a built-in issuer dropped because it is
+  revoked (§6: that list is set aside). Candidates are every configured root and authenticated issuer (§6) whose `subject`
   is byte-identical to the list's `issuer` Name, and, when the list has an AuthorityKeyIdentifier, whose
   SubjectKeyIdentifier equals its keyIdentifier (a candidate without a SubjectKeyIdentifier is then not a
   candidate; an AuthorityKeyIdentifier without a keyIdentifier, or one that is repeated or does not read, refuses
@@ -193,6 +194,14 @@ the built-in list, in `distrust`, or on a held list of that root (any reason exc
 chain to the configured roots (custom roots, a test PKI), or is revoked, is dropped silently; an added one is
 refused (§4).
 
+The own list of a built-in issuer dropped because it is revoked is set aside: not held, not refused. A host refreshes
+by downloading the URLs the running verifier reports, which still include that issuer's list on the day its root's
+list starts revoking it; refusing the list would fail every rebuild and keep the host on the old verifier, which
+accepts the issuer. Nothing is lost: every path through the issuer fails on the issuer itself (step 1 or 2 of §3). A
+built-in issuer that does not chain under custom roots is not set aside the same way: its URL was never reported
+under those roots, so a host that passes its list has misconfigured them. An added issuer that is revoked stays
+refused: the caller named it in `revocationIssuers`, and the refusal says which entry to remove.
+
 ## 7. What a verifier reports
 
 - `revocationUrls()`: the `list` URLs of the built-in issuers that chain to the configured roots, then the
@@ -263,7 +272,8 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
   serial whose DER is `00 80`.
 - Every package runs every case. Rust tests inject a built-in list through a test-only constructor; Java the same.
 - Not shared cases, because the inputs would be too large for `fixtures/` or need an injected built-in list: the
-  1 MiB list size, the 100,000-entry total, more than 1,000 `distrust` entries, and a test list older than `newest`.
+  1 MiB list size, the 100,000-entry total, more than 1,000 `distrust` entries, a test list older than `newest`, and
+  the own list of a revoked built-in issuer (set aside, §6).
   Each is a unit test in Rust (`rust/tests/revocation.rs`) and Java (`RevocationTest`); the shared cases cover the
   16-list count and Apple's real stale list.
 - The non-DER name case puts the name on a trust anchor: BouncyCastle re-encodes a TBSCertificate before checking its
