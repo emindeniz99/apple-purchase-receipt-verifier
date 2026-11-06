@@ -95,12 +95,8 @@ struct ComponentArg {
 
 #[derive(Args)]
 struct InfoArgs {
-    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
-    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
-    #[arg(long, value_name = "FILE")]
-    roots: Vec<String>,
     #[command(flatten)]
-    revocation: RevocationArgs,
+    config: ConfigArgs,
     #[command(flatten)]
     component: ComponentArg,
 }
@@ -111,12 +107,8 @@ struct OneShotArgs {
     /// system clock]
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(i64).range(0..))]
     now_ms: Option<i64>,
-    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
-    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
-    #[arg(long, value_name = "FILE")]
-    roots: Vec<String>,
     #[command(flatten)]
-    revocation: RevocationArgs,
+    config: ConfigArgs,
     /// The guest time limit per call [default: 10000]
     #[arg(long, value_name = "N")]
     time_limit_ms: Option<NonZeroU64>,
@@ -124,10 +116,14 @@ struct OneShotArgs {
     component: ComponentArg,
 }
 
-/// The revocation settings (docs/design/revocation.md §4), passed to
-/// `init` as they are: the module judges every one.
+/// The roots and the revocation settings (docs/design/revocation.md §4),
+/// passed to `init` as they are: the module judges every one.
 #[derive(Args)]
-struct RevocationArgs {
+struct ConfigArgs {
+    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
+    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
+    #[arg(long, value_name = "FILE")]
+    roots: Vec<String>,
     /// A certificate revocation list, repeatable: a DER CRL file as downloaded [default: none]
     #[arg(long, value_name = "FILE")]
     revocation_list: Vec<String>,
@@ -151,12 +147,8 @@ struct ServeArgs {
         "listen", "roots", "token_file", "revocation_list", "revocation_issuer", "distrust",
     ])]
     managed: bool,
-    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
-    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
-    #[arg(long, value_name = "FILE")]
-    roots: Vec<String>,
     #[command(flatten)]
-    revocation: RevocationArgs,
+    config: ConfigArgs,
     /// The token /v1/ routes require; overrides APRV_TOKEN
     #[arg(long, value_name = "FILE")]
     token_file: Option<String>,
@@ -284,14 +276,17 @@ fn borrowed(files: &[(String, Vec<u8>)]) -> Vec<(&str, &[u8])> {
         .collect()
 }
 
-/// The `--roots` files, in order (none means the module's Apple roots),
-/// and the revocation flags.
-fn settings_from(roots: &[String], r: &RevocationArgs) -> Result<Settings, String> {
-    let roots = Roots::from_files(&borrowed(&read_files("roots", roots)?))?;
-    let lists = read_files("revocation-list", &r.revocation_list)?;
-    let issuers = read_files("revocation-issuer", &r.revocation_issuer)?;
-    let revocation = Revocation::from_flags(&borrowed(&lists), &borrowed(&issuers), &r.distrust)?;
-    Ok(Settings { roots, revocation })
+impl ConfigArgs {
+    /// The `--roots` files, in order (none means the module's Apple roots),
+    /// and the revocation flags.
+    fn settings(&self) -> Result<Settings, String> {
+        let roots = Roots::from_files(&borrowed(&read_files("roots", &self.roots)?))?;
+        let lists = read_files("revocation-list", &self.revocation_list)?;
+        let issuers = read_files("revocation-issuer", &self.revocation_issuer)?;
+        let revocation =
+            Revocation::from_flags(&borrowed(&lists), &borrowed(&issuers), &self.distrust)?;
+        Ok(Settings { roots, revocation })
+    }
 }
 
 // ------------------------------------------------------------ one-shot CLI
@@ -310,7 +305,7 @@ enum Command {
 /// size refusal; that answer is printed like any other and the exit status
 /// is 3.
 fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
-    let settings = match settings_from(&o.roots, &o.revocation) {
+    let settings = match o.config.settings() {
         Ok(s) => s,
         Err(e) => return usage(&e),
     };
@@ -447,7 +442,7 @@ fn add_revocation_info(info: &mut serde_json::Value, init: &InitAnswer, r: &Revo
 /// `CliTransport`) learns both values and any refusal in one call.
 fn info(a: InfoArgs) -> i32 {
     let t = Instant::now();
-    let settings = match settings_from(&a.roots, &a.revocation) {
+    let settings = match a.config.settings() {
         Ok(s) => s,
         Err(e) => return usage(&e),
     };
@@ -556,7 +551,7 @@ fn serve(o: ServeArgs) -> i32 {
                 .filter(|t| !t.is_empty())
                 .map(String::into_bytes),
         };
-        let settings = match settings_from(&o.roots, &o.revocation) {
+        let settings = match o.config.settings() {
             Ok(s) => s,
             Err(e) => return usage(&e),
         };
@@ -934,7 +929,7 @@ mod cli_tests {
             .unwrap()
             .command
         {
-            Cmd::VerifyReceipt(a) => a.roots,
+            Cmd::VerifyReceipt(a) => a.config.roots,
             _ => unreachable!(),
         };
         assert_eq!(roots, ["a.cer", "b.pem"]);
@@ -955,7 +950,7 @@ mod cli_tests {
         .unwrap()
         .command
         {
-            Cmd::Serve(s) => s.revocation,
+            Cmd::Serve(s) => s.config,
             _ => unreachable!(),
         };
         assert_eq!(r.revocation_list, ["a.crl", "b.crl"]);
