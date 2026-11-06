@@ -157,8 +157,12 @@ certificates as base64), pinned byte for byte to `certs/` by `RevocationTest`. F
   Likewise `"listedAs": {"reason": ..., "crlNumber": ..., "thisUpdate": ...}` names the first list that shows the
   entry as `certificateHold` or `removeFromCRL`: the entry keeps its reason and still revokes, the watch reports the
   change once, and the member goes when the recorded reason comes back.
-- `issuers` holds Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6 (the four whose lists exist and can sit on an
-  APRV path). `certificate` is null for a root (the root's file in `certs/` is used). `list` is the URL of the list
+- `issuers` holds Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6: the issuers on an APRV path whose lists
+  exist and fit §4. WWDR G1 (the original "Apple Worldwide Developer Relations Certification Authority", which expired
+  on 2023-02-07) still sits on accepted paths, for receipts dated before then, and its list exists, but that list is
+  2.3 MB, so §4 refuses it (and would ignore it for its critical IssuingDistributionPoint), and it is not here: a
+  receipt signer under WWDR G1 can be revoked only through `distrust`. G1 itself is covered: Apple Root CA signs it,
+  and Apple Root CA's list is here. `certificate` is null for a root (the root's file in `certs/` is used). `list` is the URL of the list
   that issuer signs.
 - `revoked` is append-only: an entry is never removed, also when Apple drops it from a later list (the WWDR G6 list
   has no `expiredCertsOnCRL`, so an expired, revoked certificate may disappear from it). `certificateHold` and
@@ -295,6 +299,8 @@ new `Verifier` and swap the reference; no package adds a setter, a timer or an H
 
 - The built-in list reaches a consumer at the speed of releases and upgrades.
 - `distrust` helps only a consumer who learns of a revocation.
+- A receipt signer issued by WWDR G1 (receipts dated before 2023-02-07) has no list layer at all, built-in or live
+  (§5): only `distrust` revokes one.
 - With stale lists passing, a network attacker who keeps feeding an old (but newer-than-`newest`) list reduces the
   live layer to the built-in list; only `revocationValidUntil` monitoring sees it. Fetch over HTTPS where Apple serves
   it (on 2026-11-05 it serves none of the four lists over HTTPS).

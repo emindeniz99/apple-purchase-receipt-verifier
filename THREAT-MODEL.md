@@ -637,6 +637,14 @@ hold for every package:
 - **`distrust` presumes knowledge.** It helps only a consumer who learns
   of a revocation, with its issuer id and serial, before a release ships
   it.
+- **Legacy receipts under WWDR G1 have no list.** The core still accepts
+  receipts dated before 2023-02-07 whose signer the original WWDR
+  intermediate (G1) issued. G1's list exists, but at 2.3 MB it is
+  refused when the verifier is built (and its critical
+  IssuingDistributionPoint would put it outside the profile anyway), and
+  the built-in list does not import it. Apple Root CA's list still covers
+  G1 itself, but a G1 receipt signer that Apple revoked is refused only
+  through `distrust`.
 - **A missing or stale list passes** (the owner chose no outage when
   Apple's CDN fails). So a network attacker who withholds the lists, or
   keeps feeding an old list that is still newer than the built-in
