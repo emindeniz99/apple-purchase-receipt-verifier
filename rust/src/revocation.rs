@@ -55,7 +55,22 @@ const REMOVE_FROM_CRL: i64 = 8;
 /// `TBSCertificate`.
 pub(crate) fn issuer_id(certificate: &Certificate) -> Option<String> {
     let (subject, key) = certificate.subject_and_key_der()?;
-    Some(sha256_hex(&[subject, key].concat()))
+    Some(id_of(&subject, &key))
+}
+
+/// The issuer id (§2) of a `subject` and `subjectPublicKeyInfo`.
+fn id_of(subject: &[u8], key: &[u8]) -> String {
+    sha256_hex(&[subject, key].concat())
+}
+
+/// An integer's magnitude from its first non-zero byte: the bytes that
+/// decide whether two serials are the same.
+fn significant(magnitude: &[u8]) -> &[u8] {
+    let start = magnitude
+        .iter()
+        .position(|byte| *byte != 0)
+        .unwrap_or(magnitude.len());
+    magnitude.get(start..).unwrap_or_default()
 }
 
 /// A serial (or CRL Number) as §2 writes it: uppercase hex, an even number
@@ -65,12 +80,7 @@ pub(crate) fn integer_hex(integer: &Integer) -> Option<String> {
     if integer.negative {
         return None;
     }
-    let significant: Vec<u8> = integer
-        .magnitude
-        .iter()
-        .copied()
-        .skip_while(|byte| *byte == 0)
-        .collect();
+    let significant = significant(&integer.magnitude);
     if significant.is_empty() {
         return Some("00".to_owned());
     }
@@ -105,6 +115,12 @@ fn compare_hex(a: &str, b: &str) -> core::cmp::Ordering {
 
 fn is_issuer_id(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// An issuer id as a caller or the built-in file writes it, lowercased;
+/// `None` when it is not 64 hex digits.
+fn normalise_issuer_id(text: &str) -> Option<String> {
+    is_issuer_id(text).then(|| text.to_ascii_lowercase())
 }
 
 // --------------------------------------------------------- the built-in list
@@ -175,10 +191,7 @@ impl BuiltIn {
             .as_array()?
             .iter()
             .map(|issuer| {
-                let id = issuer.get("id")?.as_str()?.to_ascii_lowercase();
-                if !is_issuer_id(&id) {
-                    return None;
-                }
+                let id = normalise_issuer_id(issuer.get("id")?.as_str()?)?;
                 let certificate = match issuer.get("certificate")? {
                     serde_json::Value::Null => None,
                     serde_json::Value::String(_) => Some(
@@ -214,10 +227,7 @@ impl BuiltIn {
             .as_array()?
             .iter()
             .map(|entry| {
-                let issuer = entry.get("issuer")?.as_str()?.to_ascii_lowercase();
-                if !is_issuer_id(&issuer) {
-                    return None;
-                }
+                let issuer = normalise_issuer_id(entry.get("issuer")?.as_str()?)?;
                 Some((issuer, normalise_hex(entry.get("serial")?.as_str()?)?))
             })
             .collect::<Option<BTreeSet<_>>>()?;
@@ -321,13 +331,7 @@ fn supported(list: &RevocationList) -> Option<HeldList> {
             return None;
         }
         let ListEntry { serial, reason, .. } = entry;
-        let significant: Vec<u8> = serial
-            .magnitude
-            .iter()
-            .copied()
-            .skip_while(|byte| *byte == 0)
-            .collect();
-        if !serials.insert((serial.negative, significant)) {
+        if !serials.insert((serial.negative, significant(&serial.magnitude).to_vec())) {
             return None;
         }
         // A negative serial is never matched (§2).
@@ -407,7 +411,7 @@ impl Candidate {
         let (subject, key) = certificate.subject_and_key_der()?;
         Some(Candidate {
             certificate: certificate.clone(),
-            id: sha256_hex(&[subject.clone(), key].concat()),
+            id: id_of(&subject, &key),
             subject,
         })
     }
@@ -429,15 +433,15 @@ impl Candidate {
 /// but is itself revoked.
 const ISSUER_REVOKED: &str = "the certificate is revoked";
 
-/// Why a certificate is not accepted as a list issuer (§6), or `Ok` with
-/// the root that signed it: the first root whose `subject` is
-/// byte-identical to the certificate's `issuer` Name, as §4 matches a list
-/// to its candidates, and whose key verifies its signature.
-fn authenticate<'a>(
+/// Why a certificate is not accepted as a list issuer (§6). The root that
+/// signed it is the first root whose `subject` is byte-identical to the
+/// certificate's `issuer` Name, as §4 matches a list to its candidates,
+/// and whose key verifies its signature.
+fn authenticate(
     certificate: &Certificate,
-    roots: &'a [Candidate],
+    roots: &[Candidate],
     revoked: impl Fn(&str, &str) -> bool,
-) -> Result<&'a Candidate, &'static str> {
+) -> Result<(), &'static str> {
     let issuer_name = certificate.issuer_name_der();
     let root = roots
         .iter()
@@ -461,7 +465,7 @@ fn authenticate<'a>(
     if serial.is_some_and(|serial| revoked(&root.id, &serial)) {
         return Err(ISSUER_REVOKED);
     }
-    Ok(root)
+    Ok(())
 }
 
 // ------------------------------------------------------- the configuration
@@ -533,9 +537,9 @@ impl Revocation {
         }
         let mut distrust = BTreeSet::new();
         for (index, (issuer, serial)) in settings.distrust.iter().enumerate() {
-            match (is_issuer_id(issuer), normalise_hex(serial)) {
-                (true, Some(serial)) => {
-                    distrust.insert((issuer.to_ascii_lowercase(), serial));
+            match (normalise_issuer_id(issuer), normalise_hex(serial)) {
+                (Some(issuer), Some(serial)) => {
+                    distrust.insert((issuer, serial));
                 }
                 _ => {
                     distrust_error.get_or_insert_with(|| {
@@ -575,17 +579,21 @@ impl Revocation {
         }
 
         // The lists a configured root signed, and the one kept per root.
-        let owner_among = |index: usize, candidates: &[Candidate]| -> Option<Candidate> {
-            let (name, key_identifier) = named.get(index)?.as_ref().ok()?;
-            let list = parsed.get(index)?;
+        let owner_among = |list: &Parsed,
+                           name: &Result<Named, &'static str>,
+                           candidates: &[Candidate]|
+         -> Option<Candidate> {
+            let (name, key_identifier) = name.as_ref().ok()?;
             candidates
                 .iter()
                 .filter(|candidate| candidate.names(name, key_identifier.as_deref()))
                 .find(|candidate| list.list.verified_by(&candidate.certificate))
                 .cloned()
         };
-        let mut owners: Vec<Option<Candidate>> = (0..parsed.len())
-            .map(|index| owner_among(index, &roots))
+        let mut owners: Vec<Option<Candidate>> = parsed
+            .iter()
+            .zip(&named)
+            .map(|(list, name)| owner_among(list, name, &roots))
             .collect();
         let root_held = held_lists(&parsed, &owners);
 
@@ -612,7 +620,7 @@ impl Revocation {
                     }
                 }
                 Some(certificate) => match authenticate(certificate, &roots, revoked_under) {
-                    Ok(_) => {
+                    Ok(()) => {
                         if let Some(candidate) = Candidate::of(certificate) {
                             chaining.push(issuer);
                             accepted.push(candidate);
@@ -628,7 +636,7 @@ impl Revocation {
         let mut added: Vec<Candidate> = Vec::new();
         for (index, anchor) in settings.issuers.iter().enumerate() {
             let certificate = anchor.certificate();
-            let verdict = authenticate(certificate, &roots, revoked_under).and_then(|_| {
+            let verdict = authenticate(certificate, &roots, revoked_under).and_then(|()| {
                 Candidate::of(certificate).ok_or("the certificate's subject or key does not read")
             });
             match verdict {
@@ -644,22 +652,22 @@ impl Revocation {
 
         // Every list's owner: a root, else an accepted issuer, in
         // configuration order; then each list's age.
-        for (index, owner) in owners.iter_mut().enumerate() {
+        for (index, ((owner, list), naming)) in
+            owners.iter_mut().zip(&parsed).zip(&named).enumerate()
+        {
             if owner.is_none() {
-                *owner = owner_among(index, &issuers);
+                *owner = owner_among(list, naming, &issuers);
             }
-            let (Some(list), Some(name)) = (parsed.get(index), named.get(index)) else {
-                continue;
-            };
-            let (name, key_identifier) =
-                name.as_ref().map_err(|detail| list_error(index, detail))?;
+            let (name, key_identifier) = naming
+                .as_ref()
+                .map_err(|detail| list_error(index, detail))?;
             let Some(owner) = owner else {
                 // The list of a built-in issuer dropped because it is
                 // revoked (§6) is set aside, neither held nor refused: every
                 // path through that issuer already fails on the issuer
                 // itself, and refusing would leave a host that refreshes
                 // from the URLs it was given on its old configuration.
-                if owner_among(index, &revoked_built_in).is_some() {
+                if owner_among(list, naming, &revoked_built_in).is_some() {
                     continue;
                 }
                 let named_any = roots
@@ -715,15 +723,12 @@ impl Revocation {
             .map(|issuer| issuer.id.as_str())
             .chain(added.iter().map(|issuer| issuer.id.as_str()))
             .collect();
-        let valid_until_ms = if expected.is_empty() {
-            None
-        } else {
-            expected
-                .iter()
-                .map(|id| held.get(*id).map(|list| list.next_update_ms))
-                .collect::<Option<Vec<i64>>>()
-                .and_then(|until| until.into_iter().min())
-        };
+        // No expected issuer gives `None`, as one without a held list does.
+        let valid_until_ms = expected
+            .iter()
+            .map(|id| held.get(*id).map(|list| list.next_update_ms))
+            .collect::<Option<Vec<i64>>>()
+            .and_then(|until| until.into_iter().min());
         Ok(Revocation {
             built_in,
             distrust,
