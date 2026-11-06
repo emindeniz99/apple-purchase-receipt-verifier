@@ -155,7 +155,7 @@ final class RevocationList {
         }
         AlgorithmIdentifier.getInstance(field(fields, at++));
         X500Name.getInstance(field(fields, at++));
-        this.thisUpdate = time(field(fields, at++)).getDate().getTime();
+        this.thisUpdate = wholeSeconds(time(field(fields, at++)).getDate().getTime());
         String unsupported = null;
         Long next = null;
         if (at < fields.size()
@@ -163,7 +163,7 @@ final class RevocationList {
                         || fields.getObjectAt(at) instanceof ASN1GeneralizedTime)) {
             Time nextTime = time(fields.getObjectAt(at));
             try {
-                next = nextTime.getDate().getTime();
+                next = wholeSeconds(nextTime.getDate().getTime());
             } catch (RuntimeException e) {
                 unsupported = "its nextUpdate does not read";
             }
@@ -323,6 +323,16 @@ final class RevocationList {
             throw new IllegalArgumentException("a time shorter than its DER form");
         }
         return Time.getInstance(primitive);
+    }
+
+    /**
+     * A list time to the whole second, as the core reads one: OpenSSL keeps
+     * no fraction of a GeneralizedTime (RFC 5280 forbids one), so two lists
+     * a fraction apart tie, and a fraction of a nextUpdate does not stretch
+     * a list's freshness or {@code revocationValidUntil}.
+     */
+    private static long wholeSeconds(long millis) {
+        return Math.floorDiv(millis, 1000L) * 1000L;
     }
 
     /** The TBSCertList field at {@code index}, which must be there. */
