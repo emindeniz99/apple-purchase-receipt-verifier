@@ -341,9 +341,11 @@ func refreshRevocation(ctx context.Context, client *http.Client) error {
   index when a list is not a CRL, is over 1 MiB, is signed by no issuer the
   verifier knows, or is older than the list this release was built with;
   when there are more than 16 lists; when a `RevocationIssuers` certificate
-  does not chain to your roots or is itself revoked; or when a `Distrust`
-  entry is malformed or there are more than 1,000. A genuine list in a form
-  the module does not support is ignored instead, and counts as missing.
+  does not chain to your roots; or when a `Distrust` entry is malformed or
+  there are more than 1,000. A genuine list in a form the module does not
+  support is ignored instead, and counts as missing. A `RevocationIssuers`
+  certificate that is itself revoked is set aside with its own list, not
+  refused: a path through it fails with `ReasonCertificateRevoked`.
 - **`Distrust`** takes `RevokedCertificate{Issuer, Serial}` strings:
   `Issuer` is the SHA-256, in hex, of the issuing certificate's subject Name
   followed by its subjectPublicKeyInfo, both as encoded in that certificate;
