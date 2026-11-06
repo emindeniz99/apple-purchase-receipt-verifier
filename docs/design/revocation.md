@@ -126,7 +126,9 @@ the `extnValue`); the same holds for the SubjectKeyIdentifier and cRLDistributio
 extension is never read.
 
 Several lists for one issuer: the one kept has the highest CRL Number; if any of them lacks a number, the latest
-`thisUpdate`; on a tie, the one whose DER sorts first byte by byte. Lists are never merged.
+`thisUpdate`; on a tie, the one whose DER sorts first byte by byte. Lists are never merged. A list's `thisUpdate`
+and `nextUpdate` are read to the whole second: a fraction of a second in a GeneralizedTime, which RFC 5280 forbids, is
+dropped, for choosing the kept list, for a `certificateHold` entry's freshness and for `revocationValidUntil`.
 
 ## 5. The built-in list
 
