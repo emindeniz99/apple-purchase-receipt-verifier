@@ -41,6 +41,7 @@ import (
 	"unicode/utf8"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
+	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/host"
 )
 
 const casesFileName = "cases.json"
@@ -776,9 +777,10 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 }
 
 // runBuildConfig builds the case's configuration into a Verifier. An error
-// case must be refused by NewVerifier with a plain error (the message is
-// not checked); an ok case must build and report the case's
-// revocationUrls, in order, and revocationValidUntil.
+// case must be refused by NewVerifier with the module's refusal, a
+// *host.InitRefusedError, not a *Failure (the message is not checked); an
+// ok case must build and report the case's revocationUrls, in order, and
+// revocationValidUntil.
 func runBuildConfig(t testing.TB, dir string, fixtures map[string]fixtureEntry, c conformanceCase) {
 	if c.Input.TrustedRoots == nil {
 		t.Fatalf("%s: harness error: buildConfig needs input.trustedRoots", c.ID)
@@ -793,6 +795,12 @@ func runBuildConfig(t testing.TB, dir string, fixtures map[string]fixtureEntry, 
 		}
 		if _, isFailure := applereceipt.ReasonOf(err); isFailure {
 			t.Fatalf("%s: a refused configuration is a *Failure, want a plain error: %v", c.ID, err)
+		}
+		// The module's refusal, not a wrapper-side misuse check or a host
+		// failure: any other error would pass these cases for the wrong reason.
+		var refused *host.InitRefusedError
+		if !errors.As(err, &refused) {
+			t.Fatalf("%s: the configuration was refused, but not by the module (%T), want *host.InitRefusedError: %v", c.ID, err, err)
 		}
 	case "ok":
 		if err != nil {
