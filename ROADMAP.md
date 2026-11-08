@@ -232,6 +232,40 @@ open: a multi-release jar with `module-info` for Java 9+ ("Java, after
 0.7" below), and RHEL 9 and Codecov, which the owner scheduled after 0.7
 (below and in "Later / hardening").
 
+## Revocation (0.14.0): open after #535 (2026-11-08)
+
+Pull request #535 adds offline revocation (docs/design/revocation.md,
+DECISIONS.md R47). Its CI was green at 0583e252 and it waits on the
+owner's review. These items stay open after it; delete each in the commit
+that ships it.
+
+- **C ABI revocation settings (owner, 2026-11-08: to add).** `rust/ffi`
+  takes only the roots and the clock. It returns `17`
+  `CERTIFICATE_REVOKED` from the built-in list, but a C caller cannot pass
+  `revocation_lists`, `revocation_issuers` or `distrust`, and cannot read
+  `revocationUrls` or `revocationValidUntil`. 0.14 kept the C ABI to the
+  reason code because the settings mean new exported symbols. The likely
+  shape is a second constructor that takes the same init JSON the module
+  already reads, plus two getters; that is a decision for whoever picks it
+  up. It touches `rust/ffi/src/lib.rs`, the committed header
+  (`cbindgen.toml`, `check-header.sh`), `exported-symbols.txt`, the tests,
+  the C++ and ctypes examples and `rust/ffi/README.md`.
+- **`aprv-server` managed mode keeps the last value of a repeated key** in
+  its configuration line before `init` sees it, so a duplicate is not
+  refused the way the module refuses one. Found in passing; not fixed.
+- **The differential campaign skips the new cases.**
+  `tools/differential.sh` does not run the revocation cases or the
+  `buildConfig` operation.
+- **Docs.** `rust/README.md` does not document the revocation settings,
+  and `CONTRIBUTING.md` has no "Apple revocation watch" section saying
+  what to do when `apple-revocation-watch.yml` fails: run
+  `tools/refresh-apple-revocations.mjs`, open the pull request, release.
+- **Releasing 0.14.0.** After the owner reviews and merges #535. Count
+  this month's Maven Central releases first (Release budget in
+  AGENTS.md). The release pull request release-please opened for 0.13.1
+  (#543) holds dependency bumps only and is left unmerged on purpose;
+  release-please folds those commits into 0.14.0.
+
 ## Next
 
 - **OpenSSL 4.1 (owner, 2026-10-31): held.** The core stays on 4.0.x, which
