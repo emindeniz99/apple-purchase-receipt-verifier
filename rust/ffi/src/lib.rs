@@ -1227,9 +1227,8 @@ mod tests {
         let untouched = std::ptr::dangling_mut::<AprvVerifier>();
         let mut handle = untouched;
         let mut out = empty_result();
-        let built = guard(|| unsafe {
-            finish_new(&raw mut handle, &raw mut out, || panic!("deliberate"))
-        });
+        let built =
+            guard(|| unsafe { finish_new(&raw mut handle, &raw mut out, || panic!("deliberate")) });
         std::panic::set_hook(previous);
         assert_eq!(code, AprvReason::Panic as i32);
         assert!(pointer.is_null());
