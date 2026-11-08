@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
@@ -24,14 +25,28 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.bouncycastle.asn1.ASN1Enumerated;
+import org.bouncycastle.asn1.ASN1GeneralizedTime;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.CRLNumber;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
+import org.bouncycastle.asn1.x509.ExtensionsGenerator;
 import org.bouncycastle.cert.X509v2CRLBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -58,6 +73,15 @@ class RevocationTest {
 
     /** The instant the shared cases run at: the fresh test lists cover it. */
     private static final Clock CASES_CLOCK = Clock.fixed(Instant.parse("2026-11-05T00:00:00Z"), ZoneOffset.UTC);
+
+    /** When the entries of the lists minted here were revoked, and the span they are fresh for. */
+    private static final Date REVOKED_AT = Date.from(Instant.parse("2026-10-15T00:00:00Z"));
+
+    private static final Date FRESH_THIS = Date.from(Instant.parse("2026-11-01T00:00:00Z"));
+    private static final Date FRESH_NEXT = Date.from(Instant.parse("2026-12-01T00:00:00Z"));
+
+    /** 2024-08-06T12:00:00Z, the signedDate of the shared cases' JWS. */
+    private static final long SIGNED_DATE = 1_722_945_600_000L;
 
     /**
      * SHA-256 of the two built-in issuers, kept apart from their base64 in
@@ -503,6 +527,124 @@ class RevocationTest {
                         .build(signer.getPrivate())));
     }
 
+    // ------------------------- rules the shared cases do not reach
+
+    /** Exactly 16 lists build; 17 do not. */
+    @Test
+    void exactlySixteenListsBuildAndSeventeenAreRefused() throws Exception {
+        byte[] own = testBytes("crl-fresh-empty.der");
+        Verifier verifier = Verifier.create(withAddedIssuer(Collections.nCopies(16, own)).build());
+        assertEquals(Instant.parse("2026-12-01T00:00:00Z"), verifier.revocationValidUntil());
+        String refused = refusal(withAddedIssuer(Collections.nCopies(17, own)));
+        assertTrue(refused.contains("revocationLists holds 17 lists, more than 16"), refused);
+    }
+
+    /**
+     * §4: an entry whose reasonCode is unknown (7, or above 10) or does not
+     * read revokes, as any reason other than removeFromCRL and
+     * certificateHold does.
+     */
+    @Test
+    void anEntryWithAnUnknownOrUnreadableReasonCodeRevokes() throws Exception {
+        TestPki pki = testChain(true);
+        String jws = signedBy(pki);
+        BigInteger leaf = pki.leaf.getSerialNumber();
+        for (int code : new int[] {7, 11}) {
+            X509v2CRLBuilder list = freshList();
+            list.addCRLEntry(leaf, REVOKED_AT, reasonCode(code, false));
+            assertRevokes(listConfig(pki, pki.intermediate, list), jws, "reasonCode " + code);
+        }
+        // The control: removeFromCRL, the one reason that does not revoke.
+        X509v2CRLBuilder removed = freshList();
+        removed.addCRLEntry(leaf, REVOKED_AT, reasonCode(8, false));
+        assertTrue(Verifier.create(listConfig(pki, pki.intermediate, removed)).verifySignedData(jws).verified());
+        // A reasonCode that does not read. Both carry the value 8, where a
+        // reader of the leading value alone would see removeFromCRL.
+        Map<String, byte[]> unreadable = new LinkedHashMap<String, byte[]>();
+        unreadable.put("an INTEGER where an ENUMERATED belongs", new byte[] {0x02, 0x01, 0x08});
+        unreadable.put("octets after the ENUMERATED", new byte[] {0x0a, 0x01, 0x08, 0x00});
+        for (Map.Entry<String, byte[]> value : unreadable.entrySet()) {
+            ExtensionsGenerator extensions = new ExtensionsGenerator();
+            extensions.addExtension(Extension.reasonCode, false, value.getValue());
+            X509v2CRLBuilder list = freshList();
+            list.addCRLEntry(leaf, REVOKED_AT, extensions.generate());
+            assertRevokes(listConfig(pki, pki.intermediate, list), jws, value.getKey());
+        }
+    }
+
+    /**
+     * §4: critical is allowed only on a list's AuthorityKeyIdentifier and CRL
+     * Number and an entry's reasonCode and invalidityDate. A list with one of
+     * them critical stays inside the profile: it is held, its entry revokes
+     * and revocationValidUntil reports it. Each case runs without the flag
+     * first, so only the flag differs.
+     */
+    @Test
+    void criticalIsAllowedOnTheExtensionsTheProfileReads() throws Exception {
+        TestPki pki = testChain(true);
+        X509Certificate keyed = withSubjectKeyIdentifier(pki);
+        AuthorityKeyIdentifier aki = new JcaX509ExtensionUtils().createAuthorityKeyIdentifier(keyed.getPublicKey());
+        String jws = signedBy(pki);
+        BigInteger leaf = pki.leaf.getSerialNumber();
+        for (boolean critical : new boolean[] {false, true}) {
+            Map<String, X509v2CRLBuilder> lists = new LinkedHashMap<String, X509v2CRLBuilder>();
+
+            X509v2CRLBuilder number = freshList();
+            number.addExtension(Extension.cRLNumber, critical, new CRLNumber(BigInteger.valueOf(5)));
+            number.addCRLEntry(leaf, REVOKED_AT, reasonCode(1, false));
+            lists.put("CRL Number", number);
+
+            X509v2CRLBuilder authority = freshList();
+            authority.addExtension(Extension.authorityKeyIdentifier, critical, aki);
+            authority.addCRLEntry(leaf, REVOKED_AT, reasonCode(1, false));
+            lists.put("AuthorityKeyIdentifier", authority);
+
+            X509v2CRLBuilder reason = freshList();
+            reason.addCRLEntry(leaf, REVOKED_AT, reasonCode(1, critical));
+            lists.put("reasonCode", reason);
+
+            ExtensionsGenerator both = new ExtensionsGenerator();
+            both.addExtension(Extension.reasonCode, false, new ASN1Enumerated(1));
+            both.addExtension(Extension.invalidityDate, critical, new ASN1GeneralizedTime(REVOKED_AT));
+            X509v2CRLBuilder invalidity = freshList();
+            invalidity.addCRLEntry(leaf, REVOKED_AT, both.generate());
+            lists.put("invalidityDate", invalidity);
+
+            for (Map.Entry<String, X509v2CRLBuilder> list : lists.entrySet()) {
+                String what = list.getKey() + ", critical=" + critical;
+                Config config = listConfig(pki, keyed, list.getValue());
+                assertRevokes(config, jws, what);
+                Instant validUntil = Verifier.create(config).revocationValidUntil();
+                assertEquals(Instant.parse("2026-12-01T00:00:00Z"), validUntil, what);
+            }
+        }
+    }
+
+    /**
+     * §3: the check runs once the path, the Apple markers and the signature
+     * have passed. A revoked leaf whose signature is bad is
+     * INVALID_SIGNATURE, and one without the signing marker is
+     * INVALID_CERTIFICATE_PURPOSE: neither is CERTIFICATE_REVOKED.
+     */
+    @Test
+    void aRevokedLeafIsJudgedAfterTheSignatureAndTheMarkers() throws Exception {
+        TestPki pki = testChain(true);
+        String jws = signedBy(pki);
+        assertTrue(Verifier.create(chainConfig(pki).build()).verifySignedData(jws).verified());
+        Verifier revoking = Verifier.create(distrustingLeaf(pki).build());
+        assertEquals(Reason.CERTIFICATE_REVOKED, reasonOf(revoking, jws));
+
+        String[] parts = jws.split("\\.");
+        byte[] signature = Base64.getUrlDecoder().decode(parts[2]);
+        signature[signature.length / 2] ^= 0x01;
+        String tampered = parts[0] + "." + parts[1] + "." + TestPki.b64url(signature);
+        assertEquals(Reason.INVALID_SIGNATURE, reasonOf(revoking, tampered));
+
+        TestPki unmarked = testChain(false);
+        Verifier unmarkedRevoking = Verifier.create(distrustingLeaf(unmarked).build());
+        assertEquals(Reason.INVALID_CERTIFICATE_PURPOSE, reasonOf(unmarkedRevoking, signedBy(unmarked)));
+    }
+
     // ------------------------------------------------------------ messages
 
     /** The message names the layer and the serial, and nothing else from the input. */
@@ -608,6 +750,91 @@ class RevocationTest {
     }
 
     // ------------------------------------------------------------- helpers
+
+    /**
+     * The test helper's JWS chain, valid across the dates the shared cases
+     * use, with the signing marker on the leaf or without it.
+     */
+    private static TestPki testChain(boolean leafMarker) throws Exception {
+        return TestPki.jws(
+                leafMarker,
+                true,
+                Date.from(Instant.parse("2024-01-01T00:00:00Z")),
+                Date.from(Instant.parse("2050-01-01T00:00:00Z")));
+    }
+
+    /** A JWS the chain's leaf signs, dated 2024-08-06T12:00:00Z as the shared cases' are. */
+    private static String signedBy(TestPki pki) throws Exception {
+        return pki.signJws(
+                TestPki.claims("bundleId", "com.example.app", "environment", "Sandbox", "signedDate", SIGNED_DATE));
+    }
+
+    private static Config.Builder chainConfig(TestPki pki) {
+        return Config.builder().roots(Collections.singletonList(pki.root)).clock(CASES_CLOCK);
+    }
+
+    /** The chain's configuration with its leaf in distrust. */
+    private static Config.Builder distrustingLeaf(TestPki pki) throws Exception {
+        String issuer = Der.names(pki.intermediate).issuerId();
+        RevokedCertificate leaf = new RevokedCertificate(issuer, pki.leaf.getSerialNumber().toString(16));
+        return chainConfig(pki).distrust(Collections.singletonList(leaf));
+    }
+
+    /** A version 2 list of the chain's intermediate, fresh at the cases' clock: 2026-11-01 to 2026-12-01. */
+    private static X509v2CRLBuilder freshList() {
+        X509v2CRLBuilder builder = new X509v2CRLBuilder(new X500Name("CN=Fake Apple WWDR CA"), FRESH_THIS);
+        builder.setNextUpdate(FRESH_NEXT);
+        return builder;
+    }
+
+    /** The configuration that adds {@code issuer} and holds {@code list}, signed by the chain's intermediate. */
+    private static Config listConfig(TestPki pki, X509Certificate issuer, X509v2CRLBuilder list) throws Exception {
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(pki.intermediateKey);
+        byte[] der = list.build(signer).getEncoded();
+        return chainConfig(pki)
+                .revocationIssuers(Collections.singletonList(issuer))
+                .revocationLists(Collections.singletonList(der))
+                .build();
+    }
+
+    /**
+     * The chain's intermediate again: the same name and key, so the same
+     * issuer id, issued by the same root, with a SubjectKeyIdentifier, which
+     * a list needs to name its signer by AuthorityKeyIdentifier (§4).
+     */
+    private static X509Certificate withSubjectKeyIdentifier(TestPki pki) throws Exception {
+        PublicKey key = pki.intermediate.getPublicKey();
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                new X500Name("CN=Fake Apple Root CA"),
+                BigInteger.valueOf(9_001),
+                pki.intermediate.getNotBefore(),
+                pki.intermediate.getNotAfter(),
+                new X500Name("CN=Fake Apple WWDR CA"),
+                key);
+        JcaX509ExtensionUtils utils = new JcaX509ExtensionUtils();
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+        builder.addExtension(Extension.subjectKeyIdentifier, false, utils.createSubjectKeyIdentifier(key));
+        builder.addExtension(new ASN1ObjectIdentifier("1.2.840.113635.100.6.2.1"), false, DERNull.INSTANCE);
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(pki.rootKey);
+        return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
+    }
+
+    /** An entry's reasonCode extension. */
+    private static Extensions reasonCode(int code, boolean critical) throws Exception {
+        ExtensionsGenerator extensions = new ExtensionsGenerator();
+        extensions.addExtension(Extension.reasonCode, critical, new ASN1Enumerated(code));
+        return extensions.generate();
+    }
+
+    private static void assertRevokes(Config config, String jws, String what) {
+        assertEquals(Reason.CERTIFICATE_REVOKED, reasonOf(Verifier.create(config), jws), what);
+    }
+
+    private static Reason reasonOf(Verifier verifier, String jws) {
+        Failure failure = verifier.verifySignedData(jws).failure();
+        assertNotNull(failure, "the JWS verified");
+        return failure.reason();
+    }
 
     private static Config.Builder testConfig() throws Exception {
         return Config.builder()
