@@ -462,8 +462,8 @@ class RevocationTest {
         X500Name rootName = new X500Name("CN=APRV long path length test root");
         X509Certificate root = certificate(rootName, BigInteger.ONE, rootName, rootKey, rootKey, false);
         // CA TRUE, pathLenConstraint 2^31: one more than an int holds.
-        org.bouncycastle.asn1.ASN1Encodable beyondAnInt = new org.bouncycastle.asn1.DERSequence(
-                new org.bouncycastle.asn1.ASN1Encodable[] {
+        org.bouncycastle.asn1.ASN1Encodable beyondAnInt =
+                new org.bouncycastle.asn1.DERSequence(new org.bouncycastle.asn1.ASN1Encodable[] {
                     org.bouncycastle.asn1.ASN1Boolean.TRUE,
                     new org.bouncycastle.asn1.ASN1Integer(BigInteger.valueOf(1L << 31))
                 });
@@ -533,7 +533,8 @@ class RevocationTest {
     @Test
     void exactlySixteenListsBuildAndSeventeenAreRefused() throws Exception {
         byte[] own = testBytes("crl-fresh-empty.der");
-        Verifier verifier = Verifier.create(withAddedIssuer(Collections.nCopies(16, own)).build());
+        Verifier verifier =
+                Verifier.create(withAddedIssuer(Collections.nCopies(16, own)).build());
         assertEquals(Instant.parse("2026-12-01T00:00:00Z"), verifier.revocationValidUntil());
         String refused = refusal(withAddedIssuer(Collections.nCopies(17, own)));
         assertTrue(refused.contains("revocationLists holds 17 lists, more than 16"), refused);
@@ -557,7 +558,9 @@ class RevocationTest {
         // The control: removeFromCRL, the one reason that does not revoke.
         X509v2CRLBuilder removed = freshList();
         removed.addCRLEntry(leaf, REVOKED_AT, reasonCode(8, false));
-        assertTrue(Verifier.create(listConfig(pki, pki.intermediate, removed)).verifySignedData(jws).verified());
+        assertTrue(Verifier.create(listConfig(pki, pki.intermediate, removed))
+                .verifySignedData(jws)
+                .verified());
         // A reasonCode that does not read. Both carry the value 8, where a
         // reader of the leading value alone would see removeFromCRL.
         Map<String, byte[]> unreadable = new LinkedHashMap<String, byte[]>();
@@ -630,7 +633,8 @@ class RevocationTest {
     void aRevokedLeafIsJudgedAfterTheSignatureAndTheMarkers() throws Exception {
         TestPki pki = testChain(true);
         String jws = signedBy(pki);
-        assertTrue(Verifier.create(chainConfig(pki).build()).verifySignedData(jws).verified());
+        assertTrue(
+                Verifier.create(chainConfig(pki).build()).verifySignedData(jws).verified());
         Verifier revoking = Verifier.create(distrustingLeaf(pki).build());
         assertEquals(Reason.CERTIFICATE_REVOKED, reasonOf(revoking, jws));
 
@@ -776,7 +780,8 @@ class RevocationTest {
     /** The chain's configuration with its leaf in distrust. */
     private static Config.Builder distrustingLeaf(TestPki pki) throws Exception {
         String issuer = Der.names(pki.intermediate).issuerId();
-        RevokedCertificate leaf = new RevokedCertificate(issuer, pki.leaf.getSerialNumber().toString(16));
+        RevokedCertificate leaf =
+                new RevokedCertificate(issuer, pki.leaf.getSerialNumber().toString(16));
         return chainConfig(pki).distrust(Collections.singletonList(leaf));
     }
 
