@@ -256,10 +256,6 @@ that ships it.
 - **The differential campaign skips the new cases.**
   `tools/differential.sh` does not run the revocation cases or the
   `buildConfig` operation.
-- **Docs.** `rust/README.md` does not document the revocation settings,
-  and `CONTRIBUTING.md` has no "Apple revocation watch" section saying
-  what to do when `apple-revocation-watch.yml` fails: run
-  `tools/refresh-apple-revocations.mjs`, open the pull request, release.
 - **Releasing 0.14.0.** After the owner reviews and merges #535. Count
   this month's Maven Central releases first (Release budget in
   AGENTS.md). The release pull request release-please opened for 0.13.1

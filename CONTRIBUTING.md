@@ -576,6 +576,42 @@ app licences rather than App Store signing, but Apple does not say so. A
 chain through it fails the intermediate check here and in Apple's
 libraries alike.
 
+## Apple revocation watch
+
+`.github/workflows/apple-revocation-watch.yml` runs
+`tools/refresh-apple-revocations.mjs --check` every Monday and compares
+Apple's revocation lists against the built-in list,
+`certs/revocations.json` (docs/design/revocation.md §5). It downloads the
+list of each issuer in that file, verifies it against the issuer's
+certificate in `certs/`, and reads the PKI page for WWDR intermediates the
+file does not know. It writes nothing. A newer list alone, and
+`certificateHold` or `removeFromCRL` entries, go to the job summary and
+pass; the run fails, and GitHub notifies the owner, on a new, vanished or
+reappearing entry, a changed reason, a list the tool refuses, or an unknown
+WWDR intermediate.
+
+On a failed run:
+
+1. Read the job summary. Exit 1 is a change to act on; exit 2 is Apple's
+   lists or the PKI page could not be read, or the tool failed. Re-run the
+   workflow for a network failure; a list that stays unreadable is read
+   by hand before anything else.
+2. For a new entry or a changed reason, run
+   `node tools/refresh-apple-revocations.mjs`. It writes
+   `certs/revocations.json`, its copy in `rust/certs/`, the copy's SHA-256
+   pin in `rust/src/roots.rs` and Java's `AppleRevocations.java` together;
+   never edit one of them by hand, and an entry is never removed.
+3. Review the diff and open a pull request for it. The core refuses a
+   built-in list that disagrees with its pin, and `RevocationTest` fails
+   when Java's copy differs from `certs/`.
+4. An unknown WWDR intermediate is not fixed by the tool: it is either an
+   issuer to add (its certificate in `certs/revocation-issuers/`) or a
+   known exclusion that signs no list (`NOT_LIST_ISSUERS` in the tool).
+   Decide which in its own pull request.
+5. Release it. The built-in list reaches consumers only with a release
+   (AGENTS.md, Release budget), and until then `distrust` is the way a
+   consumer refuses the certificate.
+
 ## Spikes and evidence
 
 Every experiment's code goes into the repo, even code that answered "no":

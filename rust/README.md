@@ -91,9 +91,11 @@ a test rather than only documented.
   store default paths, and `openssl/tests/isolation.rs` proves a planted
   `SSL_CERT_FILE`, `SSL_CERT_DIR` and `OPENSSL_CONF` are ignored.
   `deny.toml` refuses, at build time, every crate that could carry one.
-- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
-  download. Revocation checking is disabled by design; an integrator who
-  needs it must layer it on top.
+- **It never touches the network.** No OCSP, no CRL fetch, no AIA fetch, no
+  root download. Revocation is checked offline, against the built-in list,
+  your `distrust` entries and the lists you pass in `Config`
+  ([Revocation](#revocation)); you download the lists, the library never
+  does.
 - **It never uses a key no pinned root vouched for.** Certificate signatures
   are checked from the roots down, so a certificate carrying an attacker's
   key (their choice of size and exponent) is never used to check anything
@@ -147,6 +149,9 @@ fail and leaves every call answering `INTERNAL_ERROR` instead.
 
 The defaults have one spelling, the `Default` trait. 0.7's
 `Config::defaults()` is `Config::default()` from 0.8.
+
+The same builder takes the revocation settings, `revocation_lists`,
+`revocation_issuers` and `distrust` ([Revocation](#revocation)).
 
 ### `Verifier`: three methods
 
@@ -217,6 +222,7 @@ parse `failure.message()`.
 | `InvalidCertificatePurpose` | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
 | `InternalError` | `INTERNAL_ERROR` | the library failed (a contained panic, wherever it happened), or the configured clock panicked; no input makes a correct library answer it | 21009 |
+| `CertificateRevoked` | `CERTIFICATE_REVOKED` | a certificate on the path is revoked: by the list built into the library, by `distrust`, or by a list you passed | 21003 |
 
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure with `VERSION`, and reconcile the purchase through the App
@@ -288,10 +294,79 @@ every check that comes before:
   representable `receiptCreationDate`. Otherwise the chain is judged at the
   date the input states.
 - **`request_date`** in the endpoint's response.
+- **whether a revocation list is still fresh**, when it holds a
+  `certificateHold` entry for a certificate on the path: a hold counts only
+  while the list's `nextUpdate` has not passed.
 
 A certificate outside its validity window at that instant is
 `INVALID_CERTIFICATE`. A clock that panics is contained as `INTERNAL_ERROR`
 (21009 at the endpoint), with a fixed message.
+
+## Revocation
+
+A verifier refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked offline:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the library (`certs/revocations.json`) | each release | always on; cannot be turned off |
+| `distrust` | you, with `ConfigBuilder::distrust` | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes, with `ConfigBuilder::revocation_lists` | none |
+
+A revoked certificate on the path fails the call with
+`Reason::CertificateRevoked` (21003 at the endpoint), whatever date the
+payload states: whoever holds a leaked key chooses that date. The check
+runs after the signature and before the payload is read. A missing or
+stale list never fails a call.
+
+```rust
+let config = Config::builder()
+    .revocation_lists(lists)               // Vec<Vec<u8>>: CRL files exactly as downloaded (DER)
+    .revocation_issuers(issuers)           // optional: TrustAnchor CAs that sign lists
+    .distrust([(issuer_id, "7D3920094EBEF3F8EFCA6C10EA8E4303")])
+    .build()?;
+let verifier = Verifier::new(config);
+
+verifier.revocation_urls();                // &[String]: the lists to download
+verifier.revocation_valid_until();         // Option<i64>: epoch ms; alert on None or a past instant
+```
+
+- **Take the URLs from `revocation_urls()`, never from Apple's PKI page.**
+  With Apple's roots they are `root.crl`, `applerootcag3.crl`, `wwdrg5.crl`
+  and `wwdrg6.crl` on `http://crl.apple.com/`: the library authenticates
+  each list by its signature, not by the transport. The page also links
+  lists the library refuses.
+- **Monitor `revocation_valid_until()`.** It is the earliest `nextUpdate`
+  of the lists held. `None` means some issuer the verifier expects a list
+  from has none (none passed, or the list was ignored); a past instant
+  means a list is stale. Alert on both. Apple reissues WWDR G6's list daily.
+- **`build()` returns a `ConfigError`** naming the first problem and its
+  index when a list is not a DER CRL, is over 1 MiB, is signed by no
+  issuer the verifier knows, or is older than the newest list the
+  built-in file records for its issuer; when there are more than 16 lists
+  or 100,000 entries in all; when a `revocation_issuers` certificate does
+  not chain to your roots, is not a CA, lacks `cRLSign` where it has a
+  keyUsage, or lacks Apple's WWDR marker OID; or when a `distrust` entry
+  is malformed or there are more than 1,000. A genuine list in a form the library does not support is
+  ignored instead, and counts as missing. A `revocation_issuers`
+  certificate that is itself revoked is set aside with its own list, not
+  refused: a path through it fails with `CertificateRevoked`.
+- **`distrust`** takes `(issuer, serial)` strings: `issuer` is the SHA-256,
+  in hex, of the issuing certificate's subject Name followed by its
+  subjectPublicKeyInfo, both as encoded in that certificate; `serial` is
+  the revoked certificate's serial number in hex. Either letter case.
+- **With your own roots** `revocation_urls()` is empty until you add
+  `revocation_issuers`; it then names the lists those issuers may appear
+  on. The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+- **Refresh by building a new `Config` and `Verifier`** with the same
+  settings and the new lists, and swapping the reference; a `Verifier` has
+  no setter. The library has no HTTP client and no timer. If the build
+  refuses a list, drop that list, carry on with the last good one and
+  alert.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
 
 ## What the checks are, and in what order
 
