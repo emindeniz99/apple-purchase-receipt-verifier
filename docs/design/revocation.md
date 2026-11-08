@@ -49,8 +49,8 @@ every CRL signature on every call); platform trust stores; refund, cancellation 
 
 Runs once the path, the Apple markers and the signature have passed, and before the signed content is read or
 decoded, so a payload signed with a revoked key is never judged (it cannot be made to answer `UNREADABLE_PAYLOAD`).
-For a JWS: between the ES256 signature check and the payload verdict (rust/src/jws.rs, `JwsCore`). For a receipt:
-inside the per-signer check, after that signer's CMS signature (rust/src/receipt.rs, `ReceiptCore`), so a receipt
+For a JWS: between the ES256 signature check and the payload verdict (Rust: `verify` in rust/src/jws.rs; Java: `JwsCore`). For a receipt:
+inside the per-signer check, after that signer's CMS signature (Rust: `verify_signer` in rust/src/receipt.rs; Java: `ReceiptCore`), so a receipt
 with several SignerInfos verifies when another signer verifies, as today; when none does, the failure reported is the
 one the existing rule picks. Every existing case keeps its verdict and reason.
 

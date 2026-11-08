@@ -63,7 +63,9 @@ turn on; `aprv.wasm`, the C ABI and `aprv-server` are built without them.
   and path length problems are waived. OpenSSL 4.0 counts the
   `notAfter` second as valid, as RFC 5280 does; it checks whole seconds
   and the core adds the millisecond check. No purpose,
-  policy, revocation or host check is asked for.
+  policy, host or CRL check (`X509_V_FLAG_CRL_CHECK`) is asked for;
+  revocation is the core's own offline check
+  (docs/design/revocation.md §3).
 - **Certificates**: `X509_check_issued`, `X509_verify`, `X509_check_ca`,
   `X509_get_ext_d2i`, `ASN1_BIT_STRING_get_length` (4.0 API:
   the signature's unused bits), `X509_get_extension_flags`,

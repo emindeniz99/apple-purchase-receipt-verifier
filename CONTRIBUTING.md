@@ -371,7 +371,7 @@ behind the expectations. Read it before adding a case.
    "Adding a base64 spelling" below.
    A positive case carries `status: "ok"` plus the `fields` it pins, as JSON
    Pointers into the payload's JSON; a field it does not list is not pinned.
-   A negative case carries `status: "error"` plus one of the eight reasons
+   A negative case carries `status: "error"` plus one of the nine reasons
    (never `INTERNAL_ERROR`), and a `fault` naming its single intentional
    defect. Where the outcome is implementation-defined,
    `expected: {"oneOf": [...]}` lists every outcome an implementation may

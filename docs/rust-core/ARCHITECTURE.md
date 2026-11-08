@@ -98,8 +98,9 @@ Package.swift, swift/         the Swift wrapper over WasmKit
   `asn1.rs`, `x509.rs`, `cms.rs`, `chain.rs` and `crypto.rs`. Its public
   API is the Rust rendering of the 0.7 API that 0.7.0 already ships.
 - **aprv-surface** is the semantic model every boundary shares: the
-  three operations, the eight reasons, the payload records, the failure,
-  the configuration (a list of roots, each DER or PEM bytes). The
+  three operations, the nine reasons, the payload records, the failure,
+  the configuration (a list of roots, each DER or PEM bytes, and the
+  revocation lists, issuers and `distrust` entries). The
   receipt records, the reasons, the failure, the environment and the JWS
   payload are the core's own types, re-exported rather than copied, so
   each is defined once. It

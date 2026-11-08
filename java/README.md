@@ -706,9 +706,10 @@ void refresh() {
 
 `revocationIssuers(Collection<X509Certificate>)` adds a CA that signs
 lists, for a new Apple intermediate before a release knows it or for a
-test PKI. It must be signed by a configured root, be a CA with `cRLSign`,
-carry Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 and not be revoked
-itself. Its own list URL cannot be known from its certificate (Apple names
+test PKI. It must be signed by a configured root, be a CA, have `cRLSign`
+when it has a keyUsage, and carry Apple's WWDR marker OID
+1.2.840.113635.100.6.2.1. One that is itself revoked is set aside with its
+own list, not refused. Its own list URL cannot be known from its certificate (Apple names
 it on the certificates it signs), so add that URL to your download list
 by hand.
 

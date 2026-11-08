@@ -467,8 +467,8 @@ G3 among them) and a clock.
    one that is not is `UNREADABLE_PAYLOAD`. No claim is checked: bundle id,
    environment and app Apple id are the caller's to compare.
 7. Return the payload JSON exactly as signed. Any failed step returns a
-   failure with one of the eight reasons of the 0.7 design — never a
-   partially-verified result.
+   failure with one of the eight reasons of the 0.7 design (nine since
+   0.14.0, with `CERTIFICATE_REVOKED`) — never a partially-verified result.
 
 ### 2.2 Legacy PKCS#7 app receipt
 
@@ -546,7 +546,13 @@ and the `Config`: trusted roots (Apple Inc. Root CA among them) and a clock.
 - **No revocation checking** is the accepted trade-off for offline
   verification (Apple's official offline mode does the same). Compromised
   signing certs are handled by Apple rotating them; consumers concerned
-  about revocation can layer OCSP later (roadmap).
+  about revocation can layer OCSP later (roadmap). **Superseded in
+  0.14.0** ([docs/design/revocation.md](./docs/design/revocation.md)):
+  every package checks the path against a built-in list of revoked Apple
+  certificates, the caller's `distrust` entries and Apple's revocation
+  lists the caller passes in, offline and with no OCSP; a revoked
+  certificate fails with `CERTIFICATE_REVOKED`. The original text is kept
+  for the record.
 - **Replay / refunds are not detectable by signature** — see INTENT.md;
   callers must track transaction IDs and purchase status themselves.
 - Parse untrusted bytes defensively: bounded sizes, no recursion on

@@ -2809,7 +2809,7 @@ checks later".
     root the caller parsed with BouncyCastle is re-encoded before Java
     sees it, so its issuer id is computed over DER; the JDK's parser
     keeps the original bytes.
-- **Cases:** 105 shared cases under `revocation/` in
+- **Cases:** 137 shared cases under `revocation/` in
   `fixtures/cases.json` (schema version 3), from the test PKI that
   `RevocationFixtures` generates under `fixtures/generated-0.7/revocation/`
   and Apple's two stale lists under `fixtures/apple-crls/`. The 1 MiB,

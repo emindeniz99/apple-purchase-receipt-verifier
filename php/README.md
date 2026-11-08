@@ -577,10 +577,12 @@ thrown `VerificationException`.
   this package, `aprv` or the module reads the operating system trust store, a
   CA bundle or an OpenSSL configuration file, and PHP's `ext-openssl` is not
   involved at all.
-- **No network, ever.** No OCSP, no CRL, no AIA fetch, no root download.
-  Revocation checking is disabled by design; that is the accepted trade-off
-  for offline verification, and it is what Apple's own libraries do in offline
-  mode. `aprv-install` is the one thing that downloads, once, when you run it.
+- **No network, ever.** No OCSP, no CRL fetch, no AIA fetch, no root
+  download. Revocation is checked offline, against the list built into the
+  module, your `distrust` entries and the lists you pass in `Config`
+  ([Certificate revocation](#certificate-revocation)); you download the
+  lists, the package never does. `aprv-install` is the one thing that
+  downloads, once, when you run it.
 - **The verdict is the module's.** This package parses no ASN.1, checks no
   signature and decides nothing about trust; a test tokenises every source
   file and fails on a call to a crypto function. The chain rules, Apple's
