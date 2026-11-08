@@ -2809,6 +2809,12 @@ checks later".
     root the caller parsed with BouncyCastle is re-encoded before Java
     sees it, so its issuer id is computed over DER; the JDK's parser
     keeps the original bytes.
+  - An added issuer with an extension the JDK cannot read: a
+    pathLenConstraint that does not fit an int, a repeated extension, or
+    octets left after a keyUsage or basicConstraints value. Java refuses
+    the configuration; the core judges only the rules of the design's
+    section 6 and accepts it. Only a caller's own issuer is affected, and
+    the verdict of an input with the built-in issuers is unchanged.
 - **Cases:** 137 shared cases under `revocation/` in
   `fixtures/cases.json` (schema version 3), from the test PKI that
   `RevocationFixtures` generates under `fixtures/generated-0.7/revocation/`

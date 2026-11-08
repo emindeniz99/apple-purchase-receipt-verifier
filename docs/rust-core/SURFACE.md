@@ -229,9 +229,8 @@ DECISIONS.md R34, amended 2026-10-02; R42).
   running them too, a case both pass is where the two implementations
   agree (DECISIONS.md R33).
 - **The C ABI** runs them through its C++ and ctypes harnesses, and
-  `aprv-server` through its HTTP routes and its CLI. The C ABI has no
-  way to pass revocation settings (it gained only the reason code 17), so
-  its harnesses can run only the cases that set none.
+  `aprv-server` through its HTTP routes and its CLI. The C ABI passes
+  revocation settings through `aprv_verifier_new_config` (DECISIONS.md).
 - **ABI tests.** The ABI tests of the canonical-ABI final round, plus
   each facade's own, run on every host ([canonical ABI final][cabifinal];
   ARCHITECTURE.md §9).
