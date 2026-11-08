@@ -226,7 +226,7 @@ its list has misconfigured them.
   order. A set-aside built-in issuer's `list` URL is dropped, but its root's URL stays. A set-aside added issuer's
   cRLDistributionPoints stay for the same reason: they name where the issuer's own revocation is published (its
   root's list), not the issuer's own list. Dropping them would, under custom roots, stop the host fetching the list
-  that revokes the issuer, and the next rebuild would accept it again. With the default
+  that revokes the issuer, and the next rebuild would accept it again (owner, 2026-11-08). With the default
   roots: `http://crl.apple.com/root.crl`, `http://crl.apple.com/applerootcag3.crl`,
   `http://crl.apple.com/wwdrg5.crl`, `http://crl.apple.com/wwdrg6.crl`. An added issuer's own list URL cannot be
   known (Apple names it only on the leaves it signs); the README says to add it by hand.
