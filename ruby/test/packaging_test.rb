@@ -2,6 +2,7 @@
 
 require_relative "helper"
 require "tmpdir"
+require "fileutils"
 require "rbconfig"
 
 # Graduation lessons 1 and 15, mechanised: test the artifact the consumer
@@ -64,6 +65,27 @@ class PackagingTest < Minitest::Test
       refute_match(%r{\Atest/}, path)
       refute_match(%r{\Agemfiles/}, path)
       refute_match(/Gemfile|Rakefile|\.rubocop/, path)
+    end
+  end
+
+  # A plain checkout has no aprv.wasm (it is not tracked), and tools that
+  # only read the spec, Dependabot among them, load the gemspec there. A
+  # gemspec that raised without the module stopped every Dependabot bundler
+  # run, so the spec must load in a directory that holds no module. The
+  # release job, not the gemspec, refuses a gem that lacks it.
+  def test_the_gemspec_loads_without_the_module
+    Dir.mktmpdir("aprv-gemspec") do |dir|
+      gemspec = File.join(dir, "apple-purchase-receipt-verifier.gemspec")
+      FileUtils.cp(File.join(root, "apple-purchase-receipt-verifier.gemspec"), gemspec)
+      lib = File.join(dir, "lib/apple_purchase_receipt_verifier")
+      FileUtils.mkdir_p(lib)
+      FileUtils.ln_s(File.join(root, "lib/apple_purchase_receipt_verifier/version.rb"),
+                     File.join(lib, "version.rb"))
+      refute_path_exists File.join(lib, "aprv.wasm")
+
+      spec = Dir.chdir(dir) { Gem::Specification.load(gemspec) }
+      refute_nil spec, "the gemspec does not load without aprv.wasm"
+      assert_equal APRV::VERSION, spec.version.to_s
     end
   end
 
