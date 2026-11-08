@@ -5,7 +5,7 @@
 // WWDR intermediates that sign Apple's revocation lists
 // (revocation-issuers/) and the built-in revocation list (revocations.json,
 // written by tools/refresh-apple-revocations.mjs). Since MIGRATION.md
-// Phase 7 one full copy is expected: rust/certs, the one the core compiles
+// Phase 7 one full copy is required: rust/certs, the one the core compiles
 // into aprv.wasm and every wrapper runs, because a crate cannot reach
 // outside its package. The wrappers carry none, and Java's main artifact
 // inlines the roots as constants that its own AppleRootCertsTest pins to
@@ -86,6 +86,15 @@ for (const path of copies) {
   const rel = byName.get(basename(path));
   if (!readFileSync(path).equals(canonical.get(rel))) problems.push(`${show(path)} differs from certs/${rel}`);
   if (roots.includes(rel)) fullCopies.add(join(path, '..'));
+}
+
+// rust/certs is the copy the module is compiled from, so it must be found
+// and must be a full copy. Without this a refactor that moved or emptied it
+// left zero copies to compare and the check passed on an empty set.
+const requiredCopy = join(repoRoot, 'rust', 'certs');
+if (!fullCopies.has(requiredCopy)) {
+  problems.push(`rust/certs is not a full copy of certs/: no top-level root .cer file was found there, ` +
+    `so the copy the core compiles from is not being checked (${fullCopies.size} full copies found)`);
 }
 
 // A full copy holds all of certs/ and nothing more: a port that ships two
