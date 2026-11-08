@@ -424,9 +424,62 @@ class RevocationTest {
         assertEquals(Collections.<String>emptyList(), verifier.revocationUrls());
     }
 
+    /**
+     * An added issuer whose pathLenConstraint does not fit an int is refused
+     * with the documented IllegalArgumentException and its index, not with the
+     * ArithmeticException BouncyCastle's getBasicConstraints throws for it.
+     */
+    @Test
+    void anIssuerWithAPathLengthBeyondAnIntIsRefusedWithItsIndex() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastle.PROVIDER);
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair rootKey = generator.generateKeyPair();
+        KeyPair issuerKey = generator.generateKeyPair();
+        X500Name rootName = new X500Name("CN=APRV long path length test root");
+        X509Certificate root = certificate(rootName, BigInteger.ONE, rootName, rootKey, rootKey, false);
+        // CA TRUE, pathLenConstraint 2^31: one more than an int holds.
+        org.bouncycastle.asn1.ASN1Encodable beyondAnInt = new org.bouncycastle.asn1.DERSequence(
+                new org.bouncycastle.asn1.ASN1Encodable[] {
+                    org.bouncycastle.asn1.ASN1Boolean.TRUE,
+                    new org.bouncycastle.asn1.ASN1Integer(BigInteger.valueOf(1L << 31))
+                });
+        X509Certificate issuer = certificate(
+                rootName,
+                BigInteger.valueOf(2),
+                new X500Name("CN=APRV long path length WWDR CA"),
+                issuerKey,
+                rootKey,
+                true,
+                beyondAnInt);
+        String refused = refusal(Config.builder()
+                .roots(Collections.singletonList(root))
+                .revocationIssuers(Collections.singletonList(issuer)));
+        assertTrue(refused.startsWith("revocation settings refused: revocationIssuers[0] "), refused);
+    }
+
     /** A CA certificate signed by {@code signer}, with the WWDR marker when {@code marker}. */
     private static X509Certificate certificate(
             X500Name issuer, BigInteger serial, X500Name subject, KeyPair subjectKey, KeyPair signer, boolean marker)
+            throws Exception {
+        return certificate(
+                issuer,
+                serial,
+                subject,
+                subjectKey,
+                signer,
+                marker,
+                new org.bouncycastle.asn1.x509.BasicConstraints(true));
+    }
+
+    /** The same, with the given basicConstraints value (critical). */
+    private static X509Certificate certificate(
+            X500Name issuer,
+            BigInteger serial,
+            X500Name subject,
+            KeyPair subjectKey,
+            KeyPair signer,
+            boolean marker,
+            org.bouncycastle.asn1.ASN1Encodable basicConstraints)
             throws Exception {
         org.bouncycastle.cert.X509v3CertificateBuilder builder =
                 new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
@@ -436,10 +489,7 @@ class RevocationTest {
                         new Date(2_000_000_000_000L),
                         subject,
                         subjectKey.getPublic());
-        builder.addExtension(
-                org.bouncycastle.asn1.x509.Extension.basicConstraints,
-                true,
-                new org.bouncycastle.asn1.x509.BasicConstraints(true));
+        builder.addExtension(org.bouncycastle.asn1.x509.Extension.basicConstraints, true, basicConstraints);
         if (marker) {
             builder.addExtension(
                     new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.840.113635.100.6.2.1"),

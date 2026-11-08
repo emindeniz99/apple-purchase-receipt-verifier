@@ -298,7 +298,8 @@ final class RevocationList {
      * 13 octets, a GeneralizedTime of at least 15 (tasn_dec.c). A shorter
      * one (no seconds, no zone) is not RFC 5280's DER form, the core refuses
      * the list as not a DER CRL, and so does this; BouncyCastle alone would
-     * read it, a zoneless GeneralizedTime in the JVM's own time zone. Only
+     * read it, a zoneless GeneralizedTime as UTC (its getDate gives the zone
+     * an offset of zero, whatever the JVM's own time zone is). Only
      * the floors are applied, not a full DER check, which would refuse what
      * OpenSSL reads (a 15-octet UTCTime with a {@code +0000} offset).
      */

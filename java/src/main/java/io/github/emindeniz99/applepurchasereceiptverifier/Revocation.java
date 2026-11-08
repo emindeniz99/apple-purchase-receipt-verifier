@@ -491,7 +491,16 @@ final class Revocation {
 
     /** §6, the rest but revocation: what keeps {@code certificate} from signing lists, or null. */
     private static @Nullable String issuerProblem(X509Certificate certificate) {
-        if (certificate.getBasicConstraints() == -1) {
+        int pathLength;
+        try {
+            pathLength = certificate.getBasicConstraints();
+        } catch (RuntimeException e) {
+            // A pathLenConstraint beyond an int makes BouncyCastle throw an
+            // ArithmeticException. It must not leave build() as one: the
+            // documented refusal is an IllegalArgumentException with an index.
+            return "has a basicConstraints that does not read";
+        }
+        if (pathLength == -1) {
             return "is not a CA";
         }
         boolean[] keyUsage = certificate.getKeyUsage();
