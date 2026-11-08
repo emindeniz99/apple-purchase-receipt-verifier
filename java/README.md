@@ -666,19 +666,38 @@ force:
 
 The library has no HTTP client, timer or setter. Refresh by building a new
 verifier and swapping the reference; keep serving with the old one when a
-download or a build fails:
+build fails. Build the new verifier with the settings the current one has
+(`roots`, `revocationIssuers`, `distrust`, the clock), so that only the
+lists change. A URL that fails to download keeps the last bytes that came
+from it, so a flaky download never drops a list, and the revocation it
+carries:
 
 ```java
-AtomicReference<Verifier> current = new AtomicReference<>(Verifier.create(Config.defaults()));
+// Everything except the lists, as you configure it today.
+Config.Builder settings() {
+    return Config.builder()
+        // .roots(...) and .clock(...) too, if you set them
+        .revocationIssuers(Collections.singletonList(addedIssuer))
+        .distrust(Collections.singletonList(new RevokedCertificate(issuerId, serial)));
+}
+
+AtomicReference<Verifier> current = new AtomicReference<>(Verifier.create(settings().build()));
+Map<String, byte[]> lastGood = new HashMap<>();   // URL -> bytes of the last list that downloaded
 
 // On your scheduler, for example every 6 hours:
 void refresh() {
     List<byte[]> lists = new ArrayList<>();
     for (String url : current.get().revocationUrls()) {
-        lists.add(download(url));          // your HTTP client, with a timeout
+        byte[] list = download(url);       // your HTTP client, with a timeout; null when it fails
+        if (list != null) {
+            lastGood.put(url, list);
+        }
+        if (lastGood.containsKey(url)) {
+            lists.add(lastGood.get(url));
+        }
     }
     try {
-        current.set(Verifier.create(Config.builder().revocationLists(lists).build()));
+        current.set(Verifier.create(settings().revocationLists(lists).build()));
     } catch (IllegalArgumentException refused) {
         alert(refused);                    // keep the verifier you have
     }

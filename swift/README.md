@@ -351,26 +351,43 @@ The package downloads nothing and starts no task or timer. Refresh on your
 own schedule, with your own HTTP client: download the lists the current
 verifier names, build a new verifier, and swap the reference.
 
+The new verifier is built with the settings the current one has: `roots`,
+`revocationIssuers`, `distrust` and the clock stay as you set them, and only
+the lists change. A URL that fails to download keeps the last bytes that
+came from it, so a flaky download never drops a list, and the revocation it
+carries.
+
 ```swift
+// Everything except the lists, as you configure it today.
+func makeConfig(revocationLists: [[UInt8]]) -> Config {
+    Config(
+        // roots: and clock: too, if you set them
+        revocationLists: revocationLists,
+        revocationIssuers: [ca],
+        distrust: [RevokedCertificate(issuer: issuerId, serial: "7D3920094EBEF3F8EFCA6C10EA8E4303")])
+}
+
 final class VerifierHolder: @unchecked Sendable {
     private let lock = NSLock()
     private var verifier: Verifier
     init(_ verifier: Verifier) { self.verifier = verifier }
     var current: Verifier { lock.withLock { verifier } }
     func replace(_ next: Verifier) { lock.withLock { verifier = next } }
+    var lastGood: [String: [UInt8]] = [:]  // URL -> bytes of the last list that downloaded; one refresh at a time
 }
 
 func refreshRevocation(_ holder: VerifierHolder) async throws {
-    var lists: [[UInt8]] = []
-    for text in holder.current.revocationUrls {
+    let urls = holder.current.revocationUrls
+    for text in urls {
         guard let url = URL(string: text),
             let (data, response) = try? await URLSession.shared.data(from: url),
             (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1 << 20
-        else { continue }  // a missing list fails nothing; revocationValidUntil shows it
-        lists.append([UInt8](data))
+        else { continue }  // keep this URL's last good bytes; revocationValidUntil shows the age
+        holder.lastGood[text] = [UInt8](data)
     }
+    let lists = urls.compactMap { holder.lastGood[$0] }
     // Throws ConfigError for a list the module refuses: the old verifier keeps serving.
-    holder.replace(try Verifier(config: Config(revocationLists: lists)))
+    holder.replace(try Verifier(config: makeConfig(revocationLists: lists)))
 }
 ```
 

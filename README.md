@@ -354,8 +354,11 @@ count, all checked offline:
   `applerootcag3.crl`, `wwdrg5.crl` and `wwdrg6.crl` on
   `http://crl.apple.com/`. Each list is checked against its Apple
   issuer's signature, so the transport does not matter. Refresh by
-  building a new `Verifier` and swapping the reference. WWDR G6's list
-  is reissued daily, and each WWDR list is valid for two weeks.
+  building a new `Verifier` with your current settings and the new lists,
+  and swapping the reference. If the build refuses a list (the message
+  names it by index), drop that list, carry on with its last good one and
+  raise an alert: one bad download must not stop the refresh. WWDR G6's
+  list is reissued daily, and each WWDR list is valid for two weeks.
 - **`distrust`**: issuer id and serial pairs you add in `Config` when you
   learn of a revocation before a release carries it.
 

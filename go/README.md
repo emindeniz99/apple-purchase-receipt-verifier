@@ -288,29 +288,55 @@ The package downloads nothing and starts no goroutine or timer. Refresh on
 your own schedule, with your own HTTP client: download the lists the
 current verifier names, build a new verifier, and swap the reference.
 
-```go
-var current atomic.Pointer[applereceipt.Verifier] // holds the NewVerifier of the defaults at start
+The new verifier is built with the settings the current one has: `Roots`,
+`RevocationIssuers`, `Distrust` and `Clock` stay as you set them, and only
+the lists change. A URL that fails to download keeps the last bytes that
+came from it, so a flaky download never drops a list, and the revocation it
+carries.
 
+```go
+// Everything except the lists, as you configure it today.
+var settings = applereceipt.ConfigOptions{
+    RevocationIssuers: []*x509.Certificate{ca},
+    Distrust: []applereceipt.RevokedCertificate{
+        {Issuer: issuerID, Serial: "7D3920094EBEF3F8EFCA6C10EA8E4303"},
+    },
+    // Roots and Clock too, if you set them
+}
+
+var (
+    current  atomic.Pointer[applereceipt.Verifier] // holds NewVerifier(NewConfig(settings)) at start
+    lastGood = map[string][]byte{}                 // URL -> bytes of the last list that downloaded
+)
+
+// Call it from one goroutine at a time.
 func refreshRevocation(ctx context.Context, client *http.Client) error {
-    var lists [][]byte
-    for _, url := range current.Load().RevocationURLs() {
+    urls := current.Load().RevocationURLs()
+    for _, url := range urls {
         request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
         if err != nil {
             return err
         }
         response, err := client.Do(request)
         if err != nil {
-            continue // a missing list fails nothing; RevocationValidUntil shows it
+            continue // keep this URL's last good bytes; RevocationValidUntil shows the age
         }
         body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
         response.Body.Close()
-        // The module refuses a list over 1 MiB; skip it like a missing one.
+        // The module refuses a list over 1 MiB; treat it like a failed download.
         if err == nil && response.StatusCode == http.StatusOK && len(body) <= 1<<20 {
+            lastGood[url] = body
+        }
+    }
+    var lists [][]byte
+    for _, url := range urls {
+        if body, ok := lastGood[url]; ok {
             lists = append(lists, body)
         }
     }
-    verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(
-        applereceipt.ConfigOptions{RevocationLists: lists}))
+    options := settings
+    options.RevocationLists = lists
+    verifier, err := applereceipt.NewVerifier(applereceipt.NewConfig(options))
     if err != nil {
         return err // a list the module refuses: the old verifier keeps serving
     }

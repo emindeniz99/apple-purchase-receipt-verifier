@@ -184,27 +184,41 @@ The package downloads nothing and runs no timer. Refresh on your own
 schedule, with your own HTTP client: download the lists the current
 `Verifier` names, build a new `Verifier`, and swap the reference.
 
+The new `Verifier` is built with the settings the current one has:
+`roots`, `revocation_issuers`, `distrust` and the clock stay as you set
+them, and only the lists change. A URL that fails to download keeps the last
+bytes that came from it, so a flaky download never drops a list, and the
+revocation it carries.
+
 ```python
 import urllib.error
 import urllib.request
 
-verifier = Verifier(Config())
+# Everything except the lists, as you configure it today.
+settings = {
+    "revocation_issuers": [ca_bytes],
+    "distrust": [RevokedCertificate(issuer_id, "7D3920094EBEF3F8EFCA6C10EA8E4303")],
+    # "roots" and "clock" too, if you set them
+}
+verifier = Verifier(Config(**settings))
+last_good = {}  # URL -> bytes of the last list that downloaded
 
 
 def refresh_revocation() -> None:
     global verifier
-    lists = []
-    for url in verifier.revocation_urls:
+    urls = list(verifier.revocation_urls)
+    for url in urls:
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
                 body = response.read((1 << 20) + 1)
         except (urllib.error.URLError, OSError):
-            continue  # a missing list fails nothing; revocation_valid_until shows it
+            continue  # keep this URL's last good bytes; revocation_valid_until shows the age
         if len(body) <= 1 << 20:  # the module refuses a list over 1 MiB
-            lists.append(body)
+            last_good[url] = body
+    lists = [last_good[url] for url in urls if url in last_good]
     # A list the module refuses raises ValueError here, and the old
     # verifier keeps serving.
-    verifier = Verifier(Config(revocation_lists=lists))
+    verifier = Verifier(Config(**settings, revocation_lists=lists))
 ```
 
 - **Take the URLs from `revocation_urls`, never from Apple's PKI page.** The

@@ -355,19 +355,37 @@ The package downloads nothing and runs no timer. Refresh on your own
 schedule, with your own HTTP client: download the lists the current
 verifier names, build a new verifier, and swap the reference.
 
+The new verifier is built with the settings the current one has: `roots`,
+`revocationIssuers`, `distrust` and the clock stay as you set them, and only
+the lists change. A URL that fails to download keeps the last bytes that
+came from it, so a flaky download never drops a list, and the revocation it
+carries.
+
 ```js
-let verifier = createVerifier(createConfig());
+// Everything except the lists, as you configure it today.
+const settings = {
+  revocationIssuers: [caBytes],
+  distrust: [{ issuer: issuerId, serial: '7D3920094EBEF3F8EFCA6C10EA8E4303' }],
+  // roots and clock too, if you set them
+};
+let verifier = createVerifier(createConfig(settings));
+const lastGood = new Map(); // URL -> bytes of the last list that downloaded
 
 async function refreshRevocation() {
-  const revocationLists = [];
-  for (const url of verifier.revocationUrls()) {
-    const response = await fetch(url);
-    if (response.ok) {
-      revocationLists.push(new Uint8Array(await response.arrayBuffer()));
+  const urls = verifier.revocationUrls();
+  for (const url of urls) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        lastGood.set(url, new Uint8Array(await response.arrayBuffer()));
+      }
+    } catch {
+      // keep this URL's last good bytes; revocationValidUntil() shows the age
     }
   }
+  const revocationLists = urls.filter((url) => lastGood.has(url)).map((url) => lastGood.get(url));
   // A list the module refuses throws here, and the old verifier keeps serving.
-  verifier = createVerifier(createConfig({ revocationLists }));
+  verifier = createVerifier(createConfig({ ...settings, revocationLists }));
 }
 ```
 

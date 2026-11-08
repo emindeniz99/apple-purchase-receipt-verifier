@@ -170,7 +170,10 @@ revocation settings (`--revocation-list`, `--revocation-issuer`,
 `--distrust`): the server reports the SHA-256 of each list and issuer it
 was given and its distrust entries as written, and `create` compares them
 with the `Config`'s (lists in any order; issuers, which must then be DER,
-and distrust entries in order and spelled the same).
+and distrust entries in order and spelled the same). This check catches a
+misconfigured server, not a hostile one: a server that wants to can report
+whatever matches, so run a server whose binary you know, on loopback or
+behind TLS.
 
 `Verifier::create(Config, ?Transport)` takes the transport as its second
 argument, so `Config` stays exactly the 0.7 one. `CliTransport` also takes an
@@ -227,7 +230,9 @@ $verifier->revocationValidUntil();    // ?DateTimeImmutable: alert when null or 
   URLs `revocationUrls()` names (with the built-in roots,
   `http://crl.apple.com/root.crl`, `applerootcag3.crl`, `wwdrg5.crl` and
   `wwdrg6.crl`). The package never downloads anything: fetch them on a
-  schedule, build a new `Verifier` with them and swap it in.
+  schedule, build a new `Verifier` with the same `roots`, `revocationIssuers`,
+  `distrust` and clock and the new lists, and swap it in. When a download
+  fails, use the last bytes that came from that URL; do not drop the list.
 - `revocationIssuers` adds CA certificates that sign lists (DER or PEM,
   like the roots), for an Apple intermediate a release does not know yet.
   Its own list URL cannot be known from the certificate; add it by hand.

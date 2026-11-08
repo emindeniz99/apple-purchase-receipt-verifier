@@ -493,20 +493,54 @@ The gem downloads nothing and starts no thread or timer. Refresh on your
 own schedule, with your own HTTP client: download the lists the current
 verifier names, build a new verifier, and swap the reference.
 
+The new verifier is built with the settings the current one has: `roots:`,
+`revocation_issuers:`, `distrust:` and `clock:` stay as you set them, and
+only the lists change. A URL that fails to download keeps the last bytes
+that came from it, so a flaky download never drops a list, and the
+revocation it carries. The body is read in chunks and dropped once it passes
+the 1 MiB cap, never read whole.
+
 ```ruby
 require "net/http"
 
-@verifier = APRV::Verifier.create(APRV::Config.new)
+MAX_LIST_BYTES = 1 << 20 # the module refuses a list over 1 MiB
+
+# Everything except the lists, as you configure it today.
+@settings = {
+  revocation_issuers: [ca_der],
+  distrust: [APRV::RevokedCertificate.new(issuer: issuer_id, serial: "7D3920094EBEF3F8EFCA6C10EA8E4303")]
+  # roots: and clock: too, if you set them
+}
+@verifier = APRV::Verifier.create(APRV::Config.new(**@settings))
+@last_good = {} # URL => bytes of the last list that downloaded
+
+def download_list(url)
+  uri = URI(url)
+  Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: 30) do |http|
+    http.request(Net::HTTP::Get.new(uri)) do |response|
+      return nil unless response.is_a?(Net::HTTPSuccess)
+
+      body = String.new
+      response.read_body do |chunk|
+        body << chunk
+        return nil if body.bytesize > MAX_LIST_BYTES
+      end
+      return body
+    end
+  end
+end
 
 def refresh_revocation
-  lists = @verifier.revocation_urls.filter_map do |url|
-    response = Net::HTTP.get_response(URI(url))
-    response.body if response.is_a?(Net::HTTPSuccess)
+  urls = @verifier.revocation_urls
+  urls.each do |url|
+    list = download_list(url)
+    @last_good[url] = list if list
   rescue StandardError
-    nil # a missing list fails nothing; revocation_valid_until shows it
+    nil # keep this URL's last good bytes; revocation_valid_until shows the age
   end
+  lists = urls.filter_map { |url| @last_good[url] }
   # A list the module refuses raises ArgumentError here, and the old verifier keeps serving.
-  @verifier = APRV::Verifier.create(APRV::Config.new(revocation_lists: lists))
+  @verifier = APRV::Verifier.create(APRV::Config.new(**@settings, revocation_lists: lists))
 end
 ```
 

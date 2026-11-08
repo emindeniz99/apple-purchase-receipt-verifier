@@ -241,7 +241,10 @@ would answer for another trust anchor, or runs other revocation settings:
 the SHA-256 of each list (in any order) and of each added issuer's DER
 (in order) and the distrust entries as written must be your `Config`'s.
 A `url()` server is configured by whoever runs it, with
-`--revocation-list`, `--revocation-issuer` and `--distrust`. A
+`--revocation-list`, `--revocation-issuer` and `--distrust`. This check
+catches a misconfigured server, not a hostile one: a server that wants to
+can report whatever matches, so run a server whose binary you know, on
+loopback or behind TLS. A
 configuration the module refuses stops the child at start, and `create`
 throws `IllegalArgumentException` with the module's reason, as on
 Endive. On Java 8 the default
@@ -265,8 +268,11 @@ and distrust entries go to its `init` as they are (on the server engine,
 through the child's handshake), and the two reported values are what
 `init` answered (on the server engine, what `GET /v1/info` states of it).
 Nothing in this jar reads a certificate or a list. To use fresh lists,
-create a new verifier and swap it in; on the server engine that starts a
-new child (or needs a `url()` server restarted with the new lists).
+create a new verifier from the same `Config.Builder` settings (roots,
+`revocationIssuers`, `distrust`, clock) with the new lists, and swap it in;
+when a download fails, use the last bytes that came from that URL, not no
+list. On the server engine that starts a new child (or needs a `url()`
+server restarted with the new lists).
 
 ## Differences from the main artifact
 

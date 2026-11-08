@@ -237,31 +237,82 @@ The package downloads nothing and starts no thread or timer. Refresh on
 your own schedule, with your own `HttpClient`: download the lists the
 current verifier names, build a new verifier, and swap the reference.
 
-```csharp
-private static IVerifier current = Verifier.Create(new Config());
+The new verifier is built with the settings the current one has: `roots`,
+`revocationIssuers`, `distrust` and the clock stay as you set them, and only
+the lists change. A URL that fails to download keeps the last bytes that
+came from it, so a flaky download never drops a list, and the revocation it
+carries. The body is read at most one byte past the 1 MiB cap, never whole.
 
+```csharp
+// Everything except the lists, as you configure it today.
+static Config BuildConfig(IEnumerable<byte[]> lists) => new Config(
+    // roots and clock too, if you set them
+    revocationLists: lists,
+    revocationIssuers: new[] { caCertificate },
+    distrust: new[] { new RevokedCertificate(issuerId, "7D3920094EBEF3F8EFCA6C10EA8E4303") });
+
+private static IVerifier current = Verifier.Create(BuildConfig(new List<byte[]>()));
+private static readonly Dictionary<string, byte[]> lastGood = new Dictionary<string, byte[]>(); // URL -> last list that downloaded
+
+static async Task<byte[]?> DownloadAsync(HttpClient http, string url)
+{
+    using HttpResponseMessage response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+    if (!response.IsSuccessStatusCode)
+    {
+        return null;
+    }
+    using Stream stream = await response.Content.ReadAsStreamAsync();
+    byte[] buffer = new byte[(1 << 20) + 1];
+    int length = 0;
+    while (length < buffer.Length)
+    {
+        int read = await stream.ReadAsync(buffer, length, buffer.Length - length);
+        if (read == 0)
+        {
+            break;
+        }
+        length += read;
+    }
+    if (length > 1 << 20)
+    {
+        return null; // the module refuses a list over 1 MiB
+    }
+    byte[] list = new byte[length];
+    Buffer.BlockCopy(buffer, 0, list, 0, length);
+    return list;
+}
+
+// Call it from one task at a time.
 static async Task RefreshRevocationAsync(HttpClient http)
 {
-    List<byte[]> lists = new List<byte[]>();
-    foreach (string url in Volatile.Read(ref current).RevocationUrls)
+    List<string> urls = new List<string>(Volatile.Read(ref current).RevocationUrls);
+    foreach (string url in urls)
     {
         try
         {
-            using HttpResponseMessage response = await http.GetAsync(url);
-            byte[] body = await response.Content.ReadAsByteArrayAsync();
-            if (response.IsSuccessStatusCode && body.Length <= 1 << 20)
+            byte[]? downloaded = await DownloadAsync(http, url);
+            if (downloaded != null)
             {
-                lists.Add(body);
+                lastGood[url] = downloaded;
             }
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
         {
-            // a missing list fails nothing; RevocationValidUntilMs shows it
+            // keep this URL's last good bytes; RevocationValidUntilMs shows the age
+        }
+    }
+
+    List<byte[]> lists = new List<byte[]>();
+    foreach (string url in urls)
+    {
+        if (lastGood.TryGetValue(url, out byte[]? kept))
+        {
+            lists.Add(kept);
         }
     }
 
     // Throws ArgumentException for a list the module refuses: the old verifier keeps serving.
-    Volatile.Write(ref current, Verifier.Create(new Config(revocationLists: lists)));
+    Volatile.Write(ref current, Verifier.Create(BuildConfig(lists)));
 }
 ```
 
