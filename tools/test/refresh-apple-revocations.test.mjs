@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,7 @@ import {
   integerHex,
   issuerCertificate,
   issuerId,
+  main,
   normaliseHex,
   parseCertificate,
   parseCrl,
@@ -33,13 +34,16 @@ test.after(() => rmSync(dir, { recursive: true, force: true }));
 
 const run = (...args) => execFileSync('openssl', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
-function makeCa(name) {
+// `marker`: carry Apple's WWDR marker extension (1.2.840.113635.100.6.2.1),
+// which --check looks for on Apple's PKI page.
+function makeCa(name, { marker = false } = {}) {
   const key = join(dir, `${name}.key`);
   run('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', key);
   writeFileSync(join(dir, `${name}.cnf`), [
     '[req]', 'distinguished_name=dn', 'x509_extensions=v3', 'prompt=no', 'string_mask=utf8only',
     '[dn]', 'CN=Test WWDR',
     '[v3]', 'basicConstraints=critical,CA:TRUE', 'keyUsage=critical,cRLSign,keyCertSign', 'subjectKeyIdentifier=hash',
+    ...(marker ? ['1.2.840.113635.100.6.2.1=ASN1:UTF8String:marker'] : []),
   ].join('\n'));
   run('req', '-x509', '-new', '-key', key, '-config', join(dir, `${name}.cnf`), '-days', '3650', '-outform', 'DER', '-out', join(dir, `${name}.der`));
   const der = readFileSync(join(dir, `${name}.der`));
@@ -313,4 +317,111 @@ test('the pin in roots.rs and JSON_LINES in AppleRevocations.java follow the fil
   assert.match(withRustPin(rootsRs, pin), new RegExp(`REVOCATIONS_JSON_SHA256: &str =\\s*"${pin}";`));
   assert.throws(() => withRustPin('no pin here', pin), /REVOCATIONS_JSON_SHA256 not found/);
   assert.throws(() => withJavaLines('no lines here', text), /JSON_LINES not found/);
+});
+
+// main --check, with `fetch` replaced: the exit status is what the weekly
+// workflow runs on (1 = something to act on, 2 = a source could not be
+// read), so a slip in it would leave every test above green and the watch
+// wrong. Two issuers, each with its own WWDR-marked certificate; the PKI page
+// links both, so the unknown-intermediate check passes.
+const issuerA = makeCa('issuer-a', { marker: true });
+const issuerB = makeCa('issuer-b', { marker: true });
+const NEWER = '0857'; // the CRL Number 2135 the lists below carry
+const PKI_URLS = {
+  'https://www.apple.com/certificateauthority/': Buffer.from(
+    '<a href="/certificateauthority/a.cer">A</a> <a href="/certificateauthority/b.cer">B</a>'),
+  'https://www.apple.com/certificateauthority/a.cer': issuerA.der,
+  'https://www.apple.com/certificateauthority/b.cer': issuerB.der,
+};
+const KNOWN = { serial: '2', reason: KEY_COMPROMISE };
+const NEW = { serial: '3', reason: KEY_COMPROMISE };
+const listFor = (issuer, entries) => makeCrl({ entries, aki: issuer.ski }, issuer);
+
+/** A repository root holding certs/revocations.json for issuers A and B, each already recording entry 02 and a list older than 2135. */
+function checkRoot() {
+  const root = mkdtempSync(join(dir, 'root-'));
+  mkdirSync(join(root, 'certs'));
+  const issuers = [['a', issuerA], ['b', issuerB]].map(([key, ca_]) => {
+    writeFileSync(join(root, 'certs', `${key}.cer`), ca_.der);
+    return {
+      id: issuerId(ca_.der), name: `Issuer ${key.toUpperCase()}`, certificate: `certs/${key}.cer`,
+      list: `http://crl.test/${key}.crl`, newest: { crlNumber: '0856', thisUpdate: '2026-11-04T13:36:46Z' },
+    };
+  });
+  const revoked = issuers.map((i) => ({
+    issuer: i.id, serial: '02', reason: 'keyCompromise', revocationDate: '2026-03-06T23:59:00Z', crlNumber: '0856',
+  }));
+  writeFileSync(join(root, 'certs', 'revocations.json'), `${JSON.stringify({ issuers, revoked }, null, 2)}\n`);
+  return root;
+}
+
+/** Replaces fetch: a route that is an Error is a network failure, a Buffer is the body, anything unrouted answers 404. */
+function serve(t, routes) {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const route = routes[String(url)];
+    if (route instanceof Error) throw route;
+    return route === undefined ? new Response('not found', { status: 404 }) : new Response(route);
+  });
+}
+
+/** Runs main(--check) on `root`, returning its status and what it printed. */
+async function check(t, root) {
+  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'error', () => {});
+  const code = await main(['--check'], { repoRoot: root });
+  const text = (fn) => fn.mock.calls.map((c) => c.arguments.join(' ')).join('\n');
+  return { code, out: text(console.log), err: text(console.error) };
+}
+
+test('main --check: a new entry exits 1', async (t) => {
+  serve(t, {
+    ...PKI_URLS,
+    'http://crl.test/a.crl': listFor(issuerA, [KNOWN, NEW]),
+    'http://crl.test/b.crl': listFor(issuerB, [KNOWN]),
+  });
+  const { code, out, err } = await check(t, checkRoot());
+  assert.equal(code, 1);
+  assert.match(out, /CHANGE: Issuer A: new entry 03/);
+  assert.match(out, /Run node tools\/refresh-apple-revocations\.mjs/);
+  assert.equal(err, '');
+});
+
+test('main --check: only a newer list exits 0', async (t) => {
+  serve(t, {
+    ...PKI_URLS,
+    'http://crl.test/a.crl': listFor(issuerA, [KNOWN]),
+    'http://crl.test/b.crl': listFor(issuerB, [KNOWN]),
+  });
+  const { code, out, err } = await check(t, checkRoot());
+  assert.equal(code, 0);
+  assert.match(out, new RegExp(`note: Issuer A: newer list, CRL Number ${NEWER}`));
+  assert.match(out, /matches Apple's lists/);
+  assert.doesNotMatch(out, /CHANGE/);
+  assert.equal(err, '');
+});
+
+test('main --check: a network failure on the first issuer does not hide the next issuer\'s change', async (t) => {
+  serve(t, {
+    ...PKI_URLS,
+    'https://crl.test/a.crl': new TypeError('fetch failed'),
+    'http://crl.test/a.crl': new TypeError('fetch failed'),
+    'http://crl.test/b.crl': listFor(issuerB, [KNOWN, NEW]),
+  });
+  const { code, out, err } = await check(t, checkRoot());
+  assert.equal(code, 2, 'the network failure decides the status');
+  assert.match(out, /CHANGE: Issuer B: new entry 03/, 'the change found after the failure is still printed');
+  assert.doesNotMatch(out, /matches Apple's lists/);
+  assert.match(err, /error: Issuer A: http:\/\/crl\.test\/a\.crl: fetch failed/);
+});
+
+test('main --check: an unreachable list with nothing else to report exits 2, not 0', async (t) => {
+  serve(t, {
+    ...PKI_URLS,
+    'http://crl.test/a.crl': listFor(issuerA, [KNOWN]),
+    // b.crl: HTTP 404 over both schemes
+  });
+  const { code, out, err } = await check(t, checkRoot());
+  assert.equal(code, 2);
+  assert.doesNotMatch(out, /matches Apple's lists/);
+  assert.match(err, /error: Issuer B: .*HTTP 404/);
 });

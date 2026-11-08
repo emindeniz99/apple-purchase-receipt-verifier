@@ -30,7 +30,9 @@
 // the file is current or the only difference is a newer list (WWDR G6's is
 // reissued daily); 1 on a new, vanished or reappearing entry, a changed
 // reason, a refused list, or an unknown WWDR intermediate; 2 on a network
-// failure or a bug in this script. Without --check it writes the file, its
+// failure or a bug in this script. A list or the PKI page that cannot be
+// read does not stop the others being checked: every CHANGE found is
+// printed, then the failures, and the status is 2. Without --check it writes the file, its
 // copy in rust/certs/, the file's SHA-256 pin in rust/src/roots.rs and the
 // JSON_LINES constant in Java's AppleRevocations.java, which must all
 // change together or the core and Java refuse the built-in list, and exits
@@ -543,9 +545,22 @@ export async function main(argv, { repoRoot = fileURLToPath(new URL('..', import
   const doc = JSON.parse(readFileSync(file, 'utf8'));
   const changes = [];
   const notices = [];
+  // --check only: a source that could not be read. One unreachable list must
+  // not hide what the other issuers' lists show (WWDR G6's, the one that
+  // changes, is the last), so the failure is kept, the loop goes on and the
+  // run ends with exit status 2 after printing every change it found.
+  const failures = [];
   for (const issuer of doc.issuers) {
     const issuerDer = issuerCertificate(repoRoot, issuer);
-    const { bytes: der, from } = await download(issuer.list);
+    let downloaded;
+    try {
+      downloaded = await download(issuer.list);
+    } catch (error) {
+      if (!values.check) throw error;
+      failures.push(`${issuer.name}: ${error.message}`);
+      continue;
+    }
+    const { bytes: der, from } = downloaded;
     try {
       const crl = parseCrl(der, from);
       verifyCrl(der, crl, issuerDer, from);
@@ -557,13 +572,24 @@ export async function main(argv, { repoRoot = fileURLToPath(new URL('..', import
       changes.push(`refused: ${error.message}`);
     }
   }
-  if (values.check) changes.push(...(await unknownWwdrIntermediates(doc)));
+  if (values.check) {
+    try {
+      changes.push(...(await unknownWwdrIntermediates(doc)));
+    } catch (error) {
+      failures.push(`${error instanceof Refused ? 'refused: ' : ''}${error.message}`);
+    }
+  }
 
   for (const line of notices) console.log(`note: ${line}`);
   for (const line of changes) console.log(`${values.check ? 'CHANGE' : 'changed'}: ${line}`);
   if (values.check) {
-    if (changes.length === 0) console.log('certs/revocations.json matches Apple\'s lists');
-    else console.log('Run node tools/refresh-apple-revocations.mjs, review the diff and open a pull request.');
+    if (changes.length > 0) console.log('Run node tools/refresh-apple-revocations.mjs, review the diff and open a pull request.');
+    else if (failures.length === 0) console.log('certs/revocations.json matches Apple\'s lists');
+    for (const line of failures) console.error(`error: ${line}`);
+    if (failures.length > 0) {
+      console.error('refresh-apple-revocations: a source could not be read; the changes above are what the rest showed');
+      return 2;
+    }
     return changes.length === 0 ? 0 : 1;
   }
   // rust/certs/ is the copy the core compiles in; check-cert-copies.mjs
