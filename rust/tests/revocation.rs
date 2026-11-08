@@ -18,6 +18,9 @@ use openssl::sha::sha256;
 
 const REASON_CODE: &str = "2.5.29.21";
 const CRL_NUMBER: &str = "2.5.29.20";
+const AUTHORITY_KEY_IDENTIFIER: &str = "2.5.29.35";
+const SUBJECT_KEY_IDENTIFIER: &str = "2.5.29.14";
+const INVALIDITY_DATE: &str = "2.5.29.24";
 const KEY_COMPROMISE: u8 = 1;
 const CERTIFICATE_HOLD: u8 = 6;
 
@@ -102,6 +105,52 @@ fn subject(certificate: &[u8]) -> Vec<u8> {
     pki::cert_fields(certificate).subject
 }
 
+/// One entry whose extensions are given whole, each an encoded Extension:
+/// what `Entry` cannot say (a critical flag, a value that does not read).
+struct RawEntry {
+    serial: Vec<u8>,
+    extensions: Vec<Vec<u8>>,
+}
+
+/// A v2 list as `list` writes it, with the list's own `extensions` (each an
+/// encoded Extension) and `entries` given whole.
+fn raw_list(
+    issuer: &[u8],
+    key: &Key,
+    this_update: i64,
+    next_update: i64,
+    extensions: &[Vec<u8>],
+    entries: &[RawEntry],
+) -> Vec<u8> {
+    let label = key.label(Hash::Sha256);
+    let mut fields = vec![
+        der_int(1),
+        label.clone(),
+        issuer.to_vec(),
+        x509_time(this_update),
+        x509_time(next_update),
+    ];
+    if !entries.is_empty() {
+        let revoked: Vec<Vec<u8>> = entries
+            .iter()
+            .map(|entry| {
+                let mut parts = vec![der(tag::INTEGER, &entry.serial), x509_time(this_update)];
+                if !entry.extensions.is_empty() {
+                    parts.push(der_seq(&entry.extensions));
+                }
+                der_seq(&parts)
+            })
+            .collect();
+        fields.push(der_seq(&revoked));
+    }
+    if !extensions.is_empty() {
+        fields.push(der(tag::CONTEXT_0, &der_seq(extensions)));
+    }
+    let tbs = der_seq(&fields);
+    let signature = key.sign(Hash::Sha256, &tbs);
+    pki::assemble(tbs, &label, &signature)
+}
+
 /// A receipt PKI, valid around 2026-11-05, and its receipt.
 struct Setup {
     pki: Pki,
@@ -113,8 +162,68 @@ const NOW: i64 = 1_793_836_800_000;
 
 fn setup() -> Setup {
     let pki = Pki::receipt_with(NOW - 365 * DAY_MS, NOW + 365 * DAY_MS, true, true);
+    setup_from(pki)
+}
+
+/// The setup for `pki`: its receipt, signed at `NOW`.
+fn setup_from(pki: Pki) -> Setup {
     let receipt = base64_encode(&pki.sign_receipt_at(&payload_at("2026-10-01T00:00:00Z"), NOW));
     Setup { pki, receipt }
+}
+
+/// `setup()`'s PKI with a SubjectKeyIdentifier `key_id` on the intermediate,
+/// so that a list can name the intermediate by AuthorityKeyIdentifier (§4:
+/// a candidate without a SubjectKeyIdentifier is not one then).
+fn setup_with_key_identifier(key_id: &[u8]) -> Setup {
+    let (not_before, not_after) = (NOW - 365 * DAY_MS, NOW + 365 * DAY_MS);
+    let (root_key, intermediate_key, leaf_key) = (Key::rsa(), Key::rsa(), Key::rsa());
+    let root = pki::test_pki_cert(
+        "Fake Apple Inc Root",
+        &root_key,
+        "Fake Apple Inc Root",
+        &root_key,
+        true,
+        None,
+        not_before,
+        not_after,
+    );
+    let mut spec = pki::CertSpec::new(
+        pki::name("Fake WWDR CA"),
+        pki::name("Fake Apple Inc Root"),
+        intermediate_key.spki(),
+    );
+    spec.not_before = not_before;
+    spec.not_after = not_after;
+    spec.extensions.push(pki::basic_constraints(true, None));
+    spec.extensions.push(pki::marker(pki::WWDR_OID, pki::NULL));
+    spec.extensions.push(extension(
+        SUBJECT_KEY_IDENTIFIER,
+        false,
+        &der(tag::OCTET_STRING, key_id),
+    ));
+    let intermediate = spec.sign(&root_key);
+    let leaf = pki::test_pki_cert(
+        "Fake Receipt Signing",
+        &leaf_key,
+        "Fake WWDR CA",
+        &intermediate_key,
+        false,
+        Some(pki::SIGNING_LEAF_OID),
+        not_before,
+        not_after,
+    );
+    let chain = vec![leaf.clone(), intermediate.clone(), root.clone()];
+    setup_from(Pki {
+        root_key,
+        intermediate_key,
+        leaf_key,
+        root,
+        intermediate,
+        leaf,
+        chain,
+        not_before,
+        not_after,
+    })
 }
 
 impl Setup {
@@ -153,6 +262,24 @@ impl Setup {
 
     fn leaf_serial(&self) -> Vec<u8> {
         pki::cert_fields(&self.pki.leaf).serial
+    }
+
+    /// The receipt's verdict, and what the verifier reports as
+    /// `revocation_valid_until`, with `list` held for the added
+    /// intermediate.
+    fn held(&self, list: Vec<u8>) -> (Result<(), Reason>, Option<i64>) {
+        let verifier = Verifier::new(
+            self.builder()
+                .revocation_lists([list])
+                .revocation_issuers([common::anchor_from_der(&self.pki.intermediate)])
+                .build()
+                .expect("the configuration builds"),
+        );
+        let verdict = verifier
+            .verify_receipt(&self.receipt)
+            .map(|_| ())
+            .map_err(|failure| failure.reason());
+        (verdict, verifier.revocation_valid_until())
     }
 
     /// A built-in list in the format of `certs/revocations.json` with one
@@ -297,48 +424,78 @@ fn a_list_over_one_mebibyte_is_refused_before_it_is_read() {
 }
 
 #[test]
-fn more_than_100000_entries_in_all_are_refused() {
+fn exactly_100000_entries_in_all_build_and_100001_are_refused() {
     let setup = setup();
-    // Three lists of 33,334 entries (100,002 in all), each under 1 MiB.
-    let lists: Vec<Vec<u8>> = (0..3u64)
-        .map(|index| {
-            let entries: Vec<Entry> = (0..33_334u64)
-                .map(|n| Entry {
-                    serial: pki::unsigned_integer(&(index * 1_000_000 + n + 1).to_be_bytes()),
-                    reason: None,
-                })
-                .collect();
-            list(
-                &subject(&setup.pki.intermediate),
-                &setup.pki.intermediate_key,
-                NOW - DAY_MS,
-                NOW + 14 * DAY_MS,
-                Some(index + 1),
-                &entries,
-            )
-        })
-        .collect();
-    assert!(lists.iter().all(|list| list.len() < 1_048_576));
-    let error = setup
-        .builder()
-        .revocation_lists(lists.clone())
-        .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
-        .build()
-        .unwrap_err();
+    // Three lists under 1 MiB each, with CRL Numbers 1, 2 and 3 and a
+    // nextUpdate of 10, 11 and 12 days: the list kept for the intermediate
+    // has the highest number, so `revocation_valid_until` tells which one
+    // was kept.
+    let minted = |index: u64, count: u64, days: i64| {
+        let entries: Vec<Entry> = (0..count)
+            .map(|n| Entry {
+                serial: pki::unsigned_integer(&(index * 1_000_000 + n + 1).to_be_bytes()),
+                reason: None,
+            })
+            .collect();
+        list(
+            &subject(&setup.pki.intermediate),
+            &setup.pki.intermediate_key,
+            NOW - DAY_MS,
+            NOW + days * DAY_MS,
+            Some(index + 1),
+            &entries,
+        )
+    };
+    let first = minted(0, 33_334, 10);
+    let second = minted(1, 33_333, 11);
+    let third = minted(2, 33_333, 12);
+    let third_with_one_more = minted(2, 33_334, 12);
+    for list in [&first, &second, &third, &third_with_one_more] {
+        assert!(list.len() < 1_048_576, "a test list is over 1 MiB");
+    }
+    let build = |lists: Vec<Vec<u8>>| {
+        setup
+            .builder()
+            .revocation_lists(lists)
+            .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
+            .build()
+    };
+    // 33,334 + 33,333 + 33,333 = 100,000: the bound is "more than".
+    let config = build(vec![first.clone(), second.clone(), third])
+        .unwrap_or_else(|error| panic!("100,000 entries: {}", error.detail()));
     assert_eq!(
-        error.detail(),
+        Verifier::new(config).revocation_valid_until(),
+        Some(NOW + 12 * DAY_MS),
+        "the list with the highest CRL Number is the one kept"
+    );
+    // One more entry in the last list makes 100,001.
+    assert_eq!(
+        build(vec![first, second, third_with_one_more])
+            .unwrap_err()
+            .detail(),
         "revocation_lists[2]: the lists hold more than 100,000 entries in all"
     );
-    // Two of them, 66,668 entries, build: the larger one is kept.
-    let config = setup
-        .builder()
-        .revocation_lists(lists.into_iter().take(2))
-        .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
-        .build()
-        .unwrap();
+}
+
+#[test]
+fn exactly_16_lists_build_and_17_are_refused() {
+    let setup = setup();
+    let own = setup.intermediate_list(1, &[], KEY_COMPROMISE);
+    let build = |count: usize| {
+        setup
+            .builder()
+            .revocation_lists(vec![own.clone(); count])
+            .revocation_issuers([common::anchor_from_der(&setup.pki.intermediate)])
+            .build()
+    };
+    let config = build(16).unwrap_or_else(|error| panic!("16 lists: {}", error.detail()));
     assert_eq!(
         Verifier::new(config).revocation_valid_until(),
         Some(NOW + 14 * DAY_MS)
+    );
+    assert_eq!(
+        build(17).unwrap_err().detail(),
+        "revocation_lists: more than 16 lists"
     );
 }
 
@@ -729,6 +886,164 @@ fn a_built_in_list_that_does_not_read_fails_the_build() {
         .build()
         .unwrap_err();
     assert_eq!(error.detail(), "the built-in revocation list did not load");
+}
+
+#[test]
+fn an_entry_with_an_unknown_or_unreadable_reason_code_revokes() {
+    // §4: an entry whose reasonCode is unknown (7, or above 10) or does not
+    // read revokes, as any reason other than removeFromCRL and
+    // certificateHold does.
+    let setup = setup();
+    let leaf = setup.leaf_serial();
+    let revoked = (Err(Reason::CertificateRevoked), Some(NOW + 14 * DAY_MS));
+    for code in [7, 11] {
+        assert_eq!(
+            setup.held(setup.intermediate_list(1, &[&leaf], code)),
+            revoked,
+            "reasonCode {code}"
+        );
+    }
+    // The control: removeFromCRL, the one reason that does not revoke.
+    let removed = setup.held(setup.intermediate_list(1, &[&leaf], 8));
+    assert_eq!(removed.0, Ok(()));
+    // A reasonCode that does not read. Both carry the value 8, where a
+    // reader of the leading value alone would see removeFromCRL.
+    let unreadable = [
+        (
+            "an INTEGER where an ENUMERATED belongs",
+            der(tag::INTEGER, &[8]),
+        ),
+        (
+            "octets after the ENUMERATED",
+            [der(0x0a, &[8]), vec![0]].concat(),
+        ),
+    ];
+    for (what, value) in unreadable {
+        let list = raw_list(
+            &subject(&setup.pki.intermediate),
+            &setup.pki.intermediate_key,
+            NOW - DAY_MS,
+            NOW + 14 * DAY_MS,
+            &[extension(CRL_NUMBER, false, &der_int(1))],
+            &[RawEntry {
+                serial: leaf.clone(),
+                extensions: vec![extension(REASON_CODE, false, &value)],
+            }],
+        );
+        assert_eq!(setup.held(list), revoked, "{what}");
+    }
+}
+
+#[test]
+fn critical_is_allowed_on_the_extensions_the_profile_reads() {
+    // §4: critical is allowed only on a list's AuthorityKeyIdentifier and
+    // CRL Number and an entry's reasonCode and invalidityDate. A list with
+    // one of them critical stays inside the profile: it is held, its entry
+    // revokes and `revocation_valid_until` reports it. Each case runs
+    // without the flag first, so only the flag differs.
+    let key_id = [0x5a; 20];
+    let setup = setup_with_key_identifier(&key_id);
+    let leaf = setup.leaf_serial();
+    let name = subject(&setup.pki.intermediate);
+    let key = &setup.pki.intermediate_key;
+    let key_compromise = der(0x0a, &[KEY_COMPROMISE]);
+    let reason = |critical: bool| extension(REASON_CODE, critical, &key_compromise);
+    let listing = |extensions: Vec<Vec<u8>>, entry_extensions: Vec<Vec<u8>>| {
+        raw_list(
+            &name,
+            key,
+            NOW - DAY_MS,
+            NOW + 14 * DAY_MS,
+            &extensions,
+            &[RawEntry {
+                serial: leaf.clone(),
+                extensions: entry_extensions,
+            }],
+        )
+    };
+    let revoked = (Err(Reason::CertificateRevoked), Some(NOW + 14 * DAY_MS));
+    for critical in [false, true] {
+        let lists = [
+            (
+                "CRL Number",
+                listing(
+                    vec![extension(CRL_NUMBER, critical, &der_int(5))],
+                    vec![reason(false)],
+                ),
+            ),
+            (
+                "AuthorityKeyIdentifier",
+                listing(
+                    vec![extension(
+                        AUTHORITY_KEY_IDENTIFIER,
+                        critical,
+                        &der_seq(&[der(0x80, &key_id)]),
+                    )],
+                    vec![reason(false)],
+                ),
+            ),
+            ("reasonCode", listing(vec![], vec![reason(critical)])),
+            (
+                "invalidityDate",
+                listing(
+                    vec![],
+                    vec![
+                        reason(false),
+                        extension(INVALIDITY_DATE, critical, &der(0x18, b"20261001000000Z")),
+                    ],
+                ),
+            ),
+        ];
+        for (what, list) in lists {
+            assert_eq!(setup.held(list), revoked, "{what}, critical={critical}");
+        }
+    }
+}
+
+#[test]
+fn a_revoked_leaf_is_judged_after_the_signature_and_the_markers() {
+    // §3: the check runs once the path, the Apple markers and the signature
+    // have passed. A revoked leaf whose signature is bad is
+    // INVALID_SIGNATURE, and one without the receipt-signing marker is
+    // INVALID_CERTIFICATE_PURPOSE: neither is CERTIFICATE_REVOKED.
+    let verdict = |setup: &Setup, receipt: &str| {
+        let revoking = [(
+            issuer_id(&setup.pki.intermediate),
+            serial_hex(&setup.pki.leaf),
+        )];
+        Verifier::new(setup.builder().distrust(revoking).build().unwrap())
+            .verify_receipt(receipt)
+            .map(|_| ())
+            .map_err(|failure| failure.reason())
+    };
+    let setup = setup();
+    assert_eq!(
+        setup.verify(setup.builder()),
+        Ok(()),
+        "the control: nothing revokes the receipt"
+    );
+    assert_eq!(
+        verdict(&setup, &setup.receipt),
+        Err(Reason::CertificateRevoked),
+        "the control: the revoked leaf with nothing else wrong"
+    );
+    let signed = setup
+        .pki
+        .sign_receipt_at(&payload_at("2026-10-01T00:00:00Z"), NOW);
+    let tampered = base64_encode(&pki::corrupt_signatures(&signed, 1));
+    assert_eq!(
+        verdict(&setup, &tampered),
+        Err(Reason::InvalidSignature),
+        "a revoked leaf with a bad signature"
+    );
+
+    let without_marker = Pki::receipt_with(NOW - 365 * DAY_MS, NOW + 365 * DAY_MS, false, true);
+    let unmarked = setup_from(without_marker);
+    assert_eq!(
+        verdict(&unmarked, &unmarked.receipt),
+        Err(Reason::InvalidCertificatePurpose),
+        "a revoked leaf without the receipt-signing marker"
+    );
 }
 
 /// What building a verifier with Apple's four lists costs. Apple's lists
