@@ -24,6 +24,8 @@
  *     is referenced by no case
  *   - two cases share an id
  *   - a case references an unregistered fixture
+ *   - a revocation `lists` entry is not a fixture of role "revocation-list",
+ *     or an `issuers` entry not one of role "revocation-issuer"
  *   - an expected reason, or a oneOf outcome, is outside the Reason set,
  *     or is INTERNAL_ERROR, which no correct library answers to any input
  *     (a buildConfig case expects no reason: it builds or it does not)
@@ -83,6 +85,8 @@ const REASONS = [
 ];
 // Fixture roles that only exist to be used by a case.
 const USED_ROLES = ['input', 'revocation-list', 'revocation-issuer'];
+// The role a revocation `lists` / `issuers` entry must have.
+const REVOCATION_ROLES = { lists: 'revocation-list', issuers: 'revocation-issuer' };
 const EXPECTABLE = REASONS.filter((reason) => reason !== 'INTERNAL_ERROR');
 
 const problems = [];
@@ -306,14 +310,19 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
       for (const member of ['lists', 'issuers']) {
         if (!Array.isArray(revocation[member])) continue;
         for (const id of revocation[member]) {
-          if (typeof id === 'string') refs.push([`${slot}.revocation.${member}`, id]);
+          if (typeof id === 'string') refs.push([`${slot}.revocation.${member}`, id, REVOCATION_ROLES[member]]);
         }
       }
     }
-    for (const [slot, id] of refs) {
+    for (const [slot, id, role] of refs) {
       referenced.add(id);
       if (!Object.prototype.hasOwnProperty.call(fixtures, id)) {
         fail(where, `${slot} references fixture "${id}", which is not registered`);
+      } else if (role !== undefined && fixtures[id]?.role !== role) {
+        // A certificate handed in as a list (or the reverse) is refused for
+        // that reason, and a case written for another reason stays green.
+        fail(where, `${slot} references fixture "${id}", which has role ${JSON.stringify(fixtures[id]?.role)}, `
+          + `not "${role}"`);
       }
     }
 

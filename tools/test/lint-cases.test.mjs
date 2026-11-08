@@ -210,6 +210,24 @@ test('revocation fixtures are counted as references from config and input', () =
   ]);
 });
 
+test('a revocation list or issuer must be a fixture of the matching role', () => {
+  const verify = indexOf((c) => Array.isArray(c.config?.revocation?.lists));
+  const build = indexOf((c) => c.operation === 'buildConfig' && Array.isArray(c.input?.revocation?.issuers));
+  const anchor = Object.keys(original.fixtures).find((id) => original.fixtures[id].role === 'trust-anchor');
+  const list = Object.keys(original.fixtures).find((id) => original.fixtures[id].role === 'revocation-list');
+  const r = plant((d) => {
+    d.cases[verify].config.revocation.lists.push(anchor);
+    d.cases[build].input.revocation.issuers.push(list);
+  });
+  assert.equal(r.code, 1, r.err);
+  assert.deepEqual(r.problems, [
+    `case #${verify} "${original.cases[verify].id}": config.revocation.lists references fixture `
+      + `"${anchor}", which has role "trust-anchor", not "revocation-list"`,
+    `case #${build} "${original.cases[build].id}": input.revocation.issuers references fixture `
+      + `"${list}", which has role "revocation-list", not "revocation-issuer"`,
+  ]);
+});
+
 test('the repository fixtures pass', () => {
   const r = run(fixtures);
   assert.equal(r.code, 0, r.err);
