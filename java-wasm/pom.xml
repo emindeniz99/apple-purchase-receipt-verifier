@@ -54,7 +54,7 @@
          into the jar for ServerSource.maven() and github(). The release
          passes its own SHA256SUMS. -->
     <aprv.server.sha256sums>${project.basedir}/src/main/server/SHA256SUMS</aprv.server.sha256sums>
-    <endive.version>1.1.0</endive.version>
+    <endive.version>1.2.0</endive.version>
     <!-- The same jackson-core floor as the main artifact: it reads the
          module's JSON answers and writes ReceiptPayload.toJson(). -->
     <jackson.version>2.22.4</jackson.version>
