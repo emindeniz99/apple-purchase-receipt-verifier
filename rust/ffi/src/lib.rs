@@ -59,6 +59,15 @@
 //! [`AprvReason::InvalidUtf8`] rather than a verdict, and they answer 0.7's
 //! documents (the bare payload, or `{"reason","message"}`). They stay for
 //! 0.7 callers; a new caller uses the `_bytes` calls.
+//!
+//! # Revocation settings are `init`'s JSON
+//!
+//! [`aprv_verifier_new_config`] takes the bytes `aprv.wasm`'s `init` takes and
+//! reads them with `aprv-wire`'s reader, so a configuration means the same at
+//! both boundaries and a member added to it needs no new symbol. The two values
+//! `init` answers come from [`aprv_verifier_revocation_urls`] and
+//! [`aprv_verifier_revocation_valid_until_ms`] (docs/rust-core/DECISIONS.md
+//! R48).
 
 #![deny(
     unsafe_op_in_unsafe_fn,
@@ -119,7 +128,8 @@ pub enum AprvReason {
     /// after the chain and the signature passed. Not the caller's fault.
     UnreadablePayload = 16,
     /// A certificate on the verified path is revoked: by the built-in
-    /// revocation list (this ABI passes no other revocation setting).
+    /// revocation list, or by a list or a `distrust` entry given to
+    /// [`aprv_verifier_new_config`].
     CertificateRevoked = 17,
 
     /// A required pointer argument was `NULL`. Nothing was verified.
@@ -130,7 +140,8 @@ pub enum AprvReason {
     InvalidUtf8 = 101,
     /// A configuration argument was rejected: an unknown environment, bytes
     /// that are not a certificate, an anchor array that disagrees with its
-    /// count, a length over `PTRDIFF_MAX`. Nothing was verified.
+    /// count, a length over `PTRDIFF_MAX`, a configuration
+    /// [`aprv_verifier_new_config`] refuses. Nothing was verified.
     InvalidArgument = 102,
     /// A panic was caught at the boundary. Nothing crossed it. This is a bug
     /// in the library; please report it.
@@ -179,6 +190,11 @@ pub enum AprvEnvironment {
 ///   as its payload; for a JWS the signed JSON text, exactly.
 /// * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
 ///
+/// From [`aprv_verifier_new_config`]:
+///
+/// * `status == APRV_REASON_OK`: `json` is `NULL`.
+/// * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
+///
 /// A token is the `SCREAMING_SNAKE` spelling every port of this library
 /// shares; a message is a short, non-sensitive description that never
 /// contains receipt bytes, claims or key material. Match on `status`, or on
@@ -194,8 +210,9 @@ pub struct AprvResult {
 
 // --- the opaque handle ---------------------------------------------------
 
-/// A verifier: pinned roots and a clock. Created by `aprv_verifier_new`,
-/// released by `aprv_verifier_free`.
+/// A verifier: pinned roots, revocation settings and a clock. Created by
+/// `aprv_verifier_new` or `aprv_verifier_new_config`, released by
+/// `aprv_verifier_free`.
 ///
 /// Immutable once built, and safe to share between threads: any number of
 /// threads may verify through the same handle at the same time. Freeing it
@@ -505,22 +522,233 @@ pub unsafe extern "C" fn aprv_verifier_new(
     })
 }
 
-/// Releases a handle from [`aprv_verifier_new`]. `NULL` is a no-op. Calling
-/// it twice on the same handle, or while another thread is inside a call on
-/// it, is undefined behaviour.
+/// A verifier from the JSON `aprv.wasm`'s `init` takes: the way to pass
+/// revocation settings, which [`aprv_verifier_new`] has no argument for.
+///
+/// * `config_json` / `len` are the bytes of that JSON, read by the reader
+///   `init` uses (`rust/bindings/wire/schema/init-config.schema.json`): an
+///   object with any of `roots`, `revocation_lists` and `revocation_issuers`
+///   (lists of padded standard base64) and `distrust` (a list of
+///   `{"issuer":"...","serial":"..."}`). No bytes at all, or `{}`, selects
+///   the three bundled Apple roots with no revocation setting. `config_json`
+///   may be `NULL` when `len` is 0. The bytes are parsed during the call and
+///   never retained.
+/// * `fixed_clock_unix_millis` is as for [`aprv_verifier_new`], since the JSON
+///   holds no clock. Beside what that function says it is read for, it judges
+///   whether a list whose `certificateHold` entry names a certificate on the
+///   path is still fresh.
+/// * `*verifier` receives the handle, owned by the caller and released with
+///   [`aprv_verifier_free`].
+/// * `out` receives the outcome (see [`AprvResult`]). It may be `NULL` for a
+///   caller that only wants the status.
+///
+/// Returns the status, which is also written to `out->status`. A refused
+/// configuration is [`AprvReason::InvalidArgument`], with the message `init`
+/// gives, which names the first problem and its index. On any non-zero return
+/// `*verifier` is left untouched. On [`AprvReason::Panic`] `*out` is too, as
+/// in the verification calls, so read the status from the return value.
 ///
 /// # Safety
-/// `verifier` must be `NULL` or a live handle from [`aprv_verifier_new`].
+/// `config_json` must be `NULL` or `len` readable bytes,
+/// `fixed_clock_unix_millis` `NULL` or one readable, aligned `int64_t`,
+/// `verifier` a writable `AprvVerifier *`, and `out` `NULL` or a writable
+/// `AprvResult`.
+#[no_mangle]
+pub unsafe extern "C" fn aprv_verifier_new_config(
+    config_json: *const u8,
+    len: usize,
+    fixed_clock_unix_millis: *const i64,
+    verifier: *mut *mut AprvVerifier,
+    out: *mut AprvResult,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the arguments are passed through under this function's
+        // own contract, which is `finish_new`'s and `verifier_from_config`'s.
+        unsafe {
+            finish_new(verifier, out, || {
+                verifier_from_config(config_json, len, fixed_clock_unix_millis)
+            })
+        }
+    })
+}
+
+/// Everything [`aprv_verifier_new_config`] does before it writes to the
+/// caller: reading the arguments and making the verifier.
+///
+/// # Safety
+/// `config_json` must be `NULL` or `len` readable bytes, and
+/// `fixed_clock_unix_millis` `NULL` or one readable, aligned `int64_t`.
+unsafe fn verifier_from_config(
+    config_json: *const u8,
+    len: usize,
+    fixed_clock_unix_millis: *const i64,
+) -> Result<AprvVerifier, (i32, String)> {
+    // SAFETY: `NULL` or `len` readable bytes, per the contract.
+    let bytes = match unsafe { borrow_bytes(config_json, len) } {
+        Ok(bytes) => bytes,
+        Err(status) => {
+            let message = if status == AprvReason::NullPointer as i32 {
+                "config_json is NULL"
+            } else {
+                "len is over PTRDIFF_MAX"
+            };
+            return Err((status, message.to_owned()));
+        }
+    };
+    let fixed_now = if fixed_clock_unix_millis.is_null() {
+        None
+    } else {
+        // SAFETY: non-null, and the caller guarantees one readable,
+        // aligned `int64_t`.
+        Some(unsafe { *fixed_clock_unix_millis })
+    };
+    let built = aprv_wire::read_init_config(bytes).and_then(|config| config.verifier());
+    match built {
+        Ok(inner) => Ok(AprvVerifier { inner, fixed_now }),
+        Err(message) => Err((AprvReason::InvalidArgument as i32, message)),
+    }
+}
+
+/// Runs `build`, then writes its outcome to the caller. Nothing is written
+/// until `build` has returned, so a panic inside it reaches [`guard`] with
+/// `*verifier` and `*out` as the caller left them: a handle written before a
+/// panic would be one the caller is told does not exist.
+///
+/// # Safety
+/// `verifier` must be `NULL` or a writable `AprvVerifier *`, and `out` `NULL`
+/// or a writable `AprvResult`.
+unsafe fn finish_new(
+    verifier: *mut *mut AprvVerifier,
+    out: *mut AprvResult,
+    build: impl FnOnce() -> Result<AprvVerifier, (i32, String)>,
+) -> i32 {
+    if verifier.is_null() {
+        let status = AprvReason::NullPointer as i32;
+        // SAFETY: `out` is passed through under this function's contract.
+        return unsafe { finish(out, status, error_json(status, "verifier is NULL")) };
+    }
+    match build() {
+        Ok(built) => {
+            // SAFETY: non-null, and writable per the contract.
+            unsafe { verifier.write(Box::into_raw(Box::new(built))) };
+            let status = AprvReason::Ok as i32;
+            if !out.is_null() {
+                let json = std::ptr::null_mut();
+                // SAFETY: non-null, and writable per the contract.
+                unsafe { out.write(AprvResult { status, json }) };
+            }
+            status
+        }
+        Err((status, message)) => {
+            // SAFETY: `out` is passed through under this function's contract.
+            unsafe { finish(out, status, error_json(status, &message)) }
+        }
+    }
+}
+
+/// Releases a handle from [`aprv_verifier_new`] or
+/// [`aprv_verifier_new_config`]. `NULL` is a no-op. Calling it twice on the
+/// same handle, or while another thread is inside a call on it, is undefined
+/// behaviour.
+///
+/// # Safety
+/// `verifier` must be `NULL` or a live handle from [`aprv_verifier_new`] or
+/// [`aprv_verifier_new_config`].
 #[no_mangle]
 pub unsafe extern "C" fn aprv_verifier_free(verifier: *mut AprvVerifier) {
     guard(|| {
         if !verifier.is_null() {
-            // SAFETY: a live handle from `aprv_verifier_new`, which made it
-            // with `Box::into_raw`, freed once, per the caller's contract.
+            // SAFETY: a live handle from one of the two constructors, which
+            // made it with `Box::into_raw`, freed once, per the caller's
+            // contract.
             drop(unsafe { Box::from_raw(verifier) });
         }
         AprvReason::Ok as i32
     });
+}
+
+/// The URLs of the revocation lists this verifier would use, for the host to
+/// download: `*urls_json` receives a JSON array of strings, the value of
+/// `revocation_urls` in `init`'s answer (docs/design/revocation.md section 7).
+///
+/// A non-zero return means a null argument, and `*urls_json` is then left
+/// untouched. `*urls_json` is owned by the caller and must be released with
+/// [`aprv_string_free`].
+///
+/// # Safety
+/// `verifier` must be a live handle and `urls_json` a writable `char *`.
+#[no_mangle]
+pub unsafe extern "C" fn aprv_verifier_revocation_urls(
+    verifier: *const AprvVerifier,
+    urls_json: *mut *mut c_char,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the arguments are passed through under this function's
+        // own contract, which is `report`'s.
+        unsafe { report(verifier, urls_json, urls_text) }
+    })
+}
+
+/// The earliest `nextUpdate` among the lists this verifier holds for the
+/// issuers it expects lists from: `*valid_until_json` receives epoch
+/// milliseconds as a JSON number, or `null` when one of those issuers has no
+/// list held, the value of `revocation_valid_until_ms` in `init`'s answer
+/// (docs/design/revocation.md section 7). `null` means live revocation is not
+/// fully in force and a date in the past means a list is stale; monitoring
+/// alerts on either. It is text because every `int64_t` names a real instant,
+/// so none could stand for `null`.
+///
+/// A non-zero return means a null argument, and `*valid_until_json` is then
+/// left untouched. `*valid_until_json` is owned by the caller and must be
+/// released with [`aprv_string_free`].
+///
+/// # Safety
+/// `verifier` must be a live handle and `valid_until_json` a writable
+/// `char *`.
+#[no_mangle]
+pub unsafe extern "C" fn aprv_verifier_revocation_valid_until_ms(
+    verifier: *const AprvVerifier,
+    valid_until_json: *mut *mut c_char,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the arguments are passed through under this function's
+        // own contract, which is `report`'s.
+        unsafe { report(verifier, valid_until_json, valid_until_text) }
+    })
+}
+
+/// The body both revocation getters share: the argument checks, the read,
+/// and the text.
+///
+/// # Safety
+/// `verifier` must be `NULL` or a live handle, and `text` `NULL` or a
+/// writable `char *`.
+unsafe fn report(
+    verifier: *const AprvVerifier,
+    text: *mut *mut c_char,
+    read: impl FnOnce(&AprvVerifier) -> String,
+) -> i32 {
+    if verifier.is_null() || text.is_null() {
+        return AprvReason::NullPointer as i32;
+    }
+    // SAFETY: non-null, and a live handle per the contract.
+    let answer = read(unsafe { &*verifier });
+    // SAFETY: non-null, and a writable `char *` per the contract.
+    unsafe { text.write(into_c_string(Some(answer))) };
+    AprvReason::Ok as i32
+}
+
+/// `revocation_urls` as `init`'s answer writes it.
+fn urls_text(verifier: &AprvVerifier) -> String {
+    serde_json::Value::from(verifier.inner.revocation_urls()).to_string()
+}
+
+/// `revocation_valid_until_ms` as `init`'s answer writes it.
+fn valid_until_text(verifier: &AprvVerifier) -> String {
+    match verifier.inner.revocation_valid_until_ms() {
+        Some(millis) => millis.to_string(),
+        None => "null".to_owned(),
+    }
 }
 
 /// Verifies a legacy app receipt given as the base64 string an app sends.
@@ -810,10 +1038,10 @@ pub unsafe extern "C" fn aprv_verify_receipt_endpoint_bytes(
     })
 }
 
-/// Releases a string this library handed out: an `AprvResult::json` or a
-/// `verifyReceipt` response body. `NULL` is a no-op. Never call it on
-/// [`aprv_version`]'s return value, and never free one of these with the C
-/// runtime's own `free`: the allocator is Rust's.
+/// Releases a string this library handed out: an `AprvResult::json`, a
+/// `verifyReceipt` response body or a revocation getter's text. `NULL` is a
+/// no-op. Never call it on [`aprv_version`]'s return value, and never free one
+/// of these with the C runtime's own `free`: the allocator is Rust's.
 ///
 /// # Safety
 /// `text` must be `NULL` or a string this library returned and that has not
@@ -870,6 +1098,64 @@ mod tests {
             status: -1,
             json: std::ptr::null_mut(),
         }
+    }
+
+    /// `aprv_verifier_new_config` over `config`, at [`NOW`].
+    fn from_config(config: &[u8]) -> (i32, *mut AprvVerifier, AprvResult) {
+        let now = NOW;
+        let mut verifier: *mut AprvVerifier = std::ptr::null_mut();
+        let mut out = empty_result();
+        let status = unsafe {
+            aprv_verifier_new_config(
+                config.as_ptr(),
+                config.len(),
+                &raw const now,
+                &raw mut verifier,
+                &raw mut out,
+            )
+        };
+        (status, verifier, out)
+    }
+
+    /// A verifier from `config`, which must be accepted.
+    fn configured(config: &str) -> *mut AprvVerifier {
+        let (status, verifier, out) = from_config(config.as_bytes());
+        assert_eq!(status, AprvReason::Ok as i32);
+        assert_eq!(out.status, status);
+        assert!(out.json.is_null());
+        assert!(!verifier.is_null());
+        verifier
+    }
+
+    /// One getter's text, released as its contract says.
+    fn reported(
+        getter: unsafe extern "C" fn(*const AprvVerifier, *mut *mut c_char) -> i32,
+        verifier: *const AprvVerifier,
+    ) -> String {
+        let mut pointer: *mut c_char = std::ptr::null_mut();
+        let status = unsafe { getter(verifier, &raw mut pointer) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        assert!(!pointer.is_null());
+        let text = unsafe { CStr::from_ptr(pointer) }
+            .to_str()
+            .unwrap()
+            .to_owned();
+        unsafe { aprv_string_free(pointer) };
+        text
+    }
+
+    fn urls_of(verifier: *const AprvVerifier) -> String {
+        reported(aprv_verifier_revocation_urls, verifier)
+    }
+
+    fn until_of(verifier: *const AprvVerifier) -> String {
+        reported(aprv_verifier_revocation_valid_until_ms, verifier)
+    }
+
+    /// The genuine sandbox receipt, which the bundled roots verify.
+    fn g5() -> String {
+        let text = std::fs::read_to_string(fixture("public-receipts/receipt-sandbox-g5.b64"));
+        text.unwrap().split_whitespace().collect()
     }
 
     // --- the reason contract ---------------------------------------------
@@ -937,9 +1223,20 @@ mod tests {
         std::panic::set_hook(Box::new(|_| {}));
         let code = guard(|| panic!("deliberate"));
         let pointer = guard_ptr(|| -> *mut AprvVerifier { panic!("deliberate") });
+        // The config constructor's build: a panic writes nothing to the caller.
+        let untouched = std::ptr::dangling_mut::<AprvVerifier>();
+        let mut handle = untouched;
+        let mut out = empty_result();
+        let built = guard(|| unsafe {
+            finish_new(&raw mut handle, &raw mut out, || panic!("deliberate"))
+        });
         std::panic::set_hook(previous);
         assert_eq!(code, AprvReason::Panic as i32);
         assert!(pointer.is_null());
+        assert_eq!(built, AprvReason::Panic as i32);
+        assert_eq!(handle, untouched);
+        assert_eq!(out.status, -1);
+        assert!(out.json.is_null());
     }
 
     /// Panic containment is only a property of the ABI if EVERY export has
@@ -974,7 +1271,7 @@ mod tests {
             );
         }
         assert_eq!(
-            exports, 10,
+            exports, 13,
             "the ABI exports {exports} symbols; update this count deliberately, \
              it is the check that a new export was not added unguarded"
         );
@@ -1434,6 +1731,172 @@ mod tests {
         };
         assert_eq!(status, AprvReason::NullPointer as i32);
         assert!(out.json.is_null());
+        unsafe { aprv_verifier_free(verifier) };
+    }
+
+    // --- the config constructor and the revocation getters ----------------
+
+    /// `distrust` reaches the core: the signer of a receipt the bundled roots
+    /// verify is refused as revoked, with the code the header gives it.
+    #[test]
+    fn a_distrusted_signer_answers_17() {
+        let issuer = "c4c7a18465d55f4f7d20ff2a525bceafb55d860fc3b59a1981b04783fd74f96b";
+        let serial = "7D3920094EBEF3F8EFCA6C10EA8E4303";
+        let config = format!(r#"{{"distrust":[{{"issuer":"{issuer}","serial":"{serial}"}}]}}"#);
+        let receipt = g5();
+
+        let apple = bundled();
+        let (status, _) = receipt_bytes(apple, receipt.as_bytes());
+        assert_eq!(status, AprvReason::Ok as i32);
+        unsafe { aprv_verifier_free(apple) };
+
+        let verifier = configured(&config);
+        let (status, json) = receipt_bytes(verifier, receipt.as_bytes());
+        assert_eq!(status, 17);
+        assert_eq!(status, AprvReason::CertificateRevoked as i32);
+        assert!(json.contains("CERTIFICATE_REVOKED"), "{json}");
+        unsafe { aprv_verifier_free(verifier) };
+    }
+
+    /// A refusal is `INVALID_ARGUMENT` with the message `init` gives, and no
+    /// handle.
+    #[test]
+    fn a_refused_configuration_answers_the_message_init_gives() {
+        let refused: [&[u8]; 7] = [
+            b"{",
+            b"\xff",
+            b"[]",
+            b"{\"rootz\":[]}",
+            b"{\"roots\":[]}",
+            b"{\"revocation_lists\":[\"AAAA\"]}",
+            b"{\"distrust\":[{\"issuer\":\"x\",\"serial\":\"1\"}]}",
+        ];
+        for config in refused {
+            let message = aprv_wire::read_init_config(config)
+                .and_then(|config| config.verifier())
+                .unwrap_err();
+            let (status, verifier, out) = from_config(config);
+            assert_eq!(status, AprvReason::InvalidArgument as i32, "{config:?}");
+            assert_eq!(out.status, status);
+            assert!(verifier.is_null());
+            assert_eq!(take_json(out), error_json(status, &message));
+        }
+    }
+
+    /// A call mistake never makes a handle, and is reported through `out`.
+    #[test]
+    fn a_config_call_mistake_leaves_the_handle_untouched() {
+        let untouched = std::ptr::dangling_mut::<AprvVerifier>();
+        let clock = std::ptr::null();
+        let none = std::ptr::null();
+        let mut handle = untouched;
+
+        let mut out = empty_result();
+        let status =
+            unsafe { aprv_verifier_new_config(none, 4, clock, &raw mut handle, &raw mut out) };
+        assert_eq!(status, AprvReason::NullPointer as i32);
+        assert_eq!(handle, untouched);
+        assert!(take_json(out).contains("NULL_POINTER"));
+
+        let byte = [0u8];
+        let data = byte.as_ptr();
+        let mut out = empty_result();
+        let status = unsafe {
+            aprv_verifier_new_config(data, usize::MAX, clock, &raw mut handle, &raw mut out)
+        };
+        assert_eq!(status, AprvReason::InvalidArgument as i32);
+        assert_eq!(handle, untouched);
+        assert!(take_json(out).contains("INVALID_ARGUMENT"));
+
+        let no_handle = std::ptr::null_mut();
+        let mut out = empty_result();
+        let status = unsafe { aprv_verifier_new_config(none, 0, clock, no_handle, &raw mut out) };
+        assert_eq!(status, AprvReason::NullPointer as i32);
+        assert!(take_json(out).contains("NULL_POINTER"));
+
+        // A null `out` still builds: the status is the return value.
+        let no_out = std::ptr::null_mut();
+        let status = unsafe { aprv_verifier_new_config(none, 0, clock, &raw mut handle, no_out) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        assert_ne!(handle, untouched);
+        unsafe { aprv_verifier_free(handle) };
+    }
+
+    /// No setting at all is the verifier `aprv_verifier_new` makes on the
+    /// bundled roots, as the same bytes are for `init`.
+    #[test]
+    fn an_empty_configuration_is_the_default_verifier() {
+        let receipt = g5();
+        let apple = bundled();
+        let urls = urls_of(apple);
+        let until = until_of(apple);
+        let (status, answer) = receipt_bytes(apple, receipt.as_bytes());
+        unsafe { aprv_verifier_free(apple) };
+        assert_eq!(status, AprvReason::Ok as i32);
+        assert_eq!(
+            urls,
+            concat!(
+                r#"["http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl","#,
+                r#""http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"]"#
+            )
+        );
+        assert_eq!(until, "null");
+        for config in ["{}", "", " \n"] {
+            let verifier = configured(config);
+            assert_eq!(urls_of(verifier), urls);
+            assert_eq!(until_of(verifier), until);
+            assert_eq!(receipt_bytes(verifier, receipt.as_bytes()).1, answer);
+            unsafe { aprv_verifier_free(verifier) };
+        }
+    }
+
+    /// The getters answer what `init`'s answer holds, for a configuration
+    /// with a held list for every expected issuer, so the instant is a value.
+    #[test]
+    fn the_getters_answer_what_init_answers() {
+        let b64 = |name: &str| {
+            let path = format!("generated-0.7/revocation/{name}.der");
+            base64_encode(&std::fs::read(fixture(&path)).unwrap())
+        };
+        let config = format!(
+            r#"{{"roots":["{}"],"revocation_lists":["{}","{}"],"revocation_issuers":["{}"]}}"#,
+            b64("root"),
+            b64("root-crl-empty"),
+            b64("crl-fresh-empty"),
+            b64("intermediate")
+        );
+        let verifier = configured(&config);
+        let urls = urls_of(verifier);
+        let until = until_of(verifier);
+        unsafe { aprv_verifier_free(verifier) };
+
+        let list = "crl.example.test/aprv-test-root.crl";
+        assert_eq!(urls, format!(r#"["http://{list}","https://{list}"]"#));
+        assert_eq!(until, "1796083200000"); // 2026-12-01T00:00:00Z
+
+        let built = aprv_wire::read_init_config(config.as_bytes())
+            .and_then(|config| config.verifier())
+            .unwrap();
+        let answer = aprv_wire::init_result(&Ok(&built));
+        let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(answer["revocation_urls"].to_string(), urls);
+        assert_eq!(answer["revocation_valid_until_ms"].to_string(), until);
+    }
+
+    #[test]
+    fn a_null_getter_argument_is_reported() {
+        let verifier = bundled();
+        for getter in [
+            aprv_verifier_revocation_urls,
+            aprv_verifier_revocation_valid_until_ms,
+        ] {
+            let mut text: *mut c_char = std::ptr::null_mut();
+            let status = unsafe { getter(std::ptr::null(), &raw mut text) };
+            assert_eq!(status, AprvReason::NullPointer as i32);
+            assert!(text.is_null());
+            let status = unsafe { getter(verifier, std::ptr::null_mut()) };
+            assert_eq!(status, AprvReason::NullPointer as i32);
+        }
         unsafe { aprv_verifier_free(verifier) };
     }
 

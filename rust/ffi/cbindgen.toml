@@ -41,9 +41,12 @@ header = """
  *   - aprv_verifier_new() returns a handle the caller owns, or NULL if an
  *     argument was rejected. Release it with aprv_verifier_free().
  *     Freeing NULL is a no-op; freeing twice is undefined behaviour.
- *   - AprvResult.json and the *response_json of the endpoint call are owned
- *     by the caller. Release each with aprv_string_free() — never with the C
- *     runtime's free(), because the allocator is Rust's.
+ *   - aprv_verifier_new_config() writes such a handle to *verifier when it
+ *     returns APRV_REASON_OK, and leaves *verifier untouched otherwise.
+ *   - AprvResult.json, the *response_json of the endpoint call and the text
+ *     of the two revocation getters are owned by the caller. Release each
+ *     with aprv_string_free() — never with the C runtime's free(), because
+ *     the allocator is Rust's.
  *   - Every input pointer is borrowed for the duration of the call only.
  *     Nothing retains it, and nothing is written through it.
  *
@@ -51,12 +54,14 @@ header = """
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
- * THE CLOCK: aprv_verifier_new takes one instant, in milliseconds since the
+ * THE CLOCK: both constructors take one instant, in milliseconds since the
  * Unix epoch, instead of a callback the library would call back into. A NULL
  * clock pointer means the system clock. The clock is read in two places:
  * the certificate-validity instant when the input states no usable signing
- * date, and the endpoint's request_date. No verifier rejects a payload for
- * its age: how old a signed payload may be is the caller's decision.
+ * date, and the endpoint's request_date; and, with lists passed in, to judge
+ * whether a list holding a certificate on the path is fresh. No verifier
+ * rejects a payload for its age: how old a signed payload may be is the
+ * caller's decision.
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input

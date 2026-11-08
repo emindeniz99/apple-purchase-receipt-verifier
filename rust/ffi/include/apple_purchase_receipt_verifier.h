@@ -14,9 +14,12 @@
  *   - aprv_verifier_new() returns a handle the caller owns, or NULL if an
  *     argument was rejected. Release it with aprv_verifier_free().
  *     Freeing NULL is a no-op; freeing twice is undefined behaviour.
- *   - AprvResult.json and the *response_json of the endpoint call are owned
- *     by the caller. Release each with aprv_string_free() — never with the C
- *     runtime's free(), because the allocator is Rust's.
+ *   - aprv_verifier_new_config() writes such a handle to *verifier when it
+ *     returns APRV_REASON_OK, and leaves *verifier untouched otherwise.
+ *   - AprvResult.json, the *response_json of the endpoint call and the text
+ *     of the two revocation getters are owned by the caller. Release each
+ *     with aprv_string_free() — never with the C runtime's free(), because
+ *     the allocator is Rust's.
  *   - Every input pointer is borrowed for the duration of the call only.
  *     Nothing retains it, and nothing is written through it.
  *
@@ -24,12 +27,14 @@
  * verify through the same handle concurrently; freeing one while a call is
  * in flight is not allowed.
  *
- * THE CLOCK: aprv_verifier_new takes one instant, in milliseconds since the
+ * THE CLOCK: both constructors take one instant, in milliseconds since the
  * Unix epoch, instead of a callback the library would call back into. A NULL
  * clock pointer means the system clock. The clock is read in two places:
  * the certificate-validity instant when the input states no usable signing
- * date, and the endpoint's request_date. No verifier rejects a payload for
- * its age: how old a signed payload may be is the caller's decision.
+ * date, and the endpoint's request_date; and, with lists passed in, to judge
+ * whether a list holding a certificate on the path is fresh. No verifier
+ * rejects a payload for its age: how old a signed payload may be is the
+ * caller's decision.
  *
  * ERRORS: a NULL pointer, a non-UTF-8 string or a rejected configuration is
  * reported in the 100+ band of AprvReason and means nothing about the input
@@ -92,7 +97,8 @@ enum AprvReason
   // after the chain and the signature passed. Not the caller's fault.
   APRV_REASON_UNREADABLE_PAYLOAD = 16,
   // A certificate on the verified path is revoked: by the built-in
-  // revocation list (this ABI passes no other revocation setting).
+  // revocation list, or by a list or a `distrust` entry given to
+  // [`aprv_verifier_new_config`].
   APRV_REASON_CERTIFICATE_REVOKED = 17,
   // A required pointer argument was `NULL`. Nothing was verified.
   APRV_REASON_NULL_POINTER = 100,
@@ -102,7 +108,8 @@ enum AprvReason
   APRV_REASON_INVALID_UTF8 = 101,
   // A configuration argument was rejected: an unknown environment, bytes
   // that are not a certificate, an anchor array that disagrees with its
-  // count, a length over `PTRDIFF_MAX`. Nothing was verified.
+  // count, a length over `PTRDIFF_MAX`, a configuration
+  // [`aprv_verifier_new_config`] refuses. Nothing was verified.
   APRV_REASON_INVALID_ARGUMENT = 102,
   // A panic was caught at the boundary. Nothing crossed it. This is a bug
   // in the library; please report it.
@@ -145,8 +152,9 @@ typedef uint32_t AprvEnvironment;
 #endif // __STDC_VERSION__ >= 202311L
 #endif // __cplusplus
 
-// A verifier: pinned roots and a clock. Created by `aprv_verifier_new`,
-// released by `aprv_verifier_free`.
+// A verifier: pinned roots, revocation settings and a clock. Created by
+// `aprv_verifier_new` or `aprv_verifier_new_config`, released by
+// `aprv_verifier_free`.
 //
 // Immutable once built, and safe to share between threads: any number of
 // threads may verify through the same handle at the same time. Freeing it
@@ -173,6 +181,11 @@ typedef struct AprvVerifier AprvVerifier;
 // * `status == APRV_REASON_OK`: `json` is the verified payload: for a
 //   receipt the 0.7 `ReceiptPayload` JSON, the bytes `aprv.wasm` returns
 //   as its payload; for a JWS the signed JSON text, exactly.
+// * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
+//
+// From [`aprv_verifier_new_config`]:
+//
+// * `status == APRV_REASON_OK`: `json` is `NULL`.
 // * anything else: `json` is `{"reason":"<token>","message":"<detail>"}`.
 //
 // A token is the `SCREAMING_SNAKE` spelling every port of this library
@@ -226,13 +239,84 @@ AprvVerifier *aprv_verifier_new(const uint8_t *const *ders,
                                 size_t count,
                                 const int64_t *fixed_clock_unix_millis);
 
-// Releases a handle from [`aprv_verifier_new`]. `NULL` is a no-op. Calling
-// it twice on the same handle, or while another thread is inside a call on
-// it, is undefined behaviour.
+// A verifier from the JSON `aprv.wasm`'s `init` takes: the way to pass
+// revocation settings, which [`aprv_verifier_new`] has no argument for.
+//
+// * `config_json` / `len` are the bytes of that JSON, read by the reader
+//   `init` uses (`rust/bindings/wire/schema/init-config.schema.json`): an
+//   object with any of `roots`, `revocation_lists` and `revocation_issuers`
+//   (lists of padded standard base64) and `distrust` (a list of
+//   `{"issuer":"...","serial":"..."}`). No bytes at all, or `{}`, selects
+//   the three bundled Apple roots with no revocation setting. `config_json`
+//   may be `NULL` when `len` is 0. The bytes are parsed during the call and
+//   never retained.
+// * `fixed_clock_unix_millis` is as for [`aprv_verifier_new`], since the JSON
+//   holds no clock. Beside what that function says it is read for, it judges
+//   whether a list whose `certificateHold` entry names a certificate on the
+//   path is still fresh.
+// * `*verifier` receives the handle, owned by the caller and released with
+//   [`aprv_verifier_free`].
+// * `out` receives the outcome (see [`AprvResult`]). It may be `NULL` for a
+//   caller that only wants the status.
+//
+// Returns the status, which is also written to `out->status`. A refused
+// configuration is [`AprvReason::InvalidArgument`], with the message `init`
+// gives, which names the first problem and its index. On any non-zero return
+// `*verifier` is left untouched. On [`AprvReason::Panic`] `*out` is too, as
+// in the verification calls, so read the status from the return value.
 //
 // # Safety
-// `verifier` must be `NULL` or a live handle from [`aprv_verifier_new`].
+// `config_json` must be `NULL` or `len` readable bytes,
+// `fixed_clock_unix_millis` `NULL` or one readable, aligned `int64_t`,
+// `verifier` a writable `AprvVerifier *`, and `out` `NULL` or a writable
+// `AprvResult`.
+int32_t aprv_verifier_new_config(const uint8_t *config_json,
+                                 size_t len,
+                                 const int64_t *fixed_clock_unix_millis,
+                                 AprvVerifier **verifier,
+                                 AprvResult *out);
+
+// Releases a handle from [`aprv_verifier_new`] or
+// [`aprv_verifier_new_config`]. `NULL` is a no-op. Calling it twice on the
+// same handle, or while another thread is inside a call on it, is undefined
+// behaviour.
+//
+// # Safety
+// `verifier` must be `NULL` or a live handle from [`aprv_verifier_new`] or
+// [`aprv_verifier_new_config`].
 void aprv_verifier_free(AprvVerifier *verifier);
+
+// The URLs of the revocation lists this verifier would use, for the host to
+// download: `*urls_json` receives a JSON array of strings, the value of
+// `revocation_urls` in `init`'s answer (docs/design/revocation.md section 7).
+//
+// A non-zero return means a null argument, and `*urls_json` is then left
+// untouched. `*urls_json` is owned by the caller and must be released with
+// [`aprv_string_free`].
+//
+// # Safety
+// `verifier` must be a live handle and `urls_json` a writable `char *`.
+int32_t aprv_verifier_revocation_urls(const AprvVerifier *verifier,
+                                      char **urls_json);
+
+// The earliest `nextUpdate` among the lists this verifier holds for the
+// issuers it expects lists from: `*valid_until_json` receives epoch
+// milliseconds as a JSON number, or `null` when one of those issuers has no
+// list held, the value of `revocation_valid_until_ms` in `init`'s answer
+// (docs/design/revocation.md section 7). `null` means live revocation is not
+// fully in force and a date in the past means a list is stale; monitoring
+// alerts on either. It is text because every `int64_t` names a real instant,
+// so none could stand for `null`.
+//
+// A non-zero return means a null argument, and `*valid_until_json` is then
+// left untouched. `*valid_until_json` is owned by the caller and must be
+// released with [`aprv_string_free`].
+//
+// # Safety
+// `verifier` must be a live handle and `valid_until_json` a writable
+// `char *`.
+int32_t aprv_verifier_revocation_valid_until_ms(const AprvVerifier *verifier,
+                                                char **valid_until_json);
 
 // Verifies a legacy app receipt given as the base64 string an app sends.
 // On success `out->json` is the 0.7 `ReceiptPayload` JSON.
@@ -335,10 +419,10 @@ int32_t aprv_verify_receipt_endpoint_bytes(const AprvVerifier *verifier,
                                            size_t len,
                                            char **response_json);
 
-// Releases a string this library handed out: an `AprvResult::json` or a
-// `verifyReceipt` response body. `NULL` is a no-op. Never call it on
-// [`aprv_version`]'s return value, and never free one of these with the C
-// runtime's own `free`: the allocator is Rust's.
+// Releases a string this library handed out: an `AprvResult::json`, a
+// `verifyReceipt` response body or a revocation getter's text. `NULL` is a
+// no-op. Never call it on [`aprv_version`]'s return value, and never free one
+// of these with the C runtime's own `free`: the allocator is Rust's.
 //
 // # Safety
 // `text` must be `NULL` or a string this library returned and that has not

@@ -5,6 +5,9 @@
 aprv_string_free
 aprv_verifier_free
 aprv_verifier_new
+aprv_verifier_new_config
+aprv_verifier_revocation_urls
+aprv_verifier_revocation_valid_until_ms
 aprv_verify_receipt
 aprv_verify_receipt_bytes
 aprv_verify_receipt_endpoint
