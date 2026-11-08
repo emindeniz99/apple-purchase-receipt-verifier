@@ -50,8 +50,13 @@ const FILES = {
     ['/** doc */', NO],
     ['*p = x509.NewCertPool()', HIT],
     ['/* note */ import "encoding/asn1"', HIT],
+    ['l, _ := x509.ParseRevocationList(b)', HIT],
+    ['l, _ := x509.ParseCRL(b)', HIT],
+    ['l, _ := x509.ParseDERCRL(b)', HIT],
+    ['err := issuer.CheckCRLSignature(l)', HIT],
   ],
   'go/comments.go': [
+    ['// x509.ParseRevocationList, CheckCRLSignature', NO],
     ['// x509.ParseCertificate, "crypto/rsa"', NO],
     ['/* x509.SystemCertPool', NO],
     [' * CheckSignatureFrom', NO],

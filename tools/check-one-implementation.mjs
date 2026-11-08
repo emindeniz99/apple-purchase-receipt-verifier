@@ -75,7 +75,7 @@ const LANGS = {
     comments: 'go',
     banned: [
       [/"(crypto\/(x509(\/pkix)?|ecdsa|rsa|elliptic|ecdh|ed25519|tls|dsa|sha1|sha256|sha512|hmac|subtle)|encoding\/(asn1|pem)|math\/big|golang\.org\/x\/crypto\/[^"]*|github\.com\/[^"]*\/(jwt|jose|pkcs7)[^"]*)"/, 'a Go crypto/X.509/ASN.1 package'],
-      [/\bx509\.(SystemCertPool|NewCertPool|CertPool|VerifyOptions|ParseCertificates?|ParseCertificateRequest)\b|\bCheckSignatureFrom\b|\bSetDefaultPaths\b/, 'a certificate parse or platform trust evaluation'],
+      [/\bx509\.(SystemCertPool|NewCertPool|CertPool|VerifyOptions|ParseCertificates?|ParseCertificateRequest|ParseRevocationList|ParseCRL|ParseDERCRL)\b|\bCheckSignatureFrom\b|\bCheckCRLSignature\b|\bSetDefaultPaths\b/, 'a certificate or revocation list parse, or platform trust evaluation'],
     ],
     allow: [
       { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots and revocation issuers are *x509.Certificate (the 0.7 API, and revocation.md §9 for the issuers); only .Raw, the DER, crosses into the module" },
