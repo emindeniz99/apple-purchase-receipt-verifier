@@ -120,7 +120,7 @@ and the endpoint's `request_date`. No payload is rejected for its age.
 
 `test/conformance_test.exs` reads the same flat manifest
 `tools/gen-cases-manifest.mjs` writes for the C++ harness, and drives every
-case in it through the NIF:
+case in it the shim can express through the NIF:
 
 ```
 apple-purchase-receipt-verifier <version>: C ABI conformance over NIFs
@@ -128,12 +128,15 @@ apple-purchase-receipt-verifier <version>: C ABI conformance over NIFs
 <F> expected fields checked here, nested paths left to conformance.py
 ```
 
-`<N>` is the number of cases in `cases.json` the ABI can reach (every
-one but the `decodeBase64` groups), `<C>` the ones among them that pin a
-clock, and `<F>` the expected fields and lengths this harness checks.
+`<N>` is the number of cases in `cases.json` this example can reach (every
+one but the `decodeBase64` groups and the revocation cases, which need
+`aprv_verifier_new_config`, a call the shim does not bind), `<C>` the ones
+among them that pin a clock, and `<F>` the expected fields and lengths this
+harness checks.
 
 Nothing is skipped: a case that pins a clock passes the instant to
 `aprv_verifier_new`, and a case with a `maxMillis` budget runs once to warm
 up and fails if the second run takes longer. A case the manifest marks
-unsupported fails the run rather than shrinking it. The counts match
-`examples/cpp/conformance.cpp` exactly, because both read the same manifest.
+unsupported fails the run rather than shrinking it. Both this and
+`examples/cpp/conformance.cpp` read the same manifest, so the cases this run
+reaches are the C++ harness's, which also runs the groups above.

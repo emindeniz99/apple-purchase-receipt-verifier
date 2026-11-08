@@ -15,7 +15,7 @@ defmodule AppleReceiptExample do
       {:ok, claims} = AppleReceiptExample.verify_signed_data(verifier, jws)
 
   A failed verification is `{:error, reason, body}`, where `reason` is one of
-  the eight canonical tokens every port of this library shares and `body`
+  the nine canonical tokens every port of this library shares and `body`
   also carries a short non-sensitive message. Match on the reason; never
   parse the message.
   """
@@ -36,6 +36,7 @@ defmodule AppleReceiptExample do
     14 => :too_large,
     15 => :untrusted_chain,
     16 => :unreadable_payload,
+    17 => :certificate_revoked,
     100 => :null_pointer,
     101 => :invalid_utf8,
     102 => :invalid_argument,

@@ -15,8 +15,10 @@ defmodule ConformanceTest do
   Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
   `fixtures/cases.json` and skip none, except the `decodeBase64` groups
   (they call a port's base64 decoders directly, and the ABI exposes none)
-  and the revocation cases (the C ABI cannot pass revocation settings): the
-  manifest marks them `abiUnreachable`, so they are counted and never passed.
+  and, in this example alone, the revocation cases (it binds
+  `aprv_verifier_new`, which takes no revocation settings; the C++ harness runs
+  them through `aprv_verifier_new_config`): the manifest marks them
+  `abiUnreachable`, so they are counted and never passed.
   After the run, every case id in the manifest must have run or been counted.
   A case that pins a clock passes the instant to `aprv_verifier_new`; the
   generator has already parsed it to epoch milliseconds. A case the manifest
@@ -39,7 +41,8 @@ defmodule ConformanceTest do
     "INVALID_CERTIFICATE" => :invalid_certificate,
     "INVALID_CERTIFICATE_PURPOSE" => :invalid_certificate_purpose,
     "UNREADABLE_PAYLOAD" => :unreadable_payload,
-    "INTERNAL_ERROR" => :internal_error
+    "INTERNAL_ERROR" => :internal_error,
+    "CERTIFICATE_REVOKED" => :certificate_revoked
   }
 
   test "the version crosses the boundary" do
@@ -60,7 +63,8 @@ defmodule ConformanceTest do
 
     IO.puts("apple-purchase-receipt-verifier #{Aprv.version()}: C ABI conformance over NIFs")
 
-    pinned_clocks = Enum.count(cases, &(get(&1, "clockUnixMillis") != nil))
+    reached = Enum.filter(cases, &(get(&1, "abiUnreachable") == nil))
+    pinned_clocks = Enum.count(reached, &(get(&1, "clockUnixMillis") != nil))
 
     {failures, passed, skipped, checked_fields, ran, unreachable} =
       Enum.reduce(cases, {[], 0, 0, 0, MapSet.new(), MapSet.new()}, &tally/2)
@@ -74,7 +78,7 @@ defmodule ConformanceTest do
 
     IO.puts(
       "#{MapSet.size(unreachable)} cases not reachable: decodeBase64 groups (the ABI exposes no " <>
-        "base64 decoder) and revocation cases (it cannot pass revocation settings)"
+        "base64 decoder) and revocation cases (this example binds no such settings)"
     )
 
     assert failures == [],
@@ -93,10 +97,9 @@ defmodule ConformanceTest do
 
   # One case into the running totals. A decodeBase64 group or a revocation
   # case is counted as unreachable and never passed: the ABI exposes no
-  # base64 decoder and cannot pass revocation settings.
+  # base64 decoder, and this example binds no revocation settings.
   defp tally(kase, {failures, passed, skipped, fields, ran, unreachable}) do
     id = get(kase, "id")
-    fields = fields + length(all(kase, "field")) + length(all(kase, "length"))
 
     cond do
       get(kase, "abiUnreachable") != nil ->
@@ -110,6 +113,7 @@ defmodule ConformanceTest do
 
       true ->
         ran = MapSet.put(ran, id)
+        fields = fields + length(all(kase, "field")) + length(all(kase, "length"))
 
         case run_and_check(kase) do
           :ok -> {failures, passed + 1, skipped, fields, ran, unreachable}

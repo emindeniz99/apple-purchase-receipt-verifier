@@ -24,7 +24,9 @@
 // that reaches its decoder (a receipt-data text as it is, an x5c text as the
 // three x5c entries of a JWS header), and a text landed on the refusing side
 // of the base64 rule when the answer is its group's reason and the message
-// names base64. After the loop every id the manifest lists must have run.
+// names base64. A case with revocation settings hands the manifest's init JSON
+// to aprv_verifier_new_config, and a buildConfig case also reads the two
+// revocation getters. After the loop every id the manifest lists must have run.
 //
 // The JSON reader below is a top-level scalar extractor and nothing more:
 // no vendored parser, and no ambition to become one. Nested pointers
@@ -329,6 +331,7 @@ int reason_code(const std::string &token) {
       {"INVALID_CERTIFICATE_PURPOSE", APRV_REASON_INVALID_CERTIFICATE_PURPOSE},
       {"UNREADABLE_PAYLOAD", APRV_REASON_UNREADABLE_PAYLOAD},
       {"INTERNAL_ERROR", APRV_REASON_INTERNAL_ERROR},
+      {"CERTIFICATE_REVOKED", APRV_REASON_CERTIFICATE_REVOKED},
   };
   auto found = codes.find(token);
   return found == codes.end() ? -1 : found->second;
@@ -419,11 +422,84 @@ bool verify_bytes(AprvVerifier *verifier, bool receipt, const std::vector<unsign
   return true;
 }
 
+// aprv_verifier_new_config over the manifest's init JSON. `status` is its return
+// value and `document` the refusal it wrote, empty when it built. False, with
+// `error` set, when the file cannot be read or the outcome disagrees with itself.
+bool open_config(const std::string &path, const int64_t *clock, AprvVerifier *&verifier, int &status,
+                 std::string &document, std::string &error) {
+  std::vector<unsigned char> config;
+  if (!read_file(path, config)) {
+    error = "cannot read config " + path;
+    return false;
+  }
+  AprvResult result = {-1, nullptr};
+  status = aprv_verifier_new_config(config.empty() ? nullptr : config.data(), config.size(), clock, &verifier,
+                                    &result);
+  document = result.json == nullptr ? std::string() : std::string(result.json);
+  aprv_string_free(result.json);
+  const bool built = status == APRV_REASON_OK;
+  if (result.status != status || built != (verifier != nullptr) || built != document.empty()) {
+    error = "aprv_verifier_new_config answered " + std::to_string(status) + ", its result holds " +
+            std::to_string(result.status) + " " + document;
+    aprv_verifier_free(verifier);
+    verifier = nullptr;
+    return false;
+  }
+  return true;
+}
+
+// A buildConfig case: it builds or it does not, and when it builds the two
+// reported values must match. `init` has no clock and building reads none, so
+// none is passed.
+bool run_build(const Case &kase, std::string &error) {
+  AprvVerifier *verifier = nullptr;
+  int status = 0;
+  std::string document;
+  if (!open_config(kase.get("config"), nullptr, verifier, status, document, error)) return false;
+  if (kase.get("expect") == "error") {
+    std::string token;
+    std::string reason;
+    std::string ignored;
+    const bool named = top_level_value(document, "reason", token) && json_string(token, reason, ignored) &&
+                       reason == "INVALID_ARGUMENT";
+    if (status != APRV_REASON_INVALID_ARGUMENT || !named) {
+      error = "expected a refusal, got status " + std::to_string(status) + " " + document;
+      aprv_verifier_free(verifier);
+      return false;
+    }
+    return true;
+  }
+  if (status != APRV_REASON_OK) {
+    error = "expected it to build, got status " + std::to_string(status) + " " + document;
+    return false;
+  }
+  char *urls = nullptr;
+  char *until = nullptr;
+  const int urls_status = aprv_verifier_revocation_urls(verifier, &urls);
+  const int until_status = aprv_verifier_revocation_valid_until_ms(verifier, &until);
+  aprv_verifier_free(verifier);
+  const std::string urls_text = urls == nullptr ? std::string() : std::string(urls);
+  const std::string until_text = until == nullptr ? std::string() : std::string(until);
+  aprv_string_free(urls);
+  aprv_string_free(until);
+  if (urls_status != APRV_REASON_OK || until_status != APRV_REASON_OK) {
+    error = "a revocation getter failed with status " + std::to_string(urls_status) + " and " +
+            std::to_string(until_status);
+    return false;
+  }
+  if (urls_text != kase.get("revocationUrls")) {
+    error = "revocation urls " + urls_text + ", want " + kase.get("revocationUrls");
+    return false;
+  }
+  if (until_text != kase.get("revocationValidUntilMs")) {
+    error = "revocation valid until " + until_text + ", want " + kase.get("revocationValidUntilMs");
+    return false;
+  }
+  return true;
+}
+
 bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   const std::string op = kase.get("op");
-
-  Anchors anchors;
-  if (kase.get("roots") == "files" && !anchors.load(kase, error)) return false;
 
   // A case that pins a clock names one instant; everything else reads the
   // system clock, which is what a NULL clock pointer asks the ABI for.
@@ -432,10 +508,24 @@ bool run_case(const Case &kase, std::string &error, Outcome &outcome) {
   if (pinned) clock_value = static_cast<int64_t>(std::stoll(kase.get("clockUnixMillis")));
   const int64_t *clock = pinned ? &clock_value : nullptr;
 
-  AprvVerifier *verifier = aprv_verifier_new(anchors.ders(), anchors.lens(), anchors.count(), clock);
-  if (verifier == nullptr) {
-    error = "aprv_verifier_new refused the configuration";
-    return false;
+  AprvVerifier *verifier = nullptr;
+  if (kase.has("config")) {
+    // Revocation settings: init's JSON, which holds the roots too.
+    int status = 0;
+    std::string document;
+    if (!open_config(kase.get("config"), clock, verifier, status, document, error)) return false;
+    if (status != APRV_REASON_OK) {
+      error = "aprv_verifier_new_config refused the configuration: " + document;
+      return false;
+    }
+  } else {
+    Anchors anchors;
+    if (kase.get("roots") == "files" && !anchors.load(kase, error)) return false;
+    verifier = aprv_verifier_new(anchors.ders(), anchors.lens(), anchors.count(), clock);
+    if (verifier == nullptr) {
+      error = "aprv_verifier_new refused the configuration";
+      return false;
+    }
   }
 
   if (op == "verifyReceipt" || op == "verifySignedData") {
@@ -721,7 +811,8 @@ int main(int argc, char **argv) {
   size_t checked_fields = 0;
   size_t skipped_to_json = 0;
   size_t decode_groups = 0;
-  size_t unreachable = 0;
+  size_t build_configs = 0;
+  size_t configured = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
   // case in cases.json, and the ids that reached a verdict: the coverage
   // self-check after the loop compares them.
@@ -757,14 +848,20 @@ int main(int argc, char **argv) {
       }
       continue;
     }
-    // A case the C ABI cannot express (revocation settings, buildConfig):
-    // the C ABI has no way to pass lists, issuers or distrust entries, so it
-    // is counted and never passed. Rust's own runner and every package run it.
-    if (kase.has("abiUnreachable")) {
+    // A buildConfig case, through the config constructor and the getters.
+    if (kase.get("op") == "buildConfig") {
       ran.insert(id);
-      unreachable += 1;
+      build_configs += 1;
+      std::string error;
+      if (run_build(kase, error)) {
+        passed += 1;
+      } else {
+        std::cerr << "FAIL  " << id << ": " << error << "\n";
+        failed += 1;
+      }
       continue;
     }
+    if (kase.has("config")) configured += 1;
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
     checked_fields += kase.all("field").size() + kase.all("length").size();
     if (kase.has("toJson")) skipped_to_json += 1;
@@ -821,8 +918,8 @@ int main(int argc, char **argv) {
             << " toJson values not compared here (no JSON parser), left to "
                "rust/ffi/tests/conformance.py\n";
   std::cout << decode_groups << " decodeBase64 groups through the verify calls\n";
-  std::cout << unreachable
-            << " revocation cases not reachable: the C ABI cannot pass revocation settings\n";
+  std::cout << build_configs << " buildConfig cases and " << configured
+            << " verify cases through aprv_verifier_new_config\n";
   if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";
     return 2;

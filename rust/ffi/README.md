@@ -57,10 +57,11 @@ Building from source is the only supported path today; see `ROADMAP.md`.
 
 ## The surface
 
-Ten symbols, all functions: the version string, a constructor and a
-destructor for the opaque `AprvVerifier` handle, three verification calls
-in two forms each (two fill an `AprvResult` struct, the endpoint call
-returns a string), and one function that frees those strings.
+Thirteen symbols, all functions: the version string, two constructors and a
+destructor for the opaque `AprvVerifier` handle, two getters for what a
+verifier reports about revocation, three verification calls in two forms
+each (two fill an `AprvResult` struct, the endpoint call returns a string),
+and one function that frees those strings.
 
 ```c
 const char *aprv_version(void);
@@ -68,6 +69,13 @@ const char *aprv_version(void);
 AprvVerifier *aprv_verifier_new(const uint8_t *const *ders, const size_t *lens, size_t count,
                                 const int64_t *fixed_clock_unix_millis);
 void          aprv_verifier_free(AprvVerifier *);
+
+/* Revocation settings: the JSON aprv.wasm's init takes, and what it answers. */
+int32_t aprv_verifier_new_config(const uint8_t *config_json, size_t len,
+                                 const int64_t *fixed_clock_unix_millis,
+                                 AprvVerifier **verifier, AprvResult *out);
+int32_t aprv_verifier_revocation_urls(const AprvVerifier *, char **urls_json);
+int32_t aprv_verifier_revocation_valid_until_ms(const AprvVerifier *, char **valid_until_json);
 
 /* Bytes in, aprv.wasm's documents out: use these. */
 int32_t aprv_verify_receipt_bytes(const AprvVerifier *, const uint8_t *receipt_base64, size_t len,
@@ -124,9 +132,55 @@ A request body over 3,145,728 UTF-8 bytes, the size at which Apple's own
 endpoint answers HTTP 413, gets `{"status":21002}` without being parsed. To
 answer 413 as Apple does, check the body's length in bytes before the call.
 
+### Revocation settings
+
+`aprv_verifier_new` takes roots and a clock and nothing else, and it still
+answers `17` for a certificate on the built-in revocation list. To pass
+Apple's lists, an issuer of your own or a `distrust` entry
+(`docs/design/revocation.md` §4), use `aprv_verifier_new_config`, which takes
+the JSON `aprv.wasm`'s `init` takes and reads it with the same reader
+(`rust/bindings/wire/schema/init-config.schema.json`):
+
+```c
+const char *config =
+    "{\"revocation_lists\":[\"<base64 of a downloaded list>\"],"
+    "\"distrust\":[{\"issuer\":\"<64 hex digits>\",\"serial\":\"<hex>\"}]}";
+AprvVerifier *verifier = NULL;
+AprvResult out = {0};
+int32_t status = aprv_verifier_new_config((const uint8_t *)config, strlen(config), NULL, &verifier, &out);
+if (status != APRV_REASON_OK) {
+  /* APRV_REASON_INVALID_ARGUMENT: out.json names the first problem and its index. */
+}
+aprv_string_free(out.json);
+```
+
+`roots` is a member of that JSON, as base64, so roots of your own go there
+too; no bytes at all, or `{}`, means the three Apple roots with no setting. A
+configuration is judged once, here: a refusal is
+`APRV_REASON_INVALID_ARGUMENT` with `{"reason":"INVALID_ARGUMENT","message":"..."}`
+in `out.json`, and on success `out.json` is `NULL`. On any non-zero return
+`*verifier` is left untouched, and a caught panic (`APRV_REASON_PANIC`) writes
+nothing to `out` either, so read the status from the return value.
+
+There is no setter, because a handle is immutable: to take new lists, build a
+new verifier and swap it in. The library downloads nothing. Two getters say
+what to download and when to worry, each writing JSON text you release with
+`aprv_string_free`:
+
+* `aprv_verifier_revocation_urls`: an array of URLs, the lists this verifier
+  would use. An added issuer's own list URL cannot be known; add it by hand.
+* `aprv_verifier_revocation_valid_until_ms`: the earliest `nextUpdate` among
+  the lists held, as epoch milliseconds, or `null` when an expected issuer has
+  no list held. `null` means live revocation is not fully in force and a date
+  in the past means a list is stale; monitoring alerts on either.
+
+Both are the values `init` answers as `revocation_urls` and
+`revocation_valid_until_ms`, byte for byte (`docs/rust-core/DECISIONS.md` R48).
+
 ### The clock
 
-`aprv_verifier_new` takes `const int64_t *fixed_clock_unix_millis`: one
+`aprv_verifier_new` and `aprv_verifier_new_config` take
+`const int64_t *fixed_clock_unix_millis`: one
 instant, in milliseconds since the Unix epoch. `NULL` means the system
 clock, which the core reads during a call only when that call needs the
 time. A pointer rather than a sentinel value because every `int64_t`
@@ -142,9 +196,10 @@ deliberately callback-free.
 in two places, as in every 0.7 port: the certificate-validity instant when
 the input states no usable signing date (a receipt without a readable
 creation date, a JWS without a usable `signedDate`), and the endpoint's
-`request_date` triple. No verifier rejects a payload for its age: how old a
-signed payload may be is the caller's decision, made on the `signedDate` in
-the JSON.
+`request_date` triple. With lists passed in it also judges whether a list
+whose `certificateHold` entry names a certificate on the path is still fresh.
+No verifier rejects a payload for its age: how old a signed payload may be is
+the caller's decision, made on the `signedDate` in the JSON.
 
 ### Why JSON is the interchange
 
@@ -163,7 +218,7 @@ is a tree with repeated groups and raw byte attributes. Modelling either as C
 structs would put every field of a wire format Apple extends at will into the
 ABI, and every field Apple added would then be a breaking change for every
 consumer in every language. One UTF-8 JSON document instead keeps the ABI at
-ten symbols and moves the schema question into a parser the caller already
+thirteen symbols and moves the schema question into a parser the caller already
 has.
 
 The receipt encoding is the JSON value every 0.7 port shares and the
@@ -184,8 +239,8 @@ the point.
   `INTERNAL_ERROR` kept their numbers; `13` `MALFORMED`, `14` `TOO_LARGE`,
   `15` `UNTRUSTED_CHAIN` and `16` `UNREADABLE_PAYLOAD` are new in 0.7, `17`
   `CERTIFICATE_REVOKED` in 0.14 (a certificate on the path is on the
-  built-in revocation list; this ABI takes no other revocation setting). The
-  0.6 codes `1`, `4` and `6` to `11` are retired and never reused.
+  built-in revocation list, or revoked by a list or a `distrust` entry given
+  to `aprv_verifier_new_config`). The 0.6 codes `1`, `4` and `6` to `11` are retired and never reused.
   `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the caller's fault: alert
   and reconcile rather than deny.
 * **`100`+** is a mistake in the call itself (a null pointer, a non-UTF-8
@@ -210,8 +265,10 @@ Match on the status or the token; never parse the message.
 * `aprv_verifier_new()` returns a handle the caller owns, or `NULL` if an
   argument was rejected. Release it with `aprv_verifier_free()`. Freeing
   `NULL` is a no-op; freeing twice is undefined behaviour.
-* `AprvResult.json` and the endpoint's `*response_json` are owned by the
-  caller. Release each with `aprv_string_free()` — **never** with the C
+* `aprv_verifier_new_config()` writes such a handle to `*verifier` when it
+  returns `APRV_REASON_OK`, and leaves `*verifier` untouched otherwise.
+* `AprvResult.json`, the endpoint's `*response_json` and the text of the two
+  revocation getters are owned by the caller. Release each with `aprv_string_free()` — **never** with the C
   runtime's `free()`, because the allocator is Rust's.
 * Every input pointer is borrowed for the duration of the call. Nothing
   retains it and nothing is written through it.
@@ -288,7 +345,9 @@ pointers the C++ harness cannot reach: `/receipt/bundle_id`,
 and every `toJson` value.
 
 Both harnesses drive the `_bytes` calls and run every case in the file,
-skipping none. A `decodeBase64` group reaches its decoder through a verify
+skipping none. A case with revocation settings hands `init`'s JSON to
+`aprv_verifier_new_config`, and a `buildConfig` case checks that it builds or
+is refused and what the two getters answer. A `decodeBase64` group reaches its decoder through a verify
 call, as `tools/wasm-trap-host.mjs` does: a receipt-data text as the input
 of `aprv_verify_receipt_bytes`, an x5c text as the three x5c entries of a
 JWS header, and a text lands on the refusing side of the base64 rule when
@@ -298,14 +357,16 @@ writes them with `--answers <dir>` for `tools/validate-wire.mjs`. A case
 that pins a clock passes the instant to `aprv_verifier_new`. A case with a
 `maxMillis` budget (the denial-of-service cases) runs once to warm up and
 fails if the second run takes longer. After the run every case id must have
-run. The Elixir example still drives the 0.7 C-string calls and counts the
-`decodeBase64` groups as not reachable.
+run. The Elixir example still drives the 0.7 C-string calls and
+`aprv_verifier_new`, and counts the `decodeBase64` groups and the revocation
+cases as not reachable.
 
 ## Example
 
 `examples/cpp/example.cpp` is the whole ABI on one page: a StoreKit 2
-transaction verified against the fixture root that signed it, and the genuine
-sandbox receipt verified against the bundled Apple roots.
+transaction verified against the fixture root that signed it, the genuine
+sandbox receipt verified against the bundled Apple roots, and a verifier from
+`init`'s JSON reporting what a host monitors about revocation.
 
 ```bash
 rust/ffi/target/cppbuild/bin/aprv_example \
@@ -322,6 +383,9 @@ transaction: status 0
 
 receipt: status 0
 {"receipt_type":"ProductionSandbox","app_item_id":"0","bundle_id":"...", ...}
+
+revocation urls: ["http://crl.apple.com/root.crl", ...]
+revocation valid until: null
 ```
 
 `examples/python/example.py` is the same page from Python, with nothing but
@@ -360,8 +424,9 @@ apple-purchase-receipt-verifier <version> — C ABI conformance over NIFs
 <N> passed, 0 failed, 0 skipped (<C> pin a clock, and every one of them ran)
 ```
 
-The same cases as the C++ harness, which is the point of running it: two
-consumers, one manifest, identical counts.
+The cases of the C++ harness that need neither a `_bytes` call nor
+`aprv_verifier_new_config`, which is the point of running it: two consumers,
+one manifest.
 
 Two things the shim does that a C caller does not have to think about.
 

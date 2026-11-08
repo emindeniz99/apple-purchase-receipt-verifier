@@ -15,6 +15,8 @@
  *   <outdir>/inputs/<case>.txt         the exact string the case passes
  *   <outdir>/requests/<case>.json      the verifyReceipt request body
  *   <outdir>/tojson/<case>.json        the toJson() value a case pins, as JSON
+ *   <outdir>/configs/<case>.json       init's JSON, for a case with
+ *                                      revocation settings or a buildConfig
  *   <outdir>/fixtures/<id>.bin         the DECODED logical bytes of a fixture
  *
  * Every registered fixture is re-hashed against its contentSha256 before
@@ -34,6 +36,11 @@
  *   id                  the case id
  *   op                  verifyReceipt | verifySignedData
  *                       | verifyReceiptEndpoint | decodeBase64 | buildConfig
+ *   config              path to init's JSON, which holds the case's roots and
+ *                       revocation settings: every buildConfig case and every
+ *                       verify case with a `revocation` member. A harness
+ *                       passes it to aprv_verifier_new_config, in place of
+ *                       `roots` and `root`
  *   input               path to the exact input string (verifyReceipt,
  *                       verifySignedData)
  *   request             path to the endpoint request body (endpoint cases)
@@ -43,7 +50,14 @@
  *   clockUnixMillis     the pinned `clock.now`, already parsed to epoch
  *                       milliseconds; absent when the case pins none
  *   expect              ok | error | oneof | body (an endpoint case, which
- *                       always answers a body and pins its fields)
+ *                       always answers a body and pins its fields); a
+ *                       buildConfig case is ok or error
+ *   revocationUrls      buildConfig cases that build: the JSON array
+ *                       aprv_verifier_revocation_urls must answer
+ *   revocationValidUntilMs
+ *                       buildConfig cases that build: what
+ *                       aprv_verifier_revocation_valid_until_ms must answer,
+ *                       epoch milliseconds or `null`
  *   reason              the canonical token, error cases only
  *   oneOf               the outcomes a oneof case allows, "ok" or reason
  *                       tokens joined by "|"
@@ -58,16 +72,11 @@
  *   maxMillis           a wall-clock budget for the call: the harness runs the
  *                       case once to warm up, then times a second run
  *   skippedFields       how many expected pointers this manifest DROPPED
- *   abiUnreachable      set on every decodeBase64 group, for a harness
- *                       that drives the 0.7 C-string calls (the Elixir
- *                       example), and on every case the C ABI cannot
- *                       express at all: a buildConfig case, or a verify
- *                       case with revocation settings (the C ABI has no
- *                       way to pass lists, issuers or distrust entries;
- *                       docs/design/revocation.md §8). A harness counts
- *                       such a case as not reachable, never as passed;
- *                       for the latter kind the line carries only `id`,
- *                       `op` and this key
+ *   abiUnreachable      set on every decodeBase64 group and every case with a
+ *                       `config`, for a harness that drives the 0.7 C-string
+ *                       calls and aprv_verifier_new alone (the Elixir
+ *                       example). Such a harness counts the case as not
+ *                       reachable, never as passed; the C++ harness runs it
  *   probe               a decodeBase64 group's inputs, one per decoder and
  *                       text (repeated): `<decoder>~><1 if the text is
  *                       empty, else 0>~><path>`, the path holding a
@@ -138,6 +147,30 @@ function x5cProbe(text) {
   return Buffer.from(`${b64url(JSON.stringify({ alg: 'ES256', x5c: [text, text, text] }))}.${b64url('{}')}.${b64url('signature')}`);
 }
 
+/**
+ * init's JSON for a configuration (a verify case's `config`, a buildConfig
+ * case's `input`), as tools/wasm-trap-host.mjs builds it: the roots as base64,
+ * none for the three Apple roots, then each revocation setting only when
+ * given, lists and issuers as base64 of the fixtures' bytes.
+ */
+function initConfig(id, settings, decoded) {
+  const b64 = (fixture) => {
+    const bytes = decoded.get(fixture);
+    if (bytes === undefined) fail(`case "${id}" names an unregistered fixture "${fixture}"`);
+    return bytes.toString('base64');
+  };
+  const config = {};
+  const spec = settings.trustedRoots;
+  if (spec !== undefined && spec.source !== 'defaults') config.roots = spec.fixtures.map((f) => b64(f));
+  const revocation = settings.revocation ?? {};
+  if (revocation.lists?.length) config.revocation_lists = revocation.lists.map((f) => b64(f));
+  if (revocation.issuers?.length) config.revocation_issuers = revocation.issuers.map((f) => b64(f));
+  if (revocation.distrust?.length) {
+    config.distrust = revocation.distrust.map(({ issuer, serial }) => ({ issuer, serial }));
+  }
+  return JSON.stringify(config);
+}
+
 function main() {
   const outDir = process.argv[2];
   if (!outDir) fail('usage: node tools/gen-cases-manifest.mjs <outdir>');
@@ -155,7 +188,7 @@ function main() {
 
   const out = resolve(outDir);
   rmSync(out, { recursive: true, force: true });
-  for (const dir of ['fixtures', 'inputs', 'requests', 'tojson']) {
+  for (const dir of ['fixtures', 'inputs', 'requests', 'tojson', 'configs']) {
     mkdirSync(join(out, dir), { recursive: true });
   }
 
@@ -176,7 +209,7 @@ function main() {
   const lines = [];
   let pinnedClocks = 0;
   let skippedFields = 0;
-  let unreachable = 0;
+  let decodeGroups = 0;
   let revocation = 0;
   for (const kase of file.cases) {
     const parts = [checkPart(kase.id, `id=${kase.id}`), `op=${kase.operation}`];
@@ -194,17 +227,33 @@ function main() {
         });
       }
       lines.push(parts.join('\t'));
-      unreachable += 1;
-      continue;
-    }
-    if (kase.operation === 'buildConfig' || kase.config?.revocation !== undefined) {
-      parts.push('abiUnreachable=the C ABI cannot pass revocation settings');
-      lines.push(parts.join('\t'));
-      unreachable += 1;
-      revocation += 1;
+      decodeGroups += 1;
       continue;
     }
     const name = safeName(kase.id);
+    if (kase.operation === 'buildConfig' || kase.config?.revocation !== undefined) {
+      const settings = kase.operation === 'buildConfig' ? kase.input : kase.config;
+      const configPath = join(out, 'configs', `${name}.json`);
+      writeFileSync(configPath, initConfig(kase.id, settings, decoded));
+      parts.push(`config=${configPath}`);
+      parts.push('abiUnreachable=aprv_verifier_new takes no revocation settings');
+      revocation += 1;
+    }
+    if (kase.operation === 'buildConfig') {
+      // It builds or it does not; when it builds, the two reported values.
+      const { status, revocationUrls, revocationValidUntil } = kase.expected;
+      parts.push(`expect=${status}`);
+      if (status === 'ok') {
+        const until = revocationValidUntil === null ? null : Date.parse(revocationValidUntil);
+        if (Number.isNaN(until)) {
+          fail(`case "${kase.id}" expects an unparseable revocationValidUntil "${revocationValidUntil}"`);
+        }
+        parts.push(checkPart(kase.id, `revocationUrls=${JSON.stringify(revocationUrls)}`));
+        parts.push(`revocationValidUntilMs=${until}`);
+      }
+      lines.push(parts.join('\t'));
+      continue;
+    }
 
     if (kase.maxMillis !== undefined) parts.push(`maxMillis=${kase.maxMillis}`);
 
@@ -304,8 +353,8 @@ function main() {
   process.stdout.write(
     `${lines.length} cases -> ${join(out, 'cases.tsv')} ` +
       `(${pinnedClocks} pin a clock, ${skippedFields} nested pointers dropped, ` +
-      `${unreachable - revocation} decodeBase64 groups as probes, `
-      + `${revocation} revocation cases the C ABI cannot express)\n`,
+      `${decodeGroups} decodeBase64 groups as probes, `
+      + `${revocation} revocation cases with a config)\n`,
   );
 }
 

@@ -1,6 +1,7 @@
 // The whole C ABI on one page: a StoreKit 2 transaction verified against the
-// fixture root that signed it, and the genuine sandbox receipt verified
-// against the three bundled Apple roots.
+// fixture root that signed it, the genuine sandbox receipt verified against
+// the three bundled Apple roots, and a verifier from init's JSON reporting what
+// a host monitors about revocation.
 //
 //   ./aprv_example <root.der> <transaction.jws> <receipt.b64>
 //
@@ -56,6 +57,27 @@ int main(int argc, char **argv) {
   aprv_verify_receipt(apple_verifier, receipt.c_str(), &app_receipt);
   failures += show("receipt", app_receipt);
   aprv_verifier_free(apple_verifier);
+
+  // Revocation settings arrive as the JSON aprv.wasm's init takes:
+  // {"revocation_lists":[...],"revocation_issuers":[...],"distrust":[...]}.
+  // `{}` is the bundled roots with no setting, which still reports Apple's lists.
+  const std::string config = "{}";
+  AprvVerifier *configured = nullptr;
+  AprvResult refusal = {0, nullptr};
+  if (aprv_verifier_new_config(reinterpret_cast<const uint8_t *>(config.data()), config.size(), nullptr,
+                               &configured, &refusal) != APRV_REASON_OK) {
+    show("configuration", refusal);
+    return 1;
+  }
+  char *urls = nullptr;
+  char *valid_until = nullptr;
+  aprv_verifier_revocation_urls(configured, &urls);
+  aprv_verifier_revocation_valid_until_ms(configured, &valid_until);
+  std::cout << "revocation urls: " << (urls == nullptr ? "" : urls) << "\n"
+            << "revocation valid until: " << (valid_until == nullptr ? "" : valid_until) << "\n";
+  aprv_string_free(urls);
+  aprv_string_free(valid_until);
+  aprv_verifier_free(configured);
 
   return failures == 0 ? 0 : 1;
 }

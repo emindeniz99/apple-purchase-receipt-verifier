@@ -239,17 +239,6 @@ DECISIONS.md R47). Its CI was green at 0583e252 and it waits on the
 owner's review. These items stay open after it; delete each in the commit
 that ships it.
 
-- **C ABI revocation settings (owner, 2026-11-08: to add).** `rust/ffi`
-  takes only the roots and the clock. It returns `17`
-  `CERTIFICATE_REVOKED` from the built-in list, but a C caller cannot pass
-  `revocation_lists`, `revocation_issuers` or `distrust`, and cannot read
-  `revocationUrls` or `revocationValidUntil`. 0.14 kept the C ABI to the
-  reason code because the settings mean new exported symbols. The likely
-  shape is a second constructor that takes the same init JSON the module
-  already reads, plus two getters; that is a decision for whoever picks it
-  up. It touches `rust/ffi/src/lib.rs`, the committed header
-  (`cbindgen.toml`, `check-header.sh`), `exported-symbols.txt`, the tests,
-  the C++ and ctypes examples and `rust/ffi/README.md`.
 - **Releasing 0.14.0.** After the owner reviews and merges #535. Count
   this month's Maven Central releases first (Release budget in
   AGENTS.md). The release pull request release-please opened for 0.13.1

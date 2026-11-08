@@ -30,10 +30,11 @@ names base64). Every document is checked to be the wire shape
 with a status that agrees, and an ok case's `expected.environment` against
 the document's; `--answers <dir>` also writes them, one per line, for
 tools/validate-wire.mjs (verify-receipt.jsonl, verify-signed-data.jsonl).
-After the run every case id in the file must have run, or be counted as
-unreachable: the C ABI has no way to pass revocation settings
-(docs/design/revocation.md §8), so a buildConfig case and a verify case with
-a `revocation` member are counted and never passed.
+A case with a `revocation` member, and a buildConfig case, goes through
+`aprv_verifier_new_config` with init's JSON, built as tools/wasm-trap-host.mjs
+builds it (docs/design/revocation.md §8); a buildConfig case that builds also
+checks the two revocation getters. After the run every case id in the file
+must have run.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from pathlib import Path
 # --- status codes, mirroring include/apple_purchase_receipt_verifier.h -----
 
 OK = 0
+INVALID_ARGUMENT = 102
 # The ABI's reason codes, pinned as the header declares them.
 REASON_CODES = {
     "MALFORMED": 13,
@@ -61,6 +63,7 @@ REASON_CODES = {
     "INVALID_CERTIFICATE_PURPOSE": 3,
     "UNREADABLE_PAYLOAD": 16,
     "INTERNAL_ERROR": 12,
+    "CERTIFICATE_REVOKED": 17,
 }
 
 ENDPOINT_ENVIRONMENTS = {"PRODUCTION": 1, "SANDBOX": 2}
@@ -94,6 +97,18 @@ def load_library(directory: Path) -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_int64),
     ]
     lib.aprv_verifier_new.restype = ctypes.c_void_p
+    lib.aprv_verifier_new_config.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(AprvResult),
+    ]
+    lib.aprv_verifier_new_config.restype = ctypes.c_int32
+    for name in ("aprv_verifier_revocation_urls", "aprv_verifier_revocation_valid_until_ms"):
+        function = getattr(lib, name)
+        function.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        function.restype = ctypes.c_int32
     lib.aprv_verifier_free.argtypes = [ctypes.c_void_p]
     for name in ("aprv_verify_receipt_bytes", "aprv_verify_signed_data_bytes"):
         function = getattr(lib, name)
@@ -165,19 +180,23 @@ def receipt_string(directory: Path, registry: dict, name: str) -> bytes:
     return data if registry[name]["codec"] == "text" else b64encode(data)
 
 
+def instant_millis(case: dict, text: str) -> int:
+    """An ISO-8601 instant from the case as epoch milliseconds."""
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise SystemExit(f'{case["id"]}: unparseable instant "{text}"') from None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return round(moment.timestamp() * 1000)
+
+
 def clock_millis(case: dict):
     """The case's pinned instant as epoch milliseconds, or `None`."""
     spec = case.get("clock")
     if not spec:
         return None
-    text = spec["now"]
-    try:
-        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        raise SystemExit(f'{case["id"]}: unparseable clock "{text}"') from None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return round(moment.timestamp() * 1000)
+    return instant_millis(case, spec["now"])
 
 
 # --- pointers -------------------------------------------------------------
@@ -231,8 +250,89 @@ def same_value(actual, wanted) -> bool:
 # --- one case -------------------------------------------------------------
 
 
+def init_config(directory: Path, registry: dict, settings: dict) -> bytes:
+    """init's JSON for a configuration (a verify case's `config`, a buildConfig
+    case's `input`), as tools/wasm-trap-host.mjs builds it: the roots as base64,
+    none for the three Apple roots, then each revocation setting only when
+    given, lists and issuers as base64 of the fixtures' bytes."""
+
+    def b64(name: str) -> str:
+        return b64encode(fixture_bytes(directory, registry, name)).decode("ascii")
+
+    config: dict = {}
+    roots = settings.get("trustedRoots")
+    if roots is not None and roots["source"] != "defaults":
+        config["roots"] = [b64(name) for name in roots["fixtures"]]
+    revocation = settings.get("revocation") or {}
+    if revocation.get("lists"):
+        config["revocation_lists"] = [b64(name) for name in revocation["lists"]]
+    if revocation.get("issuers"):
+        config["revocation_issuers"] = [b64(name) for name in revocation["issuers"]]
+    if revocation.get("distrust"):
+        config["distrust"] = [{"issuer": e["issuer"], "serial": e["serial"]} for e in revocation["distrust"]]
+    return json.dumps(config).encode("utf-8")
+
+
+def new_config(lib, config: bytes, millis):
+    """(status, handle or None, the refusal document or "") for one
+    `aprv_verifier_new_config` call; checks the outcome agrees with itself."""
+    clock = None if millis is None else ctypes.byref(ctypes.c_int64(millis))
+    handle = ctypes.c_void_p()
+    result = AprvResult()
+    status = lib.aprv_verifier_new_config(config, len(config), clock, ctypes.byref(handle), ctypes.byref(result))
+    text = take_string(lib, result.json)
+    if result.status != status or (status == OK) != bool(handle.value) or (status == OK) == bool(text):
+        raise SystemExit(f"aprv_verifier_new_config: status {status}, result {result.status}, handle {handle.value}: {text}")
+    return status, handle.value, text
+
+
+def reported(lib, name: str, verifier):
+    """The value one revocation getter answers, its text freed."""
+    text = ctypes.c_void_p()
+    status = getattr(lib, name)(verifier, ctypes.byref(text))
+    if status != OK:
+        raise SystemExit(f"{name}: the call itself failed with {status}")
+    return json.loads(take_string(lib, text.value))
+
+
+def run_build(lib, directory: Path, registry: dict, case: dict) -> str:
+    """A buildConfig case: it builds or it does not, and when it builds the two
+    reported values must match. `init` has no clock and building reads none, so
+    none is passed. An empty string when the case passes."""
+    expected = case["expected"]
+    status, verifier, text = new_config(lib, init_config(directory, registry, case["input"]), None)
+    if expected["status"] == "error":
+        if status != INVALID_ARGUMENT:
+            lib.aprv_verifier_free(verifier)
+            return f"expected a refusal, got status {status}"
+        document = json.loads(text)
+        if list(document) != ["reason", "message"] or document["reason"] != "INVALID_ARGUMENT":
+            return f"the refusal is not the error document: {text}"
+        return ""
+    if status != OK:
+        return f"expected it to build, got status {status}: {text}"
+    try:
+        urls = reported(lib, "aprv_verifier_revocation_urls", verifier)
+        until = reported(lib, "aprv_verifier_revocation_valid_until_ms", verifier)
+    finally:
+        lib.aprv_verifier_free(verifier)
+    if urls != expected["revocationUrls"]:
+        return f'revocation urls {urls}, want {expected["revocationUrls"]}'
+    wanted = expected["revocationValidUntil"]
+    wanted = None if wanted is None else instant_millis(case, wanted)
+    if until != wanted:
+        return f'revocation valid until {until}, want {wanted} ({expected["revocationValidUntil"]})'
+    return ""
+
+
 def verifier_for(lib, directory: Path, registry: dict, case: dict):
     """The verifier a case's config describes, and the buffers it borrowed."""
+    if "revocation" in case["config"]:
+        config = init_config(directory, registry, case["config"])
+        status, verifier, text = new_config(lib, config, clock_millis(case))
+        if status != OK:
+            raise SystemExit(f'{case["id"]}: aprv_verifier_new_config refused the configuration: {text}')
+        return verifier, []
     roots = case["config"]["trustedRoots"]
     keep = []
     if roots["source"] == "defaults":
@@ -454,11 +554,18 @@ def main() -> int:
     pinned_clocks = 0
     checked = 0
     decode_groups = 0
-    unreachable = 0
+    build_configs = 0
+    configured = 0
     for case in file["cases"]:
         ran.add(case["id"])
-        if case["operation"] == "buildConfig" or "revocation" in (case.get("config") or {}):
-            unreachable += 1
+        if case["operation"] == "buildConfig":
+            build_configs += 1
+            problem = run_build(lib, directory, registry, case)
+            if problem:
+                print(f'FAIL  {case["id"]}: {problem}', file=sys.stderr)
+                failed += 1
+            else:
+                passed += 1
             continue
         if case["operation"] == "decodeBase64":
             decode_groups += 1
@@ -471,6 +578,8 @@ def main() -> int:
             continue
         if case.get("clock"):
             pinned_clocks += 1
+        if "revocation" in case["config"]:
+            configured += 1
         expected = case["expected"]
         checked += len(expected.get("fields") or {}) + len(expected.get("lengths") or {})
         budget = case.get("maxMillis")
@@ -494,7 +603,7 @@ def main() -> int:
     print(f"{passed} passed, {failed} failed, 0 skipped ({pinned_clocks} pin a clock)")
     print(f"{checked} expected fields and lengths checked, nested pointers included")
     print(f"{decode_groups} decodeBase64 groups through the verify calls")
-    print(f"{unreachable} revocation cases not reachable: the C ABI cannot pass revocation settings")
+    print(f"{build_configs} buildConfig cases and {configured} verify cases through aprv_verifier_new_config")
     if answers is not None:
         answers.mkdir(parents=True, exist_ok=True)
         for function, lines in ANSWERS.items():
