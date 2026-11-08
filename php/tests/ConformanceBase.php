@@ -375,9 +375,15 @@ abstract class ConformanceBase extends TestCase
         $verifier = $factory($config);
         self::assertSame($expected['revocationUrls'], $verifier->revocationUrls(), "{$id}: revocationUrls");
         $until = $verifier->revocationValidUntil();
+        // The shared cases state whole seconds. The instant is compared to the
+        // millisecond, so a whole second is the same instant written with .000.
+        $wantUntil = $expected['revocationValidUntil'];
+        if (is_string($wantUntil) && str_ends_with($wantUntil, 'Z') && !str_contains($wantUntil, '.')) {
+            $wantUntil = substr($wantUntil, 0, -1) . '.000Z';
+        }
         self::assertSame(
-            $expected['revocationValidUntil'],
-            $until?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'),
+            $wantUntil,
+            $until?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z'),
             "{$id}: revocationValidUntil",
         );
     }
