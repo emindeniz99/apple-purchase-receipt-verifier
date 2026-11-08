@@ -13,8 +13,9 @@ defmodule ConformanceTest do
   library itself. Reusing it keeps this file about the boundary.
 
   Both this and `rust/ffi/examples/cpp/conformance.cpp` run every case in
-  `fixtures/cases.json` and skip none, except the `decodeBase64` groups:
-  they call a port's base64 decoders directly, the ABI exposes none, and the
+  `fixtures/cases.json` and skip none, except the `decodeBase64` groups
+  (they call a port's base64 decoders directly, and the ABI exposes none)
+  and the revocation cases (the C ABI cannot pass revocation settings): the
   manifest marks them `abiUnreachable`, so they are counted and never passed.
   After the run, every case id in the manifest must have run or been counted.
   A case that pins a clock passes the instant to `aprv_verifier_new`; the
@@ -72,7 +73,8 @@ defmodule ConformanceTest do
     IO.puts("#{checked_fields} expected fields checked here, nested paths left to conformance.py")
 
     IO.puts(
-      "#{MapSet.size(unreachable)} decodeBase64 groups not reachable: the ABI exposes no base64 decoder"
+      "#{MapSet.size(unreachable)} cases not reachable: decodeBase64 groups (the ABI exposes no " <>
+        "base64 decoder) and revocation cases (it cannot pass revocation settings)"
     )
 
     assert failures == [],
@@ -89,9 +91,9 @@ defmodule ConformanceTest do
            "#{length(missing)} of #{length(cases)} cases did not run: #{Enum.join(missing, ", ")}"
   end
 
-  # One case into the running totals. A decodeBase64 group is counted as
-  # unreachable and never passed: it calls a port's base64 decoders directly,
-  # and the ABI exposes none.
+  # One case into the running totals. A decodeBase64 group or a revocation
+  # case is counted as unreachable and never passed: the ABI exposes no
+  # base64 decoder and cannot pass revocation settings.
   defp tally(kase, {failures, passed, skipped, fields, ran, unreachable}) do
     id = get(kase, "id")
     fields = fields + length(all(kase, "field")) + length(all(kase, "length"))

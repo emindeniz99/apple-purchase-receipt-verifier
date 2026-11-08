@@ -51,13 +51,15 @@ class AbiTest < Minitest::Test
   # --- the interface's contract --------------------------------------------------
 
   # An accepting answer states the most bytes of one input the module needs
-  # (DECISIONS.md R42), a positive integer and nothing else beside ok.
+  # (DECISIONS.md R42), a positive integer, and the revocation state of the
+  # configuration (docs/design/revocation.md §8), and nothing else beside ok.
   def assert_accepting_init_answer(text)
     answer = JSON.parse(text)
-    assert_equal %w[max_input_bytes ok], answer.keys.sort
+    assert_equal %w[max_input_bytes ok revocation_urls revocation_valid_until_ms], answer.keys.sort
     assert_same true, answer["ok"]
     assert_kind_of Integer, answer["max_input_bytes"]
     assert_operator answer["max_input_bytes"], :>, 0
+    assert(answer["revocation_urls"].all?(String))
   end
 
   def test_init_with_no_roots_answers_ok

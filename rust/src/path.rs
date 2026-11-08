@@ -179,7 +179,7 @@ fn structural_failure(kind: PathProblemKind) -> Failure {
 /// [`authenticated_top_down`] accepted, the signer among it, and the
 /// signer's key is one OpenSSL can build.
 ///
-/// Returns the path below the anchor, signer first.
+/// Returns the path, signer first and ending at the anchor it reached.
 ///
 /// # Errors
 /// `UNTRUSTED_CHAIN` when no path reaches a pinned anchor, or a certificate
@@ -211,12 +211,11 @@ pub fn receipt_path(
     if !outcome.problems.is_empty() {
         return Err(unprocessed_critical_extension());
     }
-    let mut path = outcome.chain;
-    path.pop();
-    Ok(path)
+    Ok(outcome.chain)
 }
 
-/// Validates the fixed JWS path: leaf, intermediate, pinned anchor.
+/// Validates the fixed JWS path: leaf, intermediate, pinned anchor, and
+/// returns the anchor the path reached.
 ///
 /// The two signatures are checked from the anchor down first, so no key an
 /// anchor did not vouch for is used. Then OpenSSL judges the path, and its
@@ -235,7 +234,7 @@ pub fn validate_pair(
     intermediate: &Certificate,
     anchors: &[TrustAnchor],
     at_millis: i64,
-) -> Result<(), Failure> {
+) -> Result<Certificate, Failure> {
     if !anchors
         .iter()
         .any(|anchor| intermediate.issued_by(anchor.certificate()))
@@ -297,11 +296,11 @@ pub fn validate_pair(
             "certificate chain does not validate to a pinned root",
         ));
     }
-    let [path_leaf, path_intermediate, _anchor] = outcome.chain.as_slice() else {
+    let [path_leaf, path_intermediate, anchor] = outcome.chain.as_slice() else {
         return Err(untrusted("path is not leaf, x5c[1], pinned root"));
     };
     if !outcome.anchored || !path_leaf.same_as(leaf) || !path_intermediate.same_as(intermediate) {
         return Err(untrusted("path is not leaf, x5c[1], pinned root"));
     }
-    Ok(())
+    Ok(anchor.clone())
 }

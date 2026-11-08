@@ -23,12 +23,15 @@ require "json"
 #     env 0: {"status":21007}, env 1: {"status":0}, any other env: a trap;
 #     input "t": a trap; input "c": as above for now-ms; else as env says
 #   init
-#     `{"ok":true,"max_input_bytes":3145729}` (or the answer `wat(init:)`
-#     names), except a root whose base64 starts with "X" (`ok:false`); a
-#     second init, and any verify before init, trap
+#     the real module's answer for Apple's roots, max_input_bytes 3145729,
+#     the four Apple list URLs and a null revocation_valid_until_ms (or the
+#     answer `wat(init:)` names), except a root whose base64 starts with "X"
+#     (`ok:false`); a second init, and any verify before init, trap
 module FakeModule
   ANSWERS = {
-    ok: '{"ok":true,"max_input_bytes":3145729}',
+    ok: '{"ok":true,"max_input_bytes":3145729,"revocation_urls":["http://crl.apple.com/root.crl",' \
+        '"http://crl.apple.com/applerootcag3.crl","http://crl.apple.com/wwdrg5.crl",' \
+        '"http://crl.apple.com/wwdrg6.crl"],"revocation_valid_until_ms":null}',
     refused: '{"ok":false,"message":"root 0 is not a certificate"}',
     receipt: JSON.generate(
       "verified" => true,

@@ -25,6 +25,22 @@ use Psr\Clock\ClockInterface;
  * the module uses it for the chain check when the receipt or JWS carries no
  * signing date, and for `request_date` in the endpoint response. A
  * caller-supplied clock must be safe to call from several requests.
+ *
+ * **Revocation** (docs/design/revocation.md). The module always applies
+ * the built-in list of revoked Apple certificates. On top of it:
+ * `revocationLists` are Apple's CRL files exactly as downloaded (DER),
+ * from the URLs {@see Verifier::revocationUrls()} names, any order;
+ * `revocationIssuers` are CA certificates that sign lists, added to the
+ * built-in WWDR G5 and G6, DER or PEM like the roots; `distrust` names
+ * certificates to refuse ({@see RevokedCertificate}). Each defaults to
+ * empty. `aprv` judges every one when {@see Verifier::create()} runs and
+ * refuses the configuration naming the first problem: a list that is not
+ * a CRL, is over 1 MiB, or no configured issuer signed it, more than 16
+ * lists, an issuer that does not chain to the roots, more than 1,000
+ * distrust entries or a malformed one. A list from a newer format Apple
+ * may adopt is ignored, not refused, and then counts as missing in
+ * {@see Verifier::revocationValidUntil()}. To pick up new lists, build a
+ * new `Verifier` and swap it in; nothing here fetches or refreshes.
  */
 final readonly class Config
 {
@@ -33,6 +49,15 @@ final readonly class Config
 
     public ClockInterface $clock;
 
+    /** @var list<string> DER bytes of each revocation list, as downloaded */
+    public array $revocationLists;
+
+    /** @var list<string> DER or PEM bytes of each CA certificate added as a signer of lists */
+    public array $revocationIssuers;
+
+    /** @var list<RevokedCertificate> the certificates to refuse */
+    public array $distrust;
+
     /**
      * Pass only what differs from the defaults, by name:
      * `new Config(roots: $myRoots, clock: $myClock)`.
@@ -40,15 +65,31 @@ final readonly class Config
      * @param iterable<string>|null $roots DER or PEM bytes of the trust anchors;
      *        null, the default, means the module's built-in Apple roots
      * @param ClockInterface $clock the system clock by default
+     * @param iterable<string> $revocationLists DER bytes of each revocation list (CRL), as downloaded
+     * @param iterable<string> $revocationIssuers DER or PEM bytes of each CA certificate that signs lists
+     * @param iterable<RevokedCertificate> $distrust certificates to refuse
      */
     public function __construct(
         ?iterable $roots = null,
         ClockInterface $clock = new SystemClock(),
+        iterable $revocationLists = [],
+        iterable $revocationIssuers = [],
+        iterable $distrust = [],
     ) {
-        if ($roots !== null) {
-            $roots = is_array($roots) ? array_values($roots) : iterator_to_array($roots, false);
-        }
-        $this->roots = $roots;
+        $this->roots = $roots === null ? null : self::toList($roots);
         $this->clock = $clock;
+        $this->revocationLists = self::toList($revocationLists);
+        $this->revocationIssuers = self::toList($revocationIssuers);
+        $this->distrust = self::toList($distrust);
+    }
+
+    /**
+     * @template T
+     * @param iterable<T> $values
+     * @return list<T>
+     */
+    private static function toList(iterable $values): array
+    {
+        return is_array($values) ? array_values($values) : iterator_to_array($values, false);
     }
 }

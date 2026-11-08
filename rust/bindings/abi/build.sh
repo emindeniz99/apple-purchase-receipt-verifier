@@ -132,7 +132,7 @@ FLAGS=(
 RUSTFLAGS_WASM="$(printf '%s\x1f' "${FLAGS[@]}")"
 RUSTFLAGS_WASM="${RUSTFLAGS_WASM%$'\x1f'}"
 
-# aprv-openssl compiles payload.c and envelope.c through the cc crate: the
+# aprv-openssl compiles payload.c, envelope.c and crl.c through the cc crate: the
 # same clang, the same sysroot and the same emulation macros OpenSSL was
 # built with.
 C_FLAGS="--target=wasm32-wasip1 --sysroot=$SYSROOT -ffile-prefix-map=$REPO=/aprv/src -ffile-prefix-map=$CARGO_HOME_DIR=/aprv/cargo -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID"

@@ -99,6 +99,10 @@ abstract class ConformanceCases {
             assertTrue(failures.isEmpty(), String.join("\n", failures));
             return;
         }
+        if ("buildConfig".equals(operation)) {
+            buildConfig(id, Cases.config(kase), expected);
+            return;
+        }
         Verifier verifier = verifier(Cases.config(kase));
         JsonNode input = kase.get("input");
         if ("verifyReceiptEndpoint".equals(operation)) {
@@ -210,6 +214,34 @@ abstract class ConformanceCases {
             json = ((JsonPayload) payload).json();
         }
         check(id, expected, parse(id, json));
+    }
+
+    /**
+     * A buildConfig case: the configuration builds, and the verifier
+     * reports the case's {@code revocationUrls} (in order) and
+     * {@code revocationValidUntil}; or {@code create} refuses it with
+     * {@link IllegalArgumentException}.
+     */
+    private void buildConfig(String id, Config config, JsonNode expected) throws Exception {
+        if ("error".equals(expected.get("status").asText())) {
+            try {
+                verifier(config);
+            } catch (IllegalArgumentException e) {
+                return;
+            }
+            fail(id + ": the configuration was taken; expected a refusal");
+        }
+        Verifier verifier = verifier(config);
+        List<String> urls = new ArrayList<>();
+        for (JsonNode url : expected.get("revocationUrls")) {
+            urls.add(url.asText());
+        }
+        assertEquals(urls, verifier.revocationUrls(), id + ": revocationUrls");
+        JsonNode until = expected.get("revocationValidUntil");
+        assertEquals(
+                until.isNull() ? null : java.time.Instant.parse(until.asText()),
+                verifier.revocationValidUntil(),
+                id + ": revocationValidUntil");
     }
 
     private static VerificationResult<?> call(Verifier verifier, boolean receipt, String argument) {

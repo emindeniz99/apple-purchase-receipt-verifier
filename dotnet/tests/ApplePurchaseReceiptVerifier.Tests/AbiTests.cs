@@ -36,14 +36,17 @@ public class AbiTests
 
     /// <summary>
     /// An accepting <c>init</c> answer states the most bytes of one input the
-    /// module needs (DECISIONS.md R42): a positive integer, and nothing else
-    /// beside <c>ok</c>.
+    /// module needs (DECISIONS.md R42), a positive integer, and the revocation
+    /// state of the configuration (docs/design/revocation.md §8), and nothing
+    /// else beside <c>ok</c>.
     /// </summary>
     private static int AssertAccepts(string answer)
     {
         using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(answer);
         System.Text.Json.JsonElement root = document.RootElement;
-        Assert.Equal(2, root.EnumerateObject().Count());
+        Assert.Equal(4, root.EnumerateObject().Count());
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, root.GetProperty("revocation_urls").ValueKind);
+        Assert.True(root.TryGetProperty("revocation_valid_until_ms", out _), answer);
         Assert.True(root.GetProperty("ok").GetBoolean(), answer);
         int max = root.GetProperty("max_input_bytes").GetInt32();
         Assert.True(max > 0, answer);

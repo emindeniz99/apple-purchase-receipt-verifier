@@ -3,7 +3,7 @@ receipts) with zero Apple server calls. docs/design/0.7-api.md is the
 normative spec this package mirrors."""
 
 from . import apple_status
-from .config import Config
+from .config import Config, RevokedCertificate
 from .environment import Environment
 from .reason import Reason
 from .receipt_payload import InAppPurchase, JsonPayload, ReceiptPayload
@@ -20,6 +20,7 @@ __all__ = [
     "JsonPayload",
     "Reason",
     "ReceiptPayload",
+    "RevokedCertificate",
     "VerificationResult",
     "Verifier",
     "apple_status",

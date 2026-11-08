@@ -14,6 +14,7 @@ use crate::error::{Failure, Reason};
 use crate::json::{string, top_level_members};
 use crate::receipt;
 use crate::receipt_payload::{InAppPurchase, ReceiptPayload};
+use crate::revocation::Revocation;
 use crate::roots::TrustAnchor;
 use crate::verifier::Clock;
 use serde_json::{Map, Value as JsonValue};
@@ -73,10 +74,11 @@ pub(crate) fn respond(
     environment: Environment,
     request_json: &[u8],
     anchors: &[TrustAnchor],
+    revocation: &Revocation,
     clock: &Clock<'_>,
 ) -> String {
     let verified = receipt_data(request_json)
-        .and_then(|data| receipt::verify(data.as_bytes(), anchors, clock));
+        .and_then(|data| receipt::verify(data.as_bytes(), anchors, revocation, clock));
     match verified {
         Ok(payload) => {
             let production = payload.environment() == Some(Environment::Production);
@@ -118,7 +120,8 @@ pub(crate) const fn status(reason: Reason) -> i32 {
         Reason::InvalidSignature
         | Reason::UntrustedChain
         | Reason::InvalidCertificate
-        | Reason::InvalidCertificatePurpose => AppleStatus::RECEIPT_NOT_AUTHENTICATED,
+        | Reason::InvalidCertificatePurpose
+        | Reason::CertificateRevoked => AppleStatus::RECEIPT_NOT_AUTHENTICATED,
         Reason::UnreadablePayload | Reason::InternalError => {
             AppleStatus::INTERNAL_DATA_ACCESS_ERROR
         }

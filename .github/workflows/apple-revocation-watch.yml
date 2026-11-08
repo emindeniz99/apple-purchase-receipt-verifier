@@ -1,0 +1,53 @@
+# Watches Apple's certificate revocation lists against the built-in list,
+# certs/revocations.json (docs/design/revocation.md §5).
+# tools/refresh-apple-revocations.mjs --check downloads the list of every
+# issuer in that file, verifies it with openssl against the issuer
+# certificate in certs/, and fails (= notifies) on a new or vanished
+# entry, a changed reason, a list it refuses, or a WWDR intermediate on
+# Apple's PKI page that is not one of the issuers. A newer list alone is
+# written to the job summary and passes: WWDR G6's is reissued daily.
+#
+# It only reports. The owner runs the tool without --check, reviews the
+# diff to certs/revocations.json and rust/certs/revocations.json, and
+# opens the pull request; a release ships it.
+#
+# Scheduled runs happen on the default branch only.
+name: apple-revocation-watch
+
+on:
+  schedule:
+    - cron: "17 7 * * 1" # weekly, Monday 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      # Exit 1: something to act on. Exit 2: Apple's lists or PKI page
+      # could not be read, or the tool failed; the summary says which.
+      - name: compare Apple's lists against certs/revocations.json
+        run: |
+          set +e
+          node tools/refresh-apple-revocations.mjs --check > "$RUNNER_TEMP/revocations.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/revocations.txt"
+          {
+            echo "### apple-revocation-watch (exit $status)"
+            echo
+            # Indented four spaces: the summary shows the report as code,
+            # so nothing in it is read as Markdown.
+            sed 's/^/    /' "$RUNNER_TEMP/revocations.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

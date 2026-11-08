@@ -5,9 +5,10 @@
  * the module's.
  *
  * The verify methods never throw for any input. A null `Config`, an empty
- * root set, a root the module refuses, a module that is not the one this
- * package binds, and an `Environment` other than the two values are
- * programming errors and throw from `createVerifier` or the endpoint call.
+ * root set, a root or revocation setting the module refuses, a module that
+ * is not the one this package binds, and an `Environment` other than the
+ * two values are programming errors and throw from `createVerifier` or the
+ * endpoint call.
  */
 import { InitRefusedError, Slot, initConfig, type Bindings } from './engine.js';
 import type { Config } from './config.js';
@@ -25,6 +26,20 @@ export interface Verifier {
   verifyReceipt(base64: string): VerificationResult<ReceiptPayload>;
   verifySignedData(jws: string): VerificationResult<JsonPayload>;
   verifyReceiptEndpoint(environment: Environment, requestJson: string): string;
+  /**
+   * The URLs of the revocation lists this verifier would use, for the caller
+   * to download (README, "Revocation"): the built-in issuers' lists that
+   * chain to the configured roots, then the http and https distribution
+   * points of `revocationIssuers`, each once.
+   */
+  revocationUrls(): readonly string[];
+  /**
+   * The earliest `nextUpdate` among the lists held for the issuers this
+   * verifier expects lists from, or `null` when one of them has none.
+   * `null` means live revocation is not fully in force; a date in the past
+   * means a list is stale. Alert on either.
+   */
+  revocationValidUntil(): Date | null;
 }
 
 const REASONS = new Set<string>(Object.values(Reason));
@@ -174,14 +189,20 @@ function endpointAnswer(text: string): string {
   return text;
 }
 
-function initRoots(config: Config): Uint8Array {
-  if (config.roots === null) {
-    return initConfig();
+function initConfigOf(config: Config): Uint8Array {
+  let roots: string[] | undefined;
+  if (config.roots !== null) {
+    if (!Array.isArray(config.roots) || config.roots.length === 0) {
+      throw new TypeError('config.roots must not be empty');
+    }
+    roots = config.roots.map(rootToBase64);
   }
-  if (!Array.isArray(config.roots) || config.roots.length === 0) {
-    throw new TypeError('config.roots must not be empty');
-  }
-  return initConfig(config.roots.map(rootToBase64));
+  // A config written by hand rather than by createConfig may leave these out.
+  return initConfig(roots, {
+    lists: (config.revocationLists ?? []).map(rootToBase64),
+    issuers: (config.revocationIssuers ?? []).map(rootToBase64),
+    distrust: config.distrust ?? [],
+  });
 }
 
 /**
@@ -189,7 +210,9 @@ function initRoots(config: Config): Uint8Array {
  *
  * @throws {TypeError} if `config` is null/undefined, its roots are empty (a
  * verifier with no roots would answer `UNTRUSTED_CHAIN` to everything and
- * nobody would notice until production), or aprv.wasm refuses one of them.
+ * nobody would notice until production), or aprv.wasm refuses one of them
+ * or a revocation setting; the message names the first problem and its
+ * index (docs/design/revocation.md §4).
  * @throws {Error} if aprv.wasm is not the module this package binds.
  */
 export function createVerifier(config: Config): Verifier {
@@ -199,15 +222,16 @@ export function createVerifier(config: Config): Verifier {
   const clock = config.clock;
   let slot: Slot;
   try {
-    slot = new Slot(initRoots(config));
+    slot = new Slot(initConfigOf(config));
   } catch (error) {
     if (error instanceof InitRefusedError) {
-      throw new TypeError(`aprv.wasm refused a configured root: ${error.message}`, {
+      throw new TypeError(`aprv.wasm refused the configuration: ${error.message}`, {
         cause: error,
       });
     }
     throw error;
   }
+  const { revocationUrls, revocationValidUntilMs } = slot.initAnswer;
 
   function verify<T>(
     input: unknown,
@@ -240,6 +264,13 @@ export function createVerifier(config: Config): Verifier {
       } catch {
         return ENDPOINT_INTERNAL_ERROR;
       }
+    },
+    revocationUrls(): readonly string[] {
+      return revocationUrls;
+    },
+    revocationValidUntil(): Date | null {
+      // A new Date each call: a Date is mutable.
+      return revocationValidUntilMs === null ? null : new Date(revocationValidUntilMs);
     },
   };
 }

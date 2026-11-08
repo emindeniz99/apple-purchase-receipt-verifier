@@ -19,9 +19,11 @@
 //!   clock to read (the C ABI given a null clock) uses the `_by_clock`
 //!   calls instead, and the core reads the system clock, only when the
 //!   call needs the time. The core uses the instant
-//!   for two things only: the certificate-validity instant when the
-//!   receipt or JWS carries no usable signing date, and `request_date` in
-//!   the endpoint response.
+//!   for three things only: the certificate-validity instant when the
+//!   receipt or JWS carries no usable signing date, `request_date` in the
+//!   endpoint response, and whether a revocation list whose
+//!   `certificateHold` entry names a certificate on the path is still
+//!   fresh.
 //! - **No unsigned integers, but for one.** Ids are `i64`, since an ASN.1
 //!   INTEGER in hostile input can be negative. The receipt types are the
 //!   core's own, so an unknown attribute's type is the core's `u32`, which
@@ -53,7 +55,8 @@ pub const VERSION: &str = core_api::VERSION;
 /// The core's verdict and environment types, handed out as the core returns
 /// them, so each is defined once; their doc comments are in the core.
 ///
-/// - [`Reason`]: the eight 0.7 reasons, spelled on the wire by
+/// - [`Reason`]: the nine reasons (the eight of 0.7 and
+///   `CERTIFICATE_REVOKED`, 0.14), spelled on the wire by
 ///   [`Reason::as_str`], read back with `str::parse`.
 /// - [`Failure`]: a [`Reason`] and a message. Its `source()` chain is
 ///   Rust-only: `aprv-wire` and the C ABI write the reason and the message
@@ -83,13 +86,76 @@ pub use core_api::{InAppPurchase, ReceiptPayload, UnknownAttributes};
 
 // --------------------------------------------------------------- config
 
+/// Certificates read from a configuration member, beside the (entry index,
+/// place in that entry) each one came from.
+type ReadCertificates = (Vec<core_api::TrustAnchor>, Vec<(usize, usize)>);
+
+/// Each of `entries` read as the core reads a root, DER or PEM, every
+/// certificate of a PEM bundle in its place; the first that is not a
+/// certificate is named as `member[index]`. Beside them, for each
+/// certificate, the index of the entry it came from and its place in that
+/// entry, so a refusal the core makes by certificate can name the entry.
+fn certificates(member: &str, entries: &[Vec<u8>]) -> Result<ReadCertificates, ConfigError> {
+    let mut read = Vec::with_capacity(entries.len());
+    let mut origin = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let anchors = core_api::TrustAnchor::from_der_or_pem(entry).map_err(|err| ConfigError {
+            message: format!("{member}[{index}]: {}", err.detail()),
+        })?;
+        origin.extend((0..anchors.len()).map(|place| (index, place)));
+        read.extend(anchors);
+    }
+    Ok((read, origin))
+}
+
+/// The core's refusal, with a `revocation_issuers[i]` index, which counts
+/// certificates, turned into the index of the entry given (and the
+/// certificate's place when that entry is a PEM bundle of several).
+fn entry_named(detail: &str, origin: &[(usize, usize)]) -> String {
+    const PREFIX: &str = "revocation_issuers[";
+    let Some(rest) = detail.strip_prefix(PREFIX) else {
+        return detail.to_owned();
+    };
+    let Some((digits, tail)) = rest.split_once(']') else {
+        return detail.to_owned();
+    };
+    let Some(&(index, place)) = digits.parse::<usize>().ok().and_then(|i| origin.get(i)) else {
+        return detail.to_owned();
+    };
+    if origin.iter().filter(|(entry, _)| *entry == index).count() > 1 {
+        format!(
+            "{PREFIX}{index}] (certificate {} of its PEM text){tail}",
+            place + 1
+        )
+    } else {
+        format!("{PREFIX}{index}]{tail}")
+    }
+}
+
 /// A configuration that cannot make a verifier: a root that is not a
-/// certificate, or bundled roots that did not load. Not a verdict about any
+/// certificate, a revocation setting the core refuses, or bundled roots or
+/// a built-in revocation list that did not load. Not a verdict about any
 /// input; it happens once, when the verifier is made.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigError {
     /// What was wrong, safe to show.
     pub message: String,
+}
+
+/// The revocation settings of a configuration (docs/design/revocation.md
+/// §4), as bytes and text. Every member is empty by default, and the core
+/// judges all of it when the verifier is made.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Revocation {
+    /// Certificate revocation lists exactly as downloaded (DER), any order.
+    /// At most 16, each at most 1 MiB, 100,000 entries in all.
+    pub lists: Vec<Vec<u8>>,
+    /// CA certificates that sign lists, each one DER certificate or PEM
+    /// text, as a root is given.
+    pub issuers: Vec<Vec<u8>>,
+    /// Revocation keys to refuse: an issuer id (64 hex digits) and a
+    /// serial in hex. At most 1,000.
+    pub distrust: Vec<(String, String)>,
 }
 
 /// Decodes base64 text by the core's `receipt-data` rule (non-empty
@@ -124,29 +190,60 @@ impl Verifier {
     ///
     /// # Errors
     /// [`ConfigError`] naming the first root that is not a certificate (by
-    /// its index), or saying the bundled roots did not load.
+    /// its index), or saying the bundled roots or the built-in revocation
+    /// list did not load.
     pub fn new(roots: &[Vec<u8>]) -> Result<Verifier, ConfigError> {
+        Verifier::with_revocation(roots, &Revocation::default())
+    }
+
+    /// [`new`](Verifier::new) with revocation settings
+    /// (docs/design/revocation.md §4). The core reads every list, judges
+    /// every issuer and every `distrust` entry here, once.
+    ///
+    /// # Errors
+    /// [`ConfigError`] naming the first root or issuer that is not a
+    /// certificate (by its index), or the first revocation setting the
+    /// core refuses, with its index; or saying the bundled roots or the
+    /// built-in revocation list did not load.
+    pub fn with_revocation(
+        roots: &[Vec<u8>],
+        revocation: &Revocation,
+    ) -> Result<Verifier, ConfigError> {
         // The core's default clock, the system clock: the `_by_clock`
         // calls read it, lazily; the others pass their instant to the
         // core's `_at` methods, which never read it.
         let mut builder = core_api::Config::builder();
         if !roots.is_empty() {
-            let mut anchors = Vec::with_capacity(roots.len());
-            for (index, root) in roots.iter().enumerate() {
-                let read =
-                    core_api::TrustAnchor::from_der_or_pem(root).map_err(|err| ConfigError {
-                        message: format!("roots[{index}]: {}", err.detail()),
-                    })?;
-                anchors.extend(read);
-            }
-            builder = builder.roots(anchors);
+            builder = builder.roots(certificates("roots", roots)?.0);
         }
-        let config = builder.build().map_err(|_| ConfigError {
-            message: "the bundled Apple roots did not load".to_owned(),
-        })?;
+        let (issuers, origin) = certificates("revocation_issuers", &revocation.issuers)?;
+        let config = builder
+            .revocation_lists(revocation.lists.iter().cloned())
+            .revocation_issuers(issuers)
+            .distrust(revocation.distrust.iter().cloned())
+            .build()
+            .map_err(|err| ConfigError {
+                message: entry_named(err.detail(), &origin),
+            })?;
         Ok(Verifier {
             inner: core_api::Verifier::new(config),
         })
+    }
+
+    /// The URLs of the revocation lists this verifier would use, for the
+    /// host to download (docs/design/revocation.md §7): the core's
+    /// `Verifier::revocation_urls`.
+    #[must_use]
+    pub fn revocation_urls(&self) -> &[String] {
+        self.inner.revocation_urls()
+    }
+
+    /// The earliest `nextUpdate` among the lists the verifier holds for the
+    /// issuers it expects lists from, epoch milliseconds, or `None` when one
+    /// of them has none: the core's `Verifier::revocation_valid_until`.
+    #[must_use]
+    pub fn revocation_valid_until_ms(&self) -> Option<i64> {
+        self.inner.revocation_valid_until()
     }
 
     /// Verifies a legacy PKCS#7 app receipt, given as the bytes of the
@@ -309,6 +406,89 @@ mod tests {
         let empty = b"-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----".to_vec();
         let error = Verifier::new(&[pems[0].clone(), empty]).unwrap_err();
         assert!(error.message.starts_with("roots[1]: "), "{}", error.message);
+    }
+
+    #[test]
+    fn a_refused_issuer_is_named_by_the_entry_given_not_the_certificate() {
+        // The core counts certificates; a PEM bundle is one entry holding
+        // several, so its index must be mapped back to the entry.
+        let read = |name: &str| fixture(&format!("generated-0.7/revocation/{name}.der"));
+        let roots = [read("root")];
+        let refused = |issuers: Vec<Vec<u8>>| {
+            let revocation = super::Revocation {
+                issuers,
+                ..super::Revocation::default()
+            };
+            Verifier::with_revocation(&roots, &revocation)
+                .unwrap_err()
+                .message
+        };
+        let bundle = [
+            pem(&read("intermediate")),
+            pem(&read("intermediate-second")),
+        ]
+        .concat();
+        let message = refused(vec![bundle, read("intermediate-without-crl-sign")]);
+        assert!(message.starts_with("revocation_issuers[1]: "), "{message}");
+        let bundle = [
+            pem(&read("intermediate")),
+            pem(&read("intermediate-without-crl-sign")),
+        ]
+        .concat();
+        let message = refused(vec![read("intermediate-second"), bundle]);
+        assert!(
+            message.starts_with("revocation_issuers[1] (certificate 2 of its PEM text): "),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn revocation_settings_reach_the_core_and_its_answers_come_back() {
+        // Apple's roots by default: the four built-in lists, none held.
+        let verifier = Verifier::new(&[]).unwrap();
+        assert_eq!(verifier.revocation_urls().len(), 4);
+        assert_eq!(verifier.revocation_valid_until_ms(), None);
+        // A distrusted signer: the genuine sandbox receipt is revoked.
+        let revoked = Verifier::with_revocation(
+            &[],
+            &super::Revocation {
+                distrust: vec![(
+                    "c4c7a18465d55f4f7d20ff2a525bceafb55d860fc3b59a1981b04783fd74f96b".to_owned(),
+                    "7D3920094EBEF3F8EFCA6C10EA8E4303".to_owned(),
+                )],
+                ..super::Revocation::default()
+            },
+        )
+        .unwrap();
+        let failure = revoked.verify_receipt(&g5(), 0).unwrap_err();
+        assert_eq!(failure.reason(), Reason::CertificateRevoked);
+        // The core's refusal, with its index.
+        let error = Verifier::with_revocation(
+            &[],
+            &super::Revocation {
+                lists: vec![b"not a list".to_vec()],
+                ..super::Revocation::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.message.starts_with("revocation_lists[0]: "),
+            "{}",
+            error.message
+        );
+        let error = Verifier::with_revocation(
+            &[],
+            &super::Revocation {
+                issuers: vec![b"not a certificate".to_vec()],
+                ..super::Revocation::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.message.starts_with("revocation_issuers[0]: "),
+            "{}",
+            error.message
+        );
     }
 
     #[test]

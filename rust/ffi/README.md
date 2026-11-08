@@ -178,11 +178,13 @@ the receipt value as JSON Schema 2020-12.
 `AprvResult.status`, also the return value, has two bands, and the split is
 the point.
 
-* **`1`-`99`** is a verdict about the input: the eight canonical 0.7 reasons
+* **`1`-`99`** is a verdict about the input: the nine canonical reasons
   every port of this library shares. `2` `INVALID_CERTIFICATE`, `3`
   `INVALID_CERTIFICATE_PURPOSE`, `5` `INVALID_SIGNATURE` and `12`
   `INTERNAL_ERROR` kept their numbers; `13` `MALFORMED`, `14` `TOO_LARGE`,
-  `15` `UNTRUSTED_CHAIN` and `16` `UNREADABLE_PAYLOAD` are new in 0.7. The
+  `15` `UNTRUSTED_CHAIN` and `16` `UNREADABLE_PAYLOAD` are new in 0.7, `17`
+  `CERTIFICATE_REVOKED` in 0.14 (a certificate on the path is on the
+  built-in revocation list; this ABI takes no other revocation setting). The
   0.6 codes `1`, `4` and `6` to `11` are retired and never reused.
   `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the caller's fault: alert
   and reconcile rather than deny.

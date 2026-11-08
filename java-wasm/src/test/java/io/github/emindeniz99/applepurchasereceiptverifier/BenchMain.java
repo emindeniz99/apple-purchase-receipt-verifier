@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -55,8 +54,10 @@ public final class BenchMain {
 
         byte[] g5 = Base64.getEncoder().encode(Cases.fixtureBytes("public-receipt-sandbox-g5"));
         byte[] jws = Cases.fixtureBytes("transaction");
-        byte[] jwsConfig = InitConfig.json(new LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))))
-                .getBytes(StandardCharsets.US_ASCII);
+        byte[] jwsConfig = InitConfig.json(Config.builder()
+                        .roots(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]")))
+                        .build())
+                .getBytes(StandardCharsets.UTF_8);
         long now = System.currentTimeMillis();
         long t1 = System.nanoTime();
         String answer = first.verifyReceipt(now, g5);

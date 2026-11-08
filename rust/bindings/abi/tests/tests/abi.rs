@@ -13,10 +13,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULTS: &[u8] = b"{}";
 
-/// `init`'s answer to a configuration it accepts: `ok`, and the most bytes
-/// of one input a host needs to hand the module, one over the largest cap
-/// (DECISIONS.md R42).
-const INIT_OK: &str = r#"{"ok":true,"max_input_bytes":3145729}"#;
+/// `init`'s answer to the Apple roots: `ok`, the most bytes of one input
+/// a host needs to hand the module, one over the largest cap (DECISIONS.md
+/// R42), and the revocation state (docs/design/revocation.md §8): the four
+/// built-in lists' URLs, and no list held.
+const INIT_OK: &str = concat!(
+    r#"{"ok":true,"max_input_bytes":3145729,"revocation_urls":["#,
+    r#""http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl","#,
+    r#""http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"],"#,
+    r#""revocation_valid_until_ms":null}"#
+);
+
+/// `init`'s answer to a configuration of roots of the caller's own and no
+/// revocation setting: no built-in issuer chains to them.
+const INIT_OK_OWN_ROOTS: &str =
+    r#"{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":null}"#;
 
 fn fixture(relative: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -76,10 +87,16 @@ fn hosts() -> [(&'static str, Make); 2] {
     ]
 }
 
-/// A guest after `init` with `config`, which must answer [`INIT_OK`].
+/// A guest after `init` with `config`, which must answer [`INIT_OK`] for
+/// the Apple roots and [`INIT_OK_OWN_ROOTS`] for roots of its own.
 fn ready(make: Make, config: &[u8]) -> Box<dyn Guest> {
     let mut guest = make(Randomness::default());
-    assert_eq!(guest.init(config).unwrap(), INIT_OK);
+    let expected = if config == DEFAULTS || config.is_empty() {
+        INIT_OK
+    } else {
+        INIT_OK_OWN_ROOTS
+    };
+    assert_eq!(guest.init(config).unwrap(), expected);
     guest
 }
 
@@ -265,6 +282,21 @@ fn a_second_init_after_a_successful_one_traps() {
     }
 }
 
+/// The revocation settings reach the core through `init`, and its verdict
+/// comes back as a reason (docs/design/revocation.md §8).
+#[test]
+fn a_distrusted_signer_answers_certificate_revoked() {
+    // WWDR G5's issuer id and the genuine sandbox receipt's signer serial.
+    let config = br#"{"distrust":[{"issuer":"c4c7a18465d55f4f7d20ff2a525bceafb55d860fc3b59a1981b04783fd74f96b","serial":"7D3920094EBEF3F8EFCA6C10EA8E4303"}]}"#;
+    for (host, make) in hosts() {
+        let mut guest = make(Randomness::default());
+        assert_eq!(guest.init(config).unwrap(), INIT_OK, "{host}");
+        let answer = json(&guest.verify_receipt(now(), &g5()).unwrap());
+        assert_eq!(answer["verified"], false, "{host}");
+        assert_eq!(answer["reason"], "CERTIFICATE_REVOKED", "{host}");
+    }
+}
+
 #[test]
 fn a_refused_configuration_is_a_value_and_init_may_be_retried() {
     for (host, make) in hosts() {
@@ -276,6 +308,8 @@ fn a_refused_configuration_is_a_value_and_init_may_be_retried() {
             b"\xff",
             br#"{"roots":["AQ"]}"#,
             br#"{"roots":[]}"#,
+            br#"{"revocation_lists":["bm90IGEgbGlzdA=="]}"#,
+            br#"{"distrust":[{"issuer":"ab","serial":"01"}]}"#,
         ] {
             let answer = json(&guest.init(refused).unwrap());
             assert_eq!(answer["ok"], false, "{host}");
@@ -293,7 +327,7 @@ fn a_random_get_answer_of_the_wrong_length_traps() {
         // One short, one long, none at all, and far too many.
         for trim in [1, -1, i64::MAX, -4096] {
             let mut guest = make(Randomness { trim });
-            assert_eq!(guest.init(&jws_config()).unwrap(), INIT_OK);
+            assert_eq!(guest.init(&jws_config()).unwrap(), INIT_OK_OWN_ROOTS);
             let result = guest.verify_signed_data(now(), &transaction());
             assert!(is_trap(&result), "{host} trim {trim}: {result:?}");
         }

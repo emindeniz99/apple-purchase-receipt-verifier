@@ -25,7 +25,8 @@ form of `init`'s configuration (Q30); on 2026-10-06 the owner's
 decision Q70 added R44, and the owner added R45 (Q71); on 2026-11-02
 the owner added R46 (ABI 0.2.0), which amends R23 and R24; on
 2026-11-04 R23 and R31 were amended to record `aprv-server`'s pool
-default (OD-15).
+default (OD-15); on 2026-11-05 the owner added R47 (certificate
+revocation, released with 0.14.0).
 
 The evidence is the 23 notes of 2026-09-25 to 2026-09-29 under
 [../evidence/](../evidence/), plus the 2026-09-30 note on the upstream
@@ -2727,6 +2728,97 @@ the ABI 0.2.0 plan). Amends R23 (the environment) and R24 (the type of
 
 ---
 
+## R47. Certificate revocation: a built-in list, `distrust`, and Apple's lists passed in
+
+**Status: accepted** (owner, 2026-11-05, on the plan's fourth version,
+after several adversarial review rounds). The contract is
+[docs/design/revocation.md](../design/revocation.md); the survey behind
+it is [the revocation survey][revsurvey]. Released with 0.14.0. Reverses
+SURFACE.md §3's plan of 2026-09-28 that a revoked certificate would be
+`INVALID_CERTIFICATE`, and docs/design/0.7-api.md's "Room for revocation
+checks later".
+
+- **The gap it closes:** the chain is judged at the payload's own date,
+  so a payload signed with a leaked Apple key and back-dated into its
+  certificate's validity window verified until a release removed the
+  root (THREAT-MODEL.md §3.10). Apple's own libraries check nothing
+  offline, and online they run OCSP only, with the validity date moved
+  to now, which fails every old JWS whose leaf has expired.
+- **Decision, three layers, all offline:** a built-in list compiled into
+  the core and into Java (`certs/revocations.json`, append-only, written
+  by `tools/refresh-apple-revocations.mjs` from Apple's lists and watched
+  weekly by `apple-revocation-watch.yml`); the caller's `distrust`
+  entries (issuer id and serial); and Apple's CRL files, downloaded by
+  the host on its own schedule and passed to `Config` as
+  `revocationLists`. No library opens a socket, starts a timer or keeps
+  an HTTP client: a host refreshes by building a new `Verifier`.
+- **Decision, a ninth reason:** `CERTIFICATE_REVOKED`, appended after
+  `INTERNAL_ERROR` in every package; 21003 at the endpoint; code 17 in
+  the C ABI. A distinct reason lets a caller alert on a revoked Apple key
+  instead of reading it as an expired certificate. It is a source break
+  for exhaustive matches (Swift `switch`, .NET `IVerifier`
+  implementers), accepted for that reason.
+- **Decision, the check's place:** after the path, the markers and the
+  signature, before the payload is read, so a revoked key cannot steer
+  the verdict to `UNREADABLE_PAYLOAD`. Per signer for a receipt, so
+  another genuine SignerInfo still verifies it.
+- **Decision, revocation ignores dates.** The holder of a leaked key
+  picks the payload's date, so a listed serial is revoked whatever its
+  `revocationDate`. Only `certificateHold` depends on time: it counts
+  while its list is fresh at the call's clock. A stale or missing list
+  passes (owner: no outage when Apple's CDN is down);
+  `revocationValidUntil` exposes it for monitoring.
+- **Decision, an issuer is a name and a key:** the issuer id hashes the
+  subject and the public key as encoded, because Apple's retired "Apple
+  Root Certificate Authority" shares Apple Root CA's key. That retired
+  name's list is refused.
+- **Decision, ignore versus refuse:** a list that no configured issuer
+  signed, or that is older than the built-in list's `newest` for its
+  issuer, is refused at build. A genuine list in a shape the profile does
+  not read (v1, no `nextUpdate`, an IssuingDistributionPoint, a delta,
+  an unknown critical extension, a duplicate serial) is ignored, so a
+  format change at Apple cannot stop a host from starting. Critical
+  extensions allowed: AuthorityKeyIdentifier and CRL Number on a list,
+  reasonCode and invalidityDate on an entry. An entry whose reasonCode is
+  unknown or does not read revokes.
+- **Decision, an issuer held on its root's list is not accepted,
+  whatever the reason except `removeFromCRL`.** `init` has no clock, so
+  a `certificateHold` cannot be judged fresh or stale at build; both
+  implementations count it.
+- **Wire:** `init` takes `revocation_lists`, `revocation_issuers` and
+  `distrust` and answers `revocation_urls` and
+  `revocation_valid_until_ms`. Only `///` lines of the WIT changed, so
+  `aprv:verifier@0.2.0` keeps its version (R46). `aprv-server` takes the
+  same settings as flags or in the managed configuration line, and
+  `/v1/info` reports them so a client can refuse a server configured
+  differently.
+- **Not done:** OCSP; OpenSSL's `X509_V_FLAG_CRL_CHECK`, which judges a
+  list's freshness at the payload's date and so fails every historical
+  verification; any download inside a library; revocation settings in
+  the C ABI, which gained only the reason code.
+- **Divergences between the core and Java,** recorded under R20's rule:
+  - Which problem a refused configuration names first. The core reports
+    list problems, then issuers, then `distrust`; Java checks `distrust`
+    first. The verdict (refused) is the same; only the message differs,
+    and no case pins messages.
+  - A Name that is not DER (the AVAs of a SET out of order). Both
+    implementations hash such a name as encoded, but BouncyCastle
+    re-encodes the TBSCertificate before checking a signature, so Java
+    verifies a certificate with such a name only when it is the trust
+    anchor. The shared case puts it on the anchor for that reason. A
+    root the caller parsed with BouncyCastle is re-encoded before Java
+    sees it, so its issuer id is computed over DER; the JDK's parser
+    keeps the original bytes.
+- **Cases:** 105 shared cases under `revocation/` in
+  `fixtures/cases.json` (schema version 3), from the test PKI that
+  `RevocationFixtures` generates under `fixtures/generated-0.7/revocation/`
+  and Apple's two stale lists under `fixtures/apple-crls/`. The 1 MiB,
+  100,000-entry and 1,000-`distrust` bounds and an injected built-in list
+  are unit tests in each implementation (`rust/tests/revocation.rs`,
+  `RevocationTest`).
+
+---
+
 ## Rejected alternatives
 
 One table for everything the plan measured or considered and rejected.
@@ -2801,6 +2893,7 @@ One table for everything the plan measured or considered and rejected.
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
 [cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md
 [enumlift]: ../evidence/2026-11-02-abi-0.2-enum-lift.md
+[revsurvey]: ../evidence/2026-11-05-apple-revocation-survey.md
 [api07]: ../design/0.7-api.md
 [cms]: ../evidence/2026-09-26-openssl-cms-everywhere.md
 [dotnet]: ../evidence/2026-09-26-dotnet-wasmtime.md

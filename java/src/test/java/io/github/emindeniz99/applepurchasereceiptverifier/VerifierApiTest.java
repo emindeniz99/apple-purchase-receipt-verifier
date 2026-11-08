@@ -701,7 +701,8 @@ class VerifierApiTest {
                 InAppPurchase.class,
                 JsonPayload.class,
                 Environment.class,
-                AppleStatus.class);
+                AppleStatus.class,
+                RevokedCertificate.class);
         for (Class<?> type : api) {
             assertTrue(java.lang.reflect.Modifier.isPublic(type.getModifiers()), type.getName());
         }

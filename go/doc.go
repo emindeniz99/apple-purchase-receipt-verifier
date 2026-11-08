@@ -36,10 +36,11 @@
 // Verification is entirely offline and anchored only to the certificates
 // in the [Config] — in production, the three published Apple roots that a
 // [NewConfig] with no Roots uses, compiled into the verification module. The
-// operating system trust store is never read. There is no
-// OCSP, no CRL, no AIA fetch and no runtime root download: the module
-// imports neither net nor net/http, and CI greps for the symbols that
-// would reintroduce either (PLAN.md D12).
+// operating system trust store is never read. There is no OCSP, no CRL
+// download, no AIA fetch and no runtime root download (revocation lists
+// reach the verifier only as bytes in ConfigOptions.RevocationLists): the
+// module imports neither net nor net/http, and CI greps for the symbols
+// that would reintroduce either (PLAN.md D12).
 //
 // Both paths additionally require Apple's marker OIDs: the leaf (on the
 // receipt path, the signer) must carry 1.2.840.113635.100.6.11.1 and its
@@ -62,7 +63,7 @@
 // # Errors
 //
 // VerifyReceipt and VerifySignedData never panic. A failed verification
-// returns a [*Failure] carrying one of the eight [Reason] constants and
+// returns a [*Failure] carrying one of the nine [Reason] constants and
 // nothing else — no logging, no metrics, no callbacks (PLAN.md D11).
 // Read it with errors.As, or with [ReasonOf]:
 //
@@ -75,7 +76,8 @@
 // every failure is the status field of the response body.
 //
 // A configuration mistake — a nil Config, no trust anchors, a trust anchor
-// that is not a certificate — is a plain error from [NewVerifier] instead,
+// that is not a certificate, a revocation setting the module refuses — is
+// a plain error from [NewVerifier] instead,
 // because misconfiguration is a programming bug and not a verdict about a
 // receipt. So is a module this package cannot bind.
 //

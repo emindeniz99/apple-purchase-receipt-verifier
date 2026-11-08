@@ -8,7 +8,7 @@ import (
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
 
-// The eight reason tokens are normative: they are what
+// The nine reason tokens are normative: they are what
 // fixtures/cases.schema.json pins and what every port reports. A typo
 // in one is otherwise invisible, so the table is written out by hand here
 // rather than derived from the constants.
@@ -22,6 +22,7 @@ func TestReasonTokensAreTheCanonicalVocabulary(t *testing.T) {
 		"INVALID_CERTIFICATE_PURPOSE",
 		"UNREADABLE_PAYLOAD",
 		"INTERNAL_ERROR",
+		"CERTIFICATE_REVOKED",
 	}
 	got := applereceipt.AllReasons()
 	if len(got) != len(want) {
@@ -44,6 +45,7 @@ func TestReasonTokensAreTheCanonicalVocabulary(t *testing.T) {
 		applereceipt.ReasonInvalidCertificatePurpose: "INVALID_CERTIFICATE_PURPOSE",
 		applereceipt.ReasonUnreadablePayload:         "UNREADABLE_PAYLOAD",
 		applereceipt.ReasonInternalError:             "INTERNAL_ERROR",
+		applereceipt.ReasonCertificateRevoked:        "CERTIFICATE_REVOKED",
 	}
 	for reason, token := range pairs {
 		if string(reason) != token {

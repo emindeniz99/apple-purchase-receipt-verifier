@@ -401,10 +401,28 @@ fn the_bundled_certs_directory_matches_the_repository_root() {
         [
             "AppleIncRootCertificate.cer",
             "AppleRootCA-G2.cer",
-            "AppleRootCA-G3.cer"
+            "AppleRootCA-G3.cer",
+            "revocation-issuers",
+            "revocations.json",
         ]
     );
-    for name in &names {
+    // The built-in revocation list and its issuers' certificates are
+    // copies too (docs/design/revocation.md §5).
+    let files = [
+        "AppleIncRootCertificate.cer",
+        "AppleRootCA-G2.cer",
+        "AppleRootCA-G3.cer",
+        "revocation-issuers/AppleWWDRCAG5.cer",
+        "revocation-issuers/AppleWWDRCAG6.cer",
+        "revocations.json",
+    ];
+    let mut issuers: Vec<String> = std::fs::read_dir(repo_certs.join("revocation-issuers"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    issuers.sort();
+    assert_eq!(issuers, ["AppleWWDRCAG5.cer", "AppleWWDRCAG6.cer"]);
+    for name in files {
         assert_eq!(
             std::fs::read(repo_certs.join(name)).unwrap(),
             std::fs::read(port_certs.join(name)).unwrap(),
@@ -412,6 +430,7 @@ fn the_bundled_certs_directory_matches_the_repository_root() {
         );
     }
     // And what is embedded is what is on disk.
+    let names = &files[..3];
     let embedded = apple_roots();
     for (index, name) in names.iter().enumerate() {
         assert_eq!(
@@ -674,7 +693,7 @@ fn a_certificate_from_a_same_named_roots_pki_in_the_bag_does_not_decide_the_path
         let authenticated = path::authenticated_top_down(&embedded, roots);
         assert_eq!(authenticated.len(), 3, "both roots vouch for something");
         let chain = path::receipt_path(&pki.leaf, &authenticated, roots, now_millis());
-        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(2));
+        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(3));
     }
     // A failing path fails for the same reason in either order: the
     // problems come from the run whose links hold, under the first root,
@@ -703,7 +722,7 @@ fn an_anchor_named_as_the_intermediate_does_not_change_the_verdict() {
     ] {
         let authenticated = path::authenticated_top_down(&embedded, &roots);
         let chain = path::receipt_path(&pki.leaf, &authenticated, &roots, now_millis());
-        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(2));
+        assert_eq!(chain.map(|chain| chain.len()).ok(), Some(3));
         assert!(path::validate_pair(&pki.leaf, &pki.intermediate, &roots, now_millis()).is_ok());
     }
     // The decoy alone anchors nothing.
@@ -851,7 +870,7 @@ fn a_same_named_intermediate_placed_first_in_the_bag_does_not_decide_the_path() 
                 let authenticated = path::authenticated_top_down(&embedded, roots);
                 let chain = path::receipt_path(&leaf, &authenticated, roots, now_millis())
                     .expect("the genuine chain verifies whatever the bag's order and the pinning");
-                assert_eq!(chain.len(), 2);
+                assert_eq!(chain.len(), 3);
                 assert!(
                     chain[1].same_as(&real),
                     "the path runs through the real issuer"

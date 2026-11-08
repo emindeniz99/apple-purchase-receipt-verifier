@@ -36,15 +36,16 @@ func (e *ResultError) Error() string {
 	return "the verification module's answer to " + e.Fn + " is unusable: " + e.Detail
 }
 
-// InitRefusedError is init answering {"ok":false}: a trust anchor the core
-// does not accept. It is caller misuse, reported at create.
+// InitRefusedError is init answering {"ok":false}: a trust anchor, a
+// revocation list, a revocation issuer or a distrust entry the core does
+// not accept. It is caller misuse, reported at create.
 type InitRefusedError struct {
 	Message string
 	Answer  string // the module's answer, verbatim
 }
 
 func (e *InitRefusedError) Error() string {
-	return "the verification module refused the trust anchors: " + e.Message
+	return "the verification module refused the configuration: " + e.Message
 }
 
 // ABIError is a module this package cannot bind: a missing export, a wrong

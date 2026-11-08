@@ -72,13 +72,54 @@ final class PublicApiTests: XCTestCase {
 
     /// The closed set of reasons, in the design's spelling. Adding a value
     /// is a breaking change in all nine ports.
-    func testReasonIsTheClosedSetOfEight() {
+    func testReasonIsTheClosedSetOfNine() {
         XCTAssertEqual(
             Reason.allCases.map(\.rawValue),
             [
                 "MALFORMED", "TOO_LARGE", "INVALID_SIGNATURE", "UNTRUSTED_CHAIN", "INVALID_CERTIFICATE",
-                "INVALID_CERTIFICATE_PURPOSE", "UNREADABLE_PAYLOAD", "INTERNAL_ERROR",
+                "INVALID_CERTIFICATE_PURPOSE", "UNREADABLE_PAYLOAD", "INTERNAL_ERROR", "CERTIFICATE_REVOKED",
             ])
+    }
+
+    /// The revocation settings (docs/design/revocation.md §4, §9), from
+    /// outside the module: three `Config` arguments, empty by default and
+    /// stored as given, and the two values a `Verifier` reports. With
+    /// Apple's roots the verifier names Apple's four lists and holds none,
+    /// so live revocation is not in force until lists are passed. A
+    /// `distrust` entry the module cannot read is refused at startup.
+    func testRevocationSettingsAndStateFromOutsideTheModule() throws {
+        let defaults = Config()
+        XCTAssertEqual(defaults.revocationLists, [])
+        XCTAssertEqual(defaults.revocationIssuers, [])
+        XCTAssertEqual(defaults.distrust, [])
+        let entry = RevokedCertificate(issuer: "C4C7A184", serial: "0x1")
+        XCTAssertEqual(entry.issuer, "C4C7A184")
+        XCTAssertEqual(entry.serial, "0x1")
+        let config = Config(revocationLists: [[0x30]], revocationIssuers: [[0x31]], distrust: [entry])
+        XCTAssertEqual(config.revocationLists, [[0x30]])
+        XCTAssertEqual(config.revocationIssuers, [[0x31]])
+        XCTAssertEqual(config.distrust, [entry])
+        XCTAssertNil(config.roots)
+
+        let verifier = try Verifier(config: defaults)
+        let urls: [String] = verifier.revocationUrls
+        XCTAssertEqual(
+            urls,
+            [
+                "http://crl.apple.com/root.crl", "http://crl.apple.com/applerootcag3.crl", "http://crl.apple.com/wwdrg5.crl",
+                "http://crl.apple.com/wwdrg6.crl",
+            ])
+        let until: Date? = verifier.revocationValidUntil
+        XCTAssertNil(until)
+
+        let own = try Verifier(config: Config(roots: [try fixture("generated-0.7/receipt-root.der")]))
+        XCTAssertEqual(own.revocationUrls, [])
+        XCTAssertNil(own.revocationValidUntil)
+
+        XCTAssertThrowsError(try Verifier(config: Config(distrust: [entry]))) { XCTAssertTrue($0 is ConfigError, "\($0)") }
+        XCTAssertThrowsError(try Verifier(config: Config(revocationLists: [[0x30, 0x00]]))) {
+            XCTAssertTrue($0 is ConfigError, "\($0)")
+        }
     }
 
     /// The environment is the verifier's answer, on each payload

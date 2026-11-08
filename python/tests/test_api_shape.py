@@ -1,4 +1,4 @@
-"""The 0.7 public API, pinned: the names a caller imports, the eight reasons,
+"""The 0.7 public API, pinned: the names a caller imports, the nine reasons,
 the pinned Apple roots, the shapes of the results. 0.8 changes what sits
 under the API, not the API (docs/rust-core/SURFACE.md), so a change here is
 a change to the contract."""
@@ -25,7 +25,8 @@ from apple_purchase_receipt_verifier import (
 
 import _support
 
-# SURFACE.md section 3: the eight reasons, and no others.
+# SURFACE.md section 3: the eight reasons, then the ninth that revocation
+# added (docs/design/revocation.md section 3), and no others.
 REASONS = [
     "MALFORMED",
     "TOO_LARGE",
@@ -35,13 +36,15 @@ REASONS = [
     "INVALID_CERTIFICATE_PURPOSE",
     "UNREADABLE_PAYLOAD",
     "INTERNAL_ERROR",
+    "CERTIFICATE_REVOKED",
 ]
 
 
 class NamesTest(unittest.TestCase):
     def test_the_package_exports_exactly_the_0_7_names(self) -> None:
         # 0.7's names less default_roots(): the roots are compiled into the
-        # module and the package carries no copy to return.
+        # module and the package carries no copy to return. 0.14 adds
+        # RevokedCertificate, Config.distrust's entry type.
         self.assertEqual(
             [
                 "Config",
@@ -51,6 +54,7 @@ class NamesTest(unittest.TestCase):
                 "JsonPayload",
                 "Reason",
                 "ReceiptPayload",
+                "RevokedCertificate",
                 "VERSION",
                 "VerificationResult",
                 "Verifier",
@@ -61,7 +65,7 @@ class NamesTest(unittest.TestCase):
         for name in package.__all__:
             self.assertTrue(hasattr(package, name), name)
 
-    def test_the_reasons_are_the_eight_of_0_7(self) -> None:
+    def test_the_reasons_are_the_eight_of_0_7_and_certificate_revoked(self) -> None:
         self.assertEqual(REASONS, [reason.name for reason in Reason])
         self.assertEqual(REASONS, [reason.value for reason in Reason])
 
@@ -77,6 +81,12 @@ class NamesTest(unittest.TestCase):
             ["self", "environment", "request_json"],
             list(inspect.signature(Verifier.verify_receipt_endpoint).parameters),
         )
+
+    def test_the_verifier_reports_its_revocation_state_as_read_only_properties(self) -> None:
+        for name in ("revocation_urls", "revocation_valid_until"):
+            attribute = inspect.getattr_static(Verifier, name)
+            self.assertIsInstance(attribute, property, name)
+            self.assertIsNone(attribute.fset, name)
 
     def test_the_published_bounds_are_the_documented_ones(self) -> None:
         self.assertEqual(10, receipt.MAX_EMBEDDED_CERTIFICATES)
@@ -142,8 +152,15 @@ class RootsAndConfigTest(unittest.TestCase):
         # constructor with keyword arguments is the one spelling.
         self.assertFalse(hasattr(Config, "create"))
         self.assertFalse(hasattr(Config, "defaults"))
-        parameters = list(inspect.signature(Config.__init__).parameters)
-        self.assertEqual(["self", "roots", "clock"], parameters)
+        parameters = inspect.signature(Config.__init__).parameters
+        self.assertEqual(
+            ["self", "roots", "clock", "revocation_lists", "revocation_issuers", "distrust"],
+            list(parameters),
+        )
+        # 0.14's revocation settings are keyword-only, so Config(roots, clock)
+        # keeps its meaning.
+        for name in ("revocation_lists", "revocation_issuers", "distrust"):
+            self.assertIs(inspect.Parameter.KEYWORD_ONLY, parameters[name].kind, name)
 
     def test_a_config_is_immutable(self) -> None:
         with self.assertRaises(AttributeError):
