@@ -16,11 +16,16 @@
 // A case without a clock runs at one pinned instant, so both
 // implementations judge a dateless input at the same moment.
 //
-// Cases with revocation settings and buildConfig cases are skipped, and
-// counted on stderr: Differential.java builds its Verifier from the
-// config's roots only, so a call carrying lists, issuers or distrust
-// entries would compare a configured core against an unconfigured Java.
-// The shared cases run both implementations on them instead.
+// A case with revocation settings carries them in the call's config, in
+// init's spelling: `revocation_lists` and `revocation_issuers` as base64 of
+// the fixtures' bytes, `distrust` entries as written, each only when given
+// (the same JSON tools/wasm-trap-host.mjs builds for the cases mode).
+// Differential.java builds its Config from the same text. A buildConfig
+// case is one call, fn `build-config`, whose config is the case's `input`
+// and which reads no bytes: both sides answer whether the configuration
+// builds, and what it states about revocation (`revocation_urls`,
+// `revocation_valid_until_ms`). Nothing is skipped; a case that yields no
+// call stops the run.
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readFixture } from '../lib/fixtures.mjs';
@@ -48,10 +53,21 @@ function fixture(id) {
 const receiptText = ({ entry, bytes }) =>
   entry.codec === 'raw' || entry.codec === 'base64' ? bytes.toString('base64') : bytes.toString('utf8');
 
-function config(kase) {
-  const spec = kase.config?.trustedRoots;
-  if (spec === undefined || spec.source === 'defaults') return '{}';
-  return JSON.stringify({ roots: spec.fixtures.map((id) => fixture(id).bytes.toString('base64')) });
+// init's JSON for a verify case's `config` or a buildConfig case's `input`:
+// its roots as base64 DER (none for the three Apple roots), then its
+// revocation settings. `{}` when there is nothing.
+function config(settings) {
+  const b64Of = (id) => fixture(id).bytes.toString('base64');
+  const init = {};
+  const spec = settings?.trustedRoots;
+  if (spec !== undefined && spec.source !== 'defaults') init.roots = spec.fixtures.map(b64Of);
+  const revocation = settings?.revocation ?? {};
+  if (revocation.lists?.length) init.revocation_lists = revocation.lists.map(b64Of);
+  if (revocation.issuers?.length) init.revocation_issuers = revocation.issuers.map(b64Of);
+  if (revocation.distrust?.length) {
+    init.distrust = revocation.distrust.map(({ issuer, serial }) => ({ issuer, serial }));
+  }
+  return JSON.stringify(init);
 }
 
 function now(kase) {
@@ -66,15 +82,13 @@ const b64url = (s) => Buffer.from(s).toString('base64url');
 const x5cProbe = (text) => `${b64url(JSON.stringify({ alg: 'ES256', x5c: [text, text, text] }))}.${b64url('{}')}.${b64url('signature')}`;
 
 const out = [];
-let skipped = 0;
 for (const kase of doc.cases) {
-  if (kase.operation === 'buildConfig' || kase.config?.revocation !== undefined) {
-    skipped++;
-    continue;
-  }
-  const cfg = config(kase);
+  const cfg = config(kase.operation === 'buildConfig' ? kase.input : kase.config);
   const at = now(kase);
   switch (kase.operation) {
+    case 'buildConfig':
+      out.push({ id: kase.id, fn: 'build-config', config: cfg, now: at, b64: '' });
+      break;
     case 'verifyReceipt':
       out.push({ id: kase.id, fn: 'verify-receipt', config: cfg, now: at, b64: b64(receiptText(fixture(kase.input.fixture))) });
       break;
@@ -109,6 +123,9 @@ for (const kase of doc.cases) {
       throw new Error(`${kase.id}: no mapping for operation ${kase.operation}`);
   }
 }
+// Every case is run: each case id is a call's id or the prefix of one (`#`).
+const called = new Set(out.map((r) => r.id.split('#')[0]));
+const missing = doc.cases.filter((kase) => !called.has(kase.id));
+if (missing.length) throw new Error(`no call for ${missing.length} cases, the first ${missing[0].id}`);
 process.stdout.write(out.map((r) => `${JSON.stringify(r)}\n`).join(''));
-console.error(`cases-calls: ${doc.cases.length} cases, ${out.length} calls, `
-  + `${skipped} revocation or buildConfig cases skipped`);
+console.error(`cases-calls: ${doc.cases.length} cases, ${out.length} calls`);

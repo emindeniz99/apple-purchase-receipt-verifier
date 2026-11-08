@@ -7,6 +7,7 @@ import io.github.emindeniz99.applepurchasereceiptverifier.Environment;
 import io.github.emindeniz99.applepurchasereceiptverifier.Failure;
 import io.github.emindeniz99.applepurchasereceiptverifier.JsonPayload;
 import io.github.emindeniz99.applepurchasereceiptverifier.ReceiptPayload;
+import io.github.emindeniz99.applepurchasereceiptverifier.RevokedCertificate;
 import io.github.emindeniz99.applepurchasereceiptverifier.VerificationResult;
 import io.github.emindeniz99.applepurchasereceiptverifier.Verifier;
 import java.io.BufferedReader;
@@ -42,22 +43,35 @@ import java.util.Map;
  * <p>A call file has one JSON object per line, the format
  * tools/wasm-trap-host.mjs reads in its {@code calls} mode: {@code id},
  * {@code fn} ({@code verify-receipt}, {@code verify-signed-data},
- * {@code verify-receipt-endpoint}), {@code config} (init's JSON text,
- * {@code {"roots":[base64 DER, ...]}}, or {@code {}} for Apple's
- * roots; an empty list is answered with the module's refusal, as the
- * module answers it), {@code now} (epoch milliseconds), {@code env} (0 production, 1
- * sandbox) and {@code b64} (the input bytes, base64); or {@code id} and
- * {@code map} for a row that makes no call. It prints one row per call on
- * stdout, in the core's wire JSON, so a row compares with the module's:
+ * {@code verify-receipt-endpoint}, {@code build-config}), {@code config}
+ * (init's JSON text: {@code roots}, base64 DER certificates, or none for
+ * Apple's roots; {@code revocation_lists}, base64 CRL files;
+ * {@code revocation_issuers}, base64 DER certificates; {@code distrust},
+ * {@code {"issuer","serial"}} objects; {@code {}} for none of them),
+ * {@code now} (epoch milliseconds), {@code env} (0 production, 1 sandbox)
+ * and {@code b64} (the input bytes, base64; {@code build-config} reads
+ * none); or {@code id} and {@code map} for a row that makes no call. An
+ * empty roots list is answered with the module's refusal, as the module
+ * answers it, and so is a configuration {@link Verifier#create} refuses:
+ * {@code {"ok":false,"message":...}}. It prints one row per call on stdout,
+ * in the core's wire JSON, so a row compares with the module's:
  * {@code {"id","out"}}; {@code {"id","map"}} when the call cannot be made
- * through the Java API ({@code not-utf8}: Java takes a {@code String},
- * so input bytes that are not UTF-8 have no Java spelling;
- * {@code root-not-a-certificate}: the config's root does not decode); and
+ * through the Java API ({@code not-utf8}: Java takes a {@code String}, so
+ * input bytes that are not UTF-8 have no Java spelling;
+ * {@code root-not-a-certificate} and {@code issuer-not-a-certificate}: a
+ * root or an added issuer of the config does not decode); and
  * {@code {"id","threw"}} if the library threw, which its contract says it
  * never does.</p>
  *
- * <p>No verification logic: the roots are decoded only because the Java
- * {@link Config} takes {@link X509Certificate}s.</p>
+ * <p>A {@code build-config} call builds the verifier and answers what the
+ * configuration states about revocation, as the module's init does, minus
+ * the input cap Java has no counterpart for:
+ * {@code {"ok":true,"revocation_urls":[...],"revocation_valid_until_ms":N|null}}.
+ * A refusal's message is not compared (docs/design/revocation.md section
+ * 4).</p>
+ *
+ * <p>No verification logic: the certificates are decoded only because the
+ * Java {@link Config} takes {@link X509Certificate}s.</p>
  */
 public final class Differential {
 
@@ -92,12 +106,13 @@ public final class Differential {
                     continue;
                 }
                 String config = (String) call.get("config");
+                String fn = (String) call.get("fn");
                 long now = ((Number) call.get("now")).longValue();
-                if (!ROOTS.containsKey(config) && !refused.containsKey(config)) {
+                if (!SETTINGS.containsKey(config) && !refused.containsKey(config)) {
                     try {
-                        ROOTS.put(config, roots(config));
-                    } catch (IllegalArgumentException | java.security.cert.CertificateException e) {
-                        refused.put(config, "root-not-a-certificate");
+                        SETTINGS.put(config, settings(config));
+                    } catch (NotACertificate e) {
+                        refused.put(config, e.map);
                     }
                 }
                 if (refused.containsKey(config)) {
@@ -105,7 +120,7 @@ public final class Differential {
                     out.write(object(row));
                     continue;
                 }
-                List<X509Certificate> listed = ROOTS.get(config);
+                List<X509Certificate> listed = SETTINGS.get(config).roots;
                 if (listed != null && listed.isEmpty()) {
                     // The module refuses an empty list (R23, Q30); Java's Config
                     // would too, so the row carries the module's answer.
@@ -113,7 +128,8 @@ public final class Differential {
                     out.write(object(row));
                     continue;
                 }
-                String input = utf8((String) call.get("b64"));
+                boolean build = "build-config".equals(fn);
+                String input = build ? "" : utf8((String) call.get("b64"));
                 if (input == null) {
                     row.put("map", "not-utf8");
                     out.write(object(row));
@@ -121,9 +137,18 @@ public final class Differential {
                 }
                 // The clock is part of the Config, so the verifier for a
                 // config is rebuilt only when the call's instant changes.
-                Verifier verifier = at(verifiers, config, now);
+                Verifier verifier;
                 try {
-                    row.put("out", call(verifier, (String) call.get("fn"), call.get("env"), input));
+                    verifier = at(verifiers, config, now);
+                } catch (IllegalArgumentException e) {
+                    // Verifier.create refuses the configuration, as its
+                    // documentation says: the answer the module's init gives.
+                    row.put("out", refusal(e.getMessage()));
+                    out.write(object(row));
+                    continue;
+                }
+                try {
+                    row.put("out", build ? built(verifier) : call(verifier, fn, call.get("env"), input));
                 } catch (RuntimeException e) {
                     threw++;
                     row.put("threw", e.toString());
@@ -138,7 +163,28 @@ public final class Differential {
     }
 
     private static final Map<String, Long> INSTANT = new HashMap<String, Long>();
-    private static final Map<String, List<X509Certificate>> ROOTS = new HashMap<String, List<X509Certificate>>();
+    private static final Map<String, Settings> SETTINGS = new HashMap<String, Settings>();
+
+    /** What a call's config JSON states, decoded for {@link Config}. */
+    private static final class Settings {
+        /** The roots: null when the member is absent (Apple's roots), else the list, empty included. */
+        List<X509Certificate> roots;
+
+        final List<byte[]> lists = new ArrayList<byte[]>();
+        final List<X509Certificate> issuers = new ArrayList<X509Certificate>();
+        final List<RevokedCertificate> distrust = new ArrayList<RevokedCertificate>();
+    }
+
+    /** A root or an added issuer that is no certificate; {@code map} is the row's answer. */
+    private static final class NotACertificate extends Exception {
+        private static final long serialVersionUID = 1L;
+        final String map;
+
+        NotACertificate(String map) {
+            super(map);
+            this.map = map;
+        }
+    }
 
     private static Verifier at(Map<String, Verifier> verifiers, String config, long now) {
         Long was = INSTANT.get(config);
@@ -147,9 +193,18 @@ public final class Differential {
         }
         Clock clock = Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC);
         Config.Builder builder = Config.builder().clock(clock);
-        List<X509Certificate> roots = ROOTS.get(config);
-        if (roots != null) {
-            builder.roots(roots);
+        Settings settings = SETTINGS.get(config);
+        if (settings.roots != null) {
+            builder.roots(settings.roots);
+        }
+        if (!settings.lists.isEmpty()) {
+            builder.revocationLists(settings.lists);
+        }
+        if (!settings.issuers.isEmpty()) {
+            builder.revocationIssuers(settings.issuers);
+        }
+        if (!settings.distrust.isEmpty()) {
+            builder.distrust(settings.distrust);
         }
         Verifier verifier = Verifier.create(builder.build());
         verifiers.put(config, verifier);
@@ -157,27 +212,105 @@ public final class Differential {
         return verifier;
     }
 
-    /** The config's roots: null when the member is absent (Apple's roots), else the list, empty included. */
-    private static List<X509Certificate> roots(String config)
-            throws IOException, java.security.cert.CertificateException {
-        List<X509Certificate> roots = null;
+    /** The config's roots, revocation lists, added issuers and distrust entries; see {@link Settings}. */
+    private static Settings settings(String config)
+            throws NotACertificate, IOException, java.security.cert.CertificateException {
+        Settings settings = new Settings();
+        CertificateFactory factory = CertificateFactory.getInstance("X.509");
         JsonParser p = JSON.createParser(config);
         p.nextToken();
         while (p.nextToken() == JsonToken.FIELD_NAME) {
             String name = p.currentName();
             p.nextToken();
-            if ("roots".equals(name) && p.currentToken() == JsonToken.START_ARRAY) {
-                roots = new ArrayList<X509Certificate>();
-                CertificateFactory factory = CertificateFactory.getInstance("X.509");
-                while (p.nextToken() == JsonToken.VALUE_STRING) {
-                    byte[] der = Base64.getDecoder().decode(p.getText());
-                    roots.add((X509Certificate) factory.generateCertificate(new ByteArrayInputStream(der)));
+            boolean array = p.currentToken() == JsonToken.START_ARRAY;
+            if ("roots".equals(name) && array) {
+                settings.roots = new ArrayList<X509Certificate>();
+                for (String text : strings(p)) {
+                    settings.roots.add(certificate(factory, text, "root-not-a-certificate"));
+                }
+            } else if ("revocation_lists".equals(name) && array) {
+                for (String text : strings(p)) {
+                    settings.lists.add(Base64.getDecoder().decode(text));
+                }
+            } else if ("revocation_issuers".equals(name) && array) {
+                for (String text : strings(p)) {
+                    settings.issuers.add(certificate(factory, text, "issuer-not-a-certificate"));
+                }
+            } else if ("distrust".equals(name) && array) {
+                while (p.nextToken() == JsonToken.START_OBJECT) {
+                    String issuer = null;
+                    String serial = null;
+                    while (p.nextToken() == JsonToken.FIELD_NAME) {
+                        String key = p.currentName();
+                        p.nextToken();
+                        if ("issuer".equals(key)) {
+                            issuer = p.getText();
+                        } else if ("serial".equals(key)) {
+                            serial = p.getText();
+                        } else {
+                            p.skipChildren();
+                        }
+                    }
+                    settings.distrust.add(new RevokedCertificate(issuer, serial));
                 }
             } else {
                 p.skipChildren();
             }
         }
-        return roots;
+        return settings;
+    }
+
+    /** The string elements of the array the parser has just entered. */
+    private static List<String> strings(JsonParser p) throws IOException {
+        List<String> texts = new ArrayList<String>();
+        while (p.nextToken() == JsonToken.VALUE_STRING) {
+            texts.add(p.getText());
+        }
+        return texts;
+    }
+
+    private static X509Certificate certificate(CertificateFactory factory, String base64, String map)
+            throws NotACertificate {
+        try {
+            byte[] der = Base64.getDecoder().decode(base64);
+            return (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(der));
+        } catch (IllegalArgumentException | java.security.cert.CertificateException e) {
+            throw new NotACertificate(map);
+        }
+    }
+
+    /** A build-config call's answer: what the verifier states about revocation. */
+    private static String built(Verifier verifier) throws IOException {
+        StringWriter w = new StringWriter();
+        try (JsonGenerator g = JSON.createGenerator(w)) {
+            g.writeStartObject();
+            g.writeBooleanField("ok", true);
+            g.writeArrayFieldStart("revocation_urls");
+            for (String url : verifier.revocationUrls()) {
+                g.writeString(url);
+            }
+            g.writeEndArray();
+            Instant until = verifier.revocationValidUntil();
+            if (until == null) {
+                g.writeNullField("revocation_valid_until_ms");
+            } else {
+                g.writeNumberField("revocation_valid_until_ms", until.toEpochMilli());
+            }
+            g.writeEndObject();
+        }
+        return w.toString();
+    }
+
+    /** The module's init answer to a configuration it refuses. */
+    private static String refusal(String message) throws IOException {
+        StringWriter w = new StringWriter();
+        try (JsonGenerator g = JSON.createGenerator(w)) {
+            g.writeStartObject();
+            g.writeBooleanField("ok", false);
+            g.writeStringField("message", message == null ? "" : message);
+            g.writeEndObject();
+        }
+        return w.toString();
     }
 
     private static String call(Verifier verifier, String fn, Object env, String input) throws IOException {

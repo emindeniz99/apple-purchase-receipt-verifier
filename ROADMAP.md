@@ -250,9 +250,6 @@ that ships it.
   up. It touches `rust/ffi/src/lib.rs`, the committed header
   (`cbindgen.toml`, `check-header.sh`), `exported-symbols.txt`, the tests,
   the C++ and ctypes examples and `rust/ffi/README.md`.
-- **The differential campaign skips the new cases.**
-  `tools/differential.sh` does not run the revocation cases or the
-  `buildConfig` operation.
 - **Releasing 0.14.0.** After the owner reviews and merges #535. Count
   this month's Maven Central releases first (Release budget in
   AGENTS.md). The release pull request release-please opened for 0.13.1

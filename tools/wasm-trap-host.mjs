@@ -24,7 +24,12 @@
 //        one {"id","out"} / {"id","trap"} / {"id","map"} row per call on
 //        stdout, as the round's hosts print them. --reference compares each
 //        row's answer byte for byte with another run's rows; exit 1 on a
-//        difference, a trap, or an unexpected import call.
+//        difference, a trap, or an unexpected import call. A call's
+//        `config` is init's JSON (roots and the revocation settings); a
+//        call with fn `build-config` runs init alone, in a new instance as
+//        the cases mode's buildConfig does, and its row is
+//        {"ok":true,"revocation_urls":[...],"revocation_valid_until_ms":N|null}
+//        or init's refusal as it answered it (tools/differential/).
 //   node tools/wasm-trap-host.mjs abi-tests <module.wasm> <cases.json>
 //        The ABI tests of the final round that a hand-rolled host can run
 //        (ARCHITECTURE.md §9): env 2, 255, 258 and 2^32-1 trap and env 256
@@ -546,6 +551,32 @@ function modeCalls(modulePath, callsPath, referencePath) {
     let o;
     if (r.map !== undefined) {
       o = { id: r.id, map: r.map };
+    } else if (r.fn === 'build-config') {
+      // init in a new instance, never pooled (runBuild's way in the cases
+      // mode). The row holds what the configuration states about revocation,
+      // not init's whole answer, whose input cap Java has no counterpart for;
+      // a refusal stays as init answered it.
+      const g = new Guest(module);
+      try {
+        const answer = g.call('init', bytesOf(r.config));
+        const accepted = parseInitAccepted(answer);
+        o = {
+          id: r.id,
+          out:
+            accepted === null
+              ? answer
+              : JSON.stringify({
+                  ok: true,
+                  revocation_urls: accepted.revocation_urls,
+                  revocation_valid_until_ms: accepted.revocation_valid_until_ms,
+                }),
+        };
+      } catch (e) {
+        if (!isTrap(e)) throw e;
+        traps++;
+        g.unexpectedCalls.forEach((c) => unexpected.add(c));
+        o = { id: r.id, trap: e.message };
+      }
     } else {
       let g = pool.get(r.config);
       let initAnswer = '';

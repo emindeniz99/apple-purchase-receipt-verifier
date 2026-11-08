@@ -11,13 +11,20 @@
 //
 //   same             same verdict and reason; for a verified row, the same
 //                    payload by value (an endpoint row: the same status and,
-//                    for status 0, the same body by value)
+//                    for status 0, the same body by value); a build-config
+//                    row (a configuration that builds): the same
+//                    revocation_urls and revocation_valid_until_ms, and two
+//                    refused configurations whatever their messages
+//                    (docs/design/revocation.md section 4)
 //   message-only     same verdict and reason, other message text
 //   java-no-call     the Java API cannot express the call (a map row: input
-//                    bytes that are not UTF-8, a root that does not decode)
+//                    bytes that are not UTF-8)
 //   reason           both refuse, for different reasons
-//   payload          both verify, with different payloads
-//   verdict          one verifies and the other refuses
+//   payload          both verify, with different payloads (a build-config
+//                    row: both build, with different revocation settings)
+//   verdict          one verifies and the other refuses (a build-config
+//                    row: one builds the configuration and the other
+//                    refuses it)
 //   fault            a trap, an exception, or INTERNAL_ERROR on either side
 //
 // `recorded.json` maps a row id to the class R20 records for it, with the
@@ -61,11 +68,12 @@ const rows = (path) =>
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l));
 
-/** What one side answered: {kind: ok|fail|endpoint|config|map|fault, ...}. */
+/** What one side answered: {kind: ok|fail|endpoint|config|build|map|fault, ...}. */
 function outcome(row) {
-  // A root that is not a certificate: the core's init refuses it, Java's
-  // CertificateFactory does; the same answer, reached before any call.
-  if (row.map === 'root-not-a-certificate') return { kind: 'config' };
+  // A root or an added issuer that is not a certificate: the core's init
+  // refuses it, Java's CertificateFactory does; the same answer, reached
+  // before any call.
+  if (row.map === 'root-not-a-certificate' || row.map === 'issuer-not-a-certificate') return { kind: 'config' };
   if (row.map !== undefined) return { kind: 'map', map: row.map };
   if (row.trap !== undefined) return { kind: 'fault', detail: `trap ${row.trap}` };
   if (row.threw !== undefined) return { kind: 'fault', detail: `threw ${row.threw}` };
@@ -76,6 +84,15 @@ function outcome(row) {
     return { kind: 'fault', detail: `not JSON: ${String(row.out).slice(0, 80)}` };
   }
   if (doc !== null && typeof doc === 'object' && doc.ok === false) return { kind: 'config' };
+  // A build-config row, or a config the verifier builds: what the
+  // configuration states about revocation.
+  if (doc !== null && typeof doc === 'object' && doc.ok === true) {
+    const built = Array.isArray(doc.revocation_urls)
+      && (doc.revocation_valid_until_ms === null || Number.isSafeInteger(doc.revocation_valid_until_ms));
+    return built
+      ? { kind: 'build', urls: doc.revocation_urls, until: doc.revocation_valid_until_ms }
+      : { kind: 'fault', detail: `unexpected configuration answer: ${String(row.out).slice(0, 80)}` };
+  }
   if (doc !== null && typeof doc === 'object' && 'status' in doc && !('verified' in doc)) {
     return { kind: 'endpoint', status: doc.status, doc };
   }
@@ -96,6 +113,7 @@ function classify(core, java) {
     return core.status === 0 && !same(core.doc, java.doc) ? 'payload' : 'same';
   }
   if (core.kind !== java.kind) return 'verdict';
+  if (core.kind === 'build') return same({ urls: core.urls, until: core.until }, { urls: java.urls, until: java.until }) ? 'same' : 'payload';
   if (core.kind === 'ok') return same(core.payload, java.payload) ? 'same' : 'payload';
   if (core.reason !== java.reason) return 'reason';
   return core.message === java.message ? 'same' : 'message-only';
@@ -112,7 +130,9 @@ const brief = (o) =>
           ? `no call (${o.map})`
           : o.kind === 'config'
             ? 'the config is refused'
-            : o.detail;
+            : o.kind === 'build'
+              ? `the config builds: urls ${JSON.stringify(o.urls)}, valid until ${o.until}`
+              : o.detail;
 
 const a = rows(files[0]);
 const b = rows(files[1]);

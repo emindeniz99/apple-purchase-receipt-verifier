@@ -8,6 +8,7 @@
 #   tools/differential.sh <aprv.wasm> <out-dir> [<calls.jsonl> ...]
 #
 # Writes into <out-dir>: cases.calls.jsonl (fixtures/cases.json as calls,
+# every case, the revocation settings and buildConfig ones included,
 # tools/differential/cases-calls.mjs), and for each call file <name>:
 # <name>.core.jsonl, <name>.java.jsonl and <name>.report.txt. Exits 1 when
 # a row differs in its verdict, its reason or its payload, or faults on
