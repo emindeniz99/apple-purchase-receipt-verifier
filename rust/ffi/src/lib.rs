@@ -628,9 +628,9 @@ unsafe fn finish_new(
         return unsafe { finish(out, status, error_json(status, "verifier is NULL")) };
     }
     match build() {
-        Ok(built) => {
+        Ok(made) => {
             // SAFETY: non-null, and writable per the contract.
-            unsafe { verifier.write(Box::into_raw(Box::new(built))) };
+            unsafe { verifier.write(Box::into_raw(Box::new(made))) };
             let status = AprvReason::Ok as i32;
             if !out.is_null() {
                 let json = std::ptr::null_mut();
