@@ -103,9 +103,11 @@ No job needs a Rust toolchain: the prebuilt native gem is picked.
 
 `lib/apple_purchase_receipt_verifier/aprv.wasm` is **not tracked**: it is in
 `ruby/.gitignore`, and every job that loads the library or builds the gem
-must copy the release build there first (`gem build` needs the copy, and the
-gemspec stops with a message when it is missing). A missing file is an error
-naming where it belongs, never a skip. The library reads no environment
+must copy the release build there first. `gem build` packs whatever is
+there; the release job refuses to publish a gem without the module, and the
+gemspec itself does not check, so that tools which only read the spec
+(Dependabot) still load it in a plain checkout. A missing file at runtime is
+an error naming where it belongs, never a skip. The library reads no environment
 variable, so nothing in a caller's environment can swap the module; only the
 test suite and `bench/corpus.rb` accept `APRV_WASM`, to run a copy kept
 elsewhere, and a test fails if anything under `lib/` mentions `ENV`.

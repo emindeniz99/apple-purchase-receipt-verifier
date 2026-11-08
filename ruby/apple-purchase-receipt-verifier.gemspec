@@ -38,13 +38,11 @@ Gem::Specification.new do |spec|
   # roots live inside the module, so the gem carries no certificate file. The
   # tests are not shipped.
   #
-  # The module is not tracked in git: the release job copies it to the path
-  # below before `gem build`, and a build without it stops here.
-  module_file = File.join(__dir__, "lib/apple_purchase_receipt_verifier/aprv.wasm")
-  unless File.file?(module_file)
-    raise "lib/apple_purchase_receipt_verifier/aprv.wasm is missing: copy the release " \
-          "build of the module there before `gem build`"
-  end
+  # The module is not tracked in git: the release job copies it into lib/
+  # before `gem build`, and refuses to publish a gem that lacks it. The
+  # gemspec does not check for it itself: tools that only read the spec,
+  # Dependabot among them, load this file in a checkout without the module,
+  # and a raise here stopped every one of their runs.
 
   spec.files = Dir[
     "lib/**/*.rb",
