@@ -250,9 +250,6 @@ that ships it.
   up. It touches `rust/ffi/src/lib.rs`, the committed header
   (`cbindgen.toml`, `check-header.sh`), `exported-symbols.txt`, the tests,
   the C++ and ctypes examples and `rust/ffi/README.md`.
-- **`aprv-server` managed mode keeps the last value of a repeated key** in
-  its configuration line before `init` sees it, so a duplicate is not
-  refused the way the module refuses one. Found in passing; not fixed.
 - **The differential campaign skips the new cases.**
   `tools/differential.sh` does not run the revocation cases or the
   `buildConfig` operation.

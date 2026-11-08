@@ -260,6 +260,9 @@ impl Settings {
         let obj = v
             .as_object()
             .ok_or("configuration line is not a JSON object")?;
+        // `Value` keeps the last of a member named twice, which `init`
+        // would then never see; it refuses such a line, so the server does.
+        refuse_repeats(text)?;
         if let Some(k) = obj.keys().find(|k| {
             !matches!(
                 k.as_str(),
@@ -318,6 +321,182 @@ impl Settings {
                 distrust,
             },
         })
+    }
+}
+
+/// Refuses a configuration line that names a member twice, or a `distrust`
+/// entry that names `issuer` or `serial` twice: what `init` refuses
+/// (`aprv_wire::read_init_config`, its `Once` and `DistrustOnce`) and
+/// `serde_json::Value` would read as whichever came last. The server has
+/// no `serde` of its own to derive that refusal, so `text`, which
+/// `serde_json` has already accepted as an object, is walked here for
+/// member names alone. Names are compared as decoded, so `"roots"` is
+/// `roots`. The line's top-level repeat is named before a `distrust`
+/// entry's, wherever each stands in the line.
+fn refuse_repeats(text: &str) -> Result<(), String> {
+    let mut cursor = Cursor { text, at: 0 };
+    let Some(distrust) = cursor.members("configuration line", None, "distrust")? else {
+        return Ok(());
+    };
+    cursor.at = distrust;
+    if !cursor.eat(b'[') || cursor.eat(b']') {
+        return Ok(());
+    }
+    let mut index = 0;
+    loop {
+        cursor.skip_space();
+        if cursor.byte() == Some(b'{') {
+            cursor.members("distrust", Some(index), "")?;
+        } else {
+            cursor.skip_value()?;
+        }
+        if !cursor.eat(b',') {
+            return Ok(());
+        }
+        index += 1;
+    }
+}
+
+/// A position in JSON text that `serde_json` has accepted. Nothing here
+/// judges the text, so a surprise (which cannot arise from accepted text)
+/// is an error, not a panic.
+struct Cursor<'a> {
+    text: &'a str,
+    at: usize,
+}
+
+const MALFORMED: &str = "configuration line is not JSON";
+
+impl Cursor<'_> {
+    fn byte(&self) -> Option<u8> {
+        self.text.as_bytes().get(self.at).copied()
+    }
+
+    fn skip_space(&mut self) {
+        while matches!(self.byte(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+            self.at += 1;
+        }
+    }
+
+    /// Steps over `b` if it is next, after any space.
+    fn eat(&mut self, b: u8) -> bool {
+        self.skip_space();
+        let is = self.byte() == Some(b);
+        if is {
+            self.at += 1;
+        }
+        is
+    }
+
+    /// Steps over the string next, quotes included, and returns its span.
+    fn string(&mut self) -> Result<(usize, usize), String> {
+        self.skip_space();
+        let start = self.at;
+        if self.byte() != Some(b'"') {
+            return Err(MALFORMED.into());
+        }
+        self.at += 1;
+        loop {
+            match self.byte() {
+                None => return Err(MALFORMED.into()),
+                Some(b'\\') => self.at += 2,
+                Some(b'"') => {
+                    self.at += 1;
+                    return Ok((start, self.at));
+                }
+                Some(_) => self.at += 1,
+            }
+        }
+    }
+
+    /// Steps over the value next, whatever it is.
+    fn skip_value(&mut self) -> Result<(), String> {
+        self.skip_space();
+        match self.byte() {
+            None => Err(MALFORMED.into()),
+            Some(b'"') => self.string().map(|_| ()),
+            Some(b'{' | b'[') => {
+                let mut depth = 0usize;
+                loop {
+                    match self.byte() {
+                        None => return Err(MALFORMED.into()),
+                        Some(b'"') => {
+                            self.string()?;
+                        }
+                        Some(b'{' | b'[') => {
+                            depth += 1;
+                            self.at += 1;
+                        }
+                        Some(b'}' | b']') => {
+                            depth -= 1;
+                            self.at += 1;
+                            if depth == 0 {
+                                return Ok(());
+                            }
+                        }
+                        Some(_) => self.at += 1,
+                    }
+                }
+            }
+            Some(_) => {
+                while !matches!(
+                    self.byte(),
+                    None | Some(b',' | b']' | b'}' | b' ' | b'\t' | b'\n' | b'\r')
+                ) {
+                    self.at += 1;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Steps over the object next and refuses a name it holds twice,
+    /// saying so of `whose` (and its `index`, in an array). Returns where
+    /// the value of the member `want` starts, if it has one.
+    fn members(
+        &mut self,
+        whose: &str,
+        index: Option<usize>,
+        want: &str,
+    ) -> Result<Option<usize>, String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut found = None;
+        if !self.eat(b'{') {
+            return Err(MALFORMED.into());
+        }
+        if self.eat(b'}') {
+            return Ok(None);
+        }
+        loop {
+            let (start, end) = self.string()?;
+            let name: String = self
+                .text
+                .get(start..end)
+                .and_then(|s| serde_json::from_str(s).ok())
+                .ok_or(MALFORMED)?;
+            if !self.eat(b':') {
+                return Err(MALFORMED.into());
+            }
+            self.skip_space();
+            if name == want {
+                found = Some(self.at);
+            }
+            if !seen.insert(name.clone()) {
+                return Err(match index {
+                    Some(i) => format!("{whose}[{i}] names {name:?} more than once"),
+                    None => format!("{whose} names {name:?} more than once"),
+                });
+            }
+            self.skip_value()?;
+            if self.eat(b',') {
+                continue;
+            }
+            return if self.eat(b'}') {
+                Ok(found)
+            } else {
+                Err(MALFORMED.into())
+            };
+        }
     }
 }
 
@@ -953,5 +1132,79 @@ mod tests {
         assert!(managed_line(r#"{"roots":["AQID"],"x":1}"#).is_err());
         assert!(managed_line("[]").is_err());
         assert_eq!(Roots::Defaults.config_json(), b"{}");
+    }
+
+    /// A member named twice is refused, as `init` refuses it, instead of
+    /// the last one being kept: a line whose first `revocation_lists` was
+    /// a real list would otherwise run with none.
+    #[test]
+    fn refuses_a_member_named_twice_in_the_configuration_line() {
+        let refused = |t: &str| Settings::from_config_json(t).unwrap_err();
+        assert_eq!(
+            refused(r#"{"revocation_lists":[],"revocation_lists":[]}"#),
+            r#"configuration line names "revocation_lists" more than once"#
+        );
+        assert_eq!(
+            refused(r#"{"revocation_lists":["AQID"],"revocation_lists":[]}"#),
+            r#"configuration line names "revocation_lists" more than once"#
+        );
+        assert_eq!(
+            refused(r#"{"roots":["AQID"],"distrust":[],"roots":["BAU="]}"#),
+            r#"configuration line names "roots" more than once"#
+        );
+        assert_eq!(
+            refused(r#"{"revocation_issuers":[],"revocation_issuers":[]}"#),
+            r#"configuration line names "revocation_issuers" more than once"#
+        );
+        assert_eq!(
+            refused(r#"{"distrust":[],"distrust":[]}"#),
+            r#"configuration line names "distrust" more than once"#
+        );
+        // The same name written with an escape is the same member.
+        assert_eq!(
+            refused(r#"{"roots":["AQID"],"roots":["AQID"]}"#),
+            r#"configuration line names "roots" more than once"#
+        );
+        // Text that looks like a member inside a value is not one.
+        let ok = Settings::from_config_json(
+            r#"{"distrust":[{"issuer":"\"serial\":{","serial":"[,]"}],"revocation_lists":["AQID"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            ok.revocation.distrust,
+            [("\"serial\":{".to_owned(), "[,]".to_owned())]
+        );
+    }
+
+    /// A `distrust` entry that names `issuer` or `serial` twice is refused:
+    /// read into a map it has two members and passes the check for exactly
+    /// two, with the last `issuer` or `serial` in force.
+    #[test]
+    fn refuses_a_distrust_entry_naming_a_field_twice() {
+        let refused = |t: &str| Settings::from_config_json(t).unwrap_err();
+        assert_eq!(
+            refused(r#"{"distrust":[{"issuer":"X","issuer":"Y","serial":"01"}]}"#),
+            r#"distrust[0] names "issuer" more than once"#
+        );
+        assert_eq!(
+            refused(r#"{"distrust":[{"issuer":"X","serial":"01","serial":"02"}]}"#),
+            r#"distrust[0] names "serial" more than once"#
+        );
+        // The index is that of the entry, and the entries before it are
+        // read for what they are.
+        assert_eq!(
+            refused(
+                r#"{"distrust":[{"issuer":"A","serial":"1"},[1,{"issuer":"a","issuer":"b"}],{"issuer":"X","issuer":"Y","serial":"01"}]}"#
+            ),
+            r#"distrust[2] names "issuer" more than once"#
+        );
+        let ok = Settings::from_config_json(
+            r#"{"distrust":[{"issuer":"A","serial":"1"},{"serial":"2","issuer":"B"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            ok.revocation.distrust,
+            [("A".into(), "1".into()), ("B".into(), "2".into())]
+        );
     }
 }
