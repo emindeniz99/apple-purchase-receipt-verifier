@@ -2795,7 +2795,7 @@ checks later".
 - **Not done:** OCSP; OpenSSL's `X509_V_FLAG_CRL_CHECK`, which judges a
   list's freshness at the payload's date and so fails every historical
   verification; any download inside a library; revocation settings in
-  the C ABI, which gained only the reason code.
+  the C ABI, which gained only the reason code (R48 adds them).
 - **Divergences between the core and Java,** recorded under R20's rule:
   - Which problem a refused configuration names first. The core reports
     list problems, then issuers, then `distrust`; Java checks `distrust`
@@ -2816,6 +2816,79 @@ checks later".
   100,000-entry and 1,000-`distrust` bounds and an injected built-in list
   are unit tests in each implementation (`rust/tests/revocation.rs`,
   `RevocationTest`).
+
+## R48. Revocation settings in the C ABI: `init`'s JSON and two getters
+
+**Status: accepted** (2026-11-08). The owner asked for the settings and
+left the shape to whoever picked it up (ROADMAP.md, "C ABI revocation
+settings"); this is that choice, and the owner reviews it with the rest
+of the pull request. Amends R47's "Not done" and the C ABI sentence of
+docs/design/revocation.md §8.
+
+- **The gap it closes:** a C caller got `17` from the built-in list but
+  could not pass `revocation_lists`, `revocation_issuers` or `distrust`,
+  so a list published after the release, or a key the caller distrusts,
+  could not reach it. It could not read `revocationUrls` or
+  `revocationValidUntil` either, so it had nothing to download and
+  nothing to alert on. New exported symbols are the only way to carry
+  them: `aprv_verifier_new`'s signature is the ABI.
+- **Decision, the constructor:** `aprv_verifier_new` stays exactly as it
+  is, and `aprv_verifier_new_config` sits beside it. It takes the bytes
+  of the JSON `init` takes (`init-config.schema.json`, roots included),
+  reads them with `aprv_wire::read_init_config` and makes the verifier
+  with `InitConfig::verifier`, the two calls `aprv-abi` makes. So one
+  reader and one writer of refusals serve both boundaries, and a member
+  added to `init` later needs no new symbol. No bytes and `{}` are the
+  three Apple roots with no setting, as for `init`.
+- **Decision, the clock stays outside the JSON:** the third argument is
+  `aprv_verifier_new`'s `fixed_clock_unix_millis`. `init` has no clock,
+  since the module takes `now-ms` per call, so the schema has no member
+  for it, and adding one to the shared reader would let `aprv.wasm`
+  accept what it ignores.
+- **Decision, the refusal crosses as a status and a message:** it returns
+  the status, as the verify calls do, and writes the handle to
+  `*verifier` and the outcome to `*out`. A refused configuration is `102`
+  `INVALID_ARGUMENT` with `{"reason":"INVALID_ARGUMENT","message":"..."}`,
+  the document the 0.7 calls answer for a call mistake, and the message
+  is the one `init` gives: it names the first problem and its index,
+  which a host needs when one list of sixteen is refused.
+  `aprv_verifier_new`'s bare `NULL` could not say any of that.
+- **Decision, a panic writes nothing:** every step that can panic runs
+  before the first write, so a caught panic returns `103` with `*verifier`
+  and `*out` as the caller left them, as a panic in the verify calls
+  leaves `*out`. A handle written before a panic would be a handle the
+  caller is told does not exist. The return value is therefore the status
+  to read.
+- **Decision, the getters answer JSON text:**
+  `aprv_verifier_revocation_urls` and
+  `aprv_verifier_revocation_valid_until_ms` write the value `init`'s
+  answer holds in the member of the same name: an array of strings, and
+  a number or `null`. Each is freed with `aprv_string_free`. That is one
+  calling shape, one ownership rule and the crate's own interchange, and
+  a `null` needs no second out parameter: every `int64_t` names a real
+  instant, the reason the clock argument is a pointer.
+- **Rejected, all in one call:** a C struct of the settings is a pointer
+  and a length per member and per entry, ABI for each member added, and
+  a second copy of `read_init_config`'s rules. One setter per setting
+  makes a handle mutable, which the header promises it is not, and a
+  host refreshes by building a new verifier (docs/design/revocation.md
+  §9).
+- **Rejected, `aprv_verifier_new` taking the JSON:** changing its
+  signature breaks every 0.7 caller to serve the ones that need
+  revocation settings.
+- **Rejected, `out->json` holding `init`'s whole answer:** it would save
+  the getters, but a C caller would parse a document for two values and
+  keep them for as long as it keeps the handle. It would also make a
+  refusal `{"ok":false,...}` in a struct whose other non-zero documents
+  name a reason.
+- **Rejected, a typed `int64_t` and a `bool` for the instant:** two out
+  parameters on one getter, for a value a monitor reads rarely, beside a
+  sibling that has to be text anyway.
+- **Not done:** the Elixir example binds `aprv_verifier_new` alone, so its
+  run still counts the revocation cases as not reachable; the C++ and
+  ctypes harnesses run them. The header's reason code and the surface's
+  reasons are unchanged. No verification behaviour moves, so the core,
+  Java and `fixtures/` do not change.
 
 ---
 
@@ -2888,6 +2961,7 @@ One table for everything the plan measured or considered and rejected.
 | Keeping .NET's hand-written JSON reader and writer | 610 lines of grammar and escaping the package maintains, for answers `System.Text.Json` reads; it existed only to keep netstandard2.0 free of a package dependency (R41) | [.NET JSON][stjout] | — |
 | Keeping `aprv-wire`'s hand-written JSON writer | An escaper and object builder the project maintains, for output `serde_json`, already in the build, writes byte for byte the same; a test pins a fully populated answer to the old writer's text (R40, amended 2026-10-02) | `rust/bindings/wire/src/lib.rs`, its tests | — |
 | `serde_json` variant A, `Map<String, Value>` | Builds a tree of unsigned input at up to 126 times its size: 396 MB for one 3 MiB request and 25 MB for one JWS segment, against 521 bytes for the map of raw values (R40) | [serde_json][jsonserde] | — |
+| A C struct of the revocation settings, or one setter per setting, in the C ABI | Not measured. A struct is ABI for every member and a second copy of `read_init_config`'s rules; a setter makes an immutable handle mutable (R48) | The review of 2026-11-08; no evidence note | — |
 
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md

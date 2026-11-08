@@ -257,7 +257,7 @@ each added issuer's DER, in order) and `distrust` (the entries as given, in orde
 server mode and PHP can refuse a server whose revocation settings differ from their `Config`, as they already do for
 roots. `aprv info` takes `--roots` and the three revocation flags and prints the same members, which is how PHP's
 one-process-per-call transport reads the two reported values. A server picks up new lists by restarting (or by a new
-managed child). The C ABI gains only the reason (code 17); it has no way to pass revocation settings.
+managed child). The C ABI gains the reason (code 17), `aprv_verifier_new_config`, which reads the same JSON as `init`, and two getters for the reported values (DECISIONS.md R48).
 
 ## 9. Packages
 
