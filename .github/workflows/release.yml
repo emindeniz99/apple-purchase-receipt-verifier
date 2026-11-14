@@ -704,11 +704,11 @@ jobs:
         with:
           pattern: aprv-*
           path: ${{ runner.temp }}/in
-      - name: install cargo-cyclonedx 0.5.9
+      - name: install cargo-cyclonedx 0.5.10
         working-directory: rust
         run: |
           rustup toolchain install
-          cargo install cargo-cyclonedx --version 0.5.9 --locked --root "$RUNNER_TEMP/cargo-tools"
+          cargo install cargo-cyclonedx --version 0.5.10 --locked --root "$RUNNER_TEMP/cargo-tools"
           echo "$RUNNER_TEMP/cargo-tools/bin" >> "$GITHUB_PATH"
       - name: write and check the SBOMs
         run: |
