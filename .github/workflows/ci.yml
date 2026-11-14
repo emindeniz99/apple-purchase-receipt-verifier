@@ -2639,9 +2639,9 @@ jobs:
           trap 'kill "$p1" "$p2" 2>/dev/null || true; cat serve1.log serve2.log' EXIT
           up 18080
           up 18081
-          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18080/openapi.json \
+          uvx --from schemathesis==4.33.1 schemathesis run http://127.0.0.1:18080/openapi.json \
             --checks all --max-examples 50 --workers 1
-          uvx --from schemathesis==4.32.7 schemathesis run http://127.0.0.1:18081/openapi.json \
+          uvx --from schemathesis==4.33.1 schemathesis run http://127.0.0.1:18081/openapi.json \
             --checks all --max-examples 30 --workers 1 -H "X-Aprv-Token: $token"
 
   # The Docker image both ways it is built: from source (the Dockerfile's
