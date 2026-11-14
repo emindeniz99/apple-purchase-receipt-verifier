@@ -569,11 +569,11 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm]
         python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
-          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:58f67f392d490af90763f17b57a31245e3f26fb12ac9b6322c7af20507f15336" } # python3.11-alpine, uv 0.13.6
-          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:8a8e1becc4af37b754fa36eb75e26340e3e4d421542b7c4fdc6bced966abd6bf" } # python3.12-alpine, uv 0.13.6
-          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:63b8fa4be2338728034164eb6c067a363fdbb3234fa79b64c83545317b7feec1" } # python3.13-alpine, uv 0.13.6
-          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a069b57ec30ef94da43700a7332b162a13adb0b8a1cfba4e0b62c1a9727153c4" } # python3.14-alpine, uv 0.13.6
-          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:4de1eb2baffd7a44903a53b6cb112b2538232d56287bc37d18b66ae1f17108d4" } # python3.15-alpine, uv 0.13.6
+          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:50c205a1d4c3625cec60ee88750e2cd33937699d69a63b3b024f98a18a310190" } # python3.11-alpine, uv 0.13.7
+          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:aef1a1327a732e74892765e22fa528499eca3f828140a66ed46b2f8df51bd0dc" } # python3.12-alpine, uv 0.13.7
+          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:7b02bf9f2d812bf1b21b4d790901eb22250523943b82af93e8c543ea54b6b4d5" } # python3.13-alpine, uv 0.13.7
+          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:df6ea28f3caf5eb77ebae34d38e9b177b41a4e58ee963b1cbc5c8c1c92710238" } # python3.14-alpine, uv 0.13.7
+          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:f008ab85c84befffaaa8cbde7eb2b749331769df4e18be766269d0c4904deb40" } # python3.15-alpine, uv 0.13.7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
