@@ -7,7 +7,7 @@ source "https://rubygems.org"
 
 gem "rake", "~> 13.0"
 gem "rbs", "~> 4.2"
-gem "rubocop", "~> 1.60"
+gem "rubocop", "~> 1.92"
 gem "rubocop-minitest", "~> 0.35"
 gem "rubocop-rake", "~> 0.6"
 gem "steep", "~> 2.1"
