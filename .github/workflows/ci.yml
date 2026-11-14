@@ -2109,11 +2109,20 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deny --locked --version 0.20.2
-      # The whole workspace, the C ABI (ffi/) and the bindings included. The
-      # two packages outside it with lockfiles of their own, rust/server and
-      # rust/bindings/abi/tests, are not audited here: both link Wasmtime,
-      # whose Apache-2.0 WITH LLVM-exception licence deny.toml does not list.
+      # The whole workspace, the C ABI (ffi/) and the bindings included.
       - run: cargo deny check
+        working-directory: rust
+      # The three packages outside it with lockfiles of their own link
+      # Wasmtime, whose Apache-2.0 WITH LLVM-exception licence deny.toml does
+      # not list, so they get the advisories check alone. rust/server is the
+      # shipped aprv-server binary; its own deny.toml reports unsound
+      # advisories in transitive dependencies too and records the one
+      # advisory it accepts.
+      - run: cargo deny --manifest-path server/Cargo.toml check advisories
+        working-directory: rust
+      - run: cargo deny --manifest-path bindings/abi/tests/Cargo.toml check advisories
+        working-directory: rust
+      - run: cargo deny --manifest-path fuzz/abi/Cargo.toml check advisories
         working-directory: rust
 
   # aprv.wasm, built the way release.yml's build-wasm builds it, then held to
