@@ -87,7 +87,8 @@ APRV_TEST_COMPONENT="$OUT/aprv.component.wasm" \
 # The module alone, through a host that traps on any import but random-get
 node tools/wasm-trap-host.mjs cases "$OUT/aprv.wasm" fixtures/cases.json
 
-# Java, the independent implementation (Java 8 target, any modern JDK)
+# Java, the independent implementation (Java 8 target, any modern JDK;
+# Maven 3.9.0 or later, which build-helper-maven-plugin 3.7.0 requires)
 mvn -B -f java/pom.xml verify
 
 # Java -wasm (Endive on Java 11+; the server-engine tests need the binary)
