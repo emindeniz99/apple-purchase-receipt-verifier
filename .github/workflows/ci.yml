@@ -3214,7 +3214,7 @@ jobs:
       # built; --python names it explicitly, because under continue-on-error
       # a mis-resolved environment would look like findings rather than like
       # the misconfiguration it is.
-      - run: uvx ty@0.0.94 check --python .venv apple_purchase_receipt_verifier
+      - run: uvx ty@0.0.99 check --python .venv apple_purchase_receipt_verifier
         working-directory: python
         continue-on-error: true
 
