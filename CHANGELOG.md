@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.13.1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.13.0...v0.13.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ruby:** let the gemspec load in a checkout without the module ([161270c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/161270cfc62aef3008bf740fd9afa29f21c56f11))
+
+
+### Build & Dependencies
+
+* **deps-dev:** Bump @bytecodealliance/jco in /node ([954f3b0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/954f3b0c5dda42d33f687403a739e797ac4709ab))
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([0bb4e0c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0bb4e0c7ca9de4888d784fbe130214f934268f93))
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([7805263](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7805263d0ee5daa387d1b2808772b3fbd961b236))
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([0974149](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0974149b9a30384eee42476bff202774117bc082))
+* **deps-dev:** Bump endive.version from 1.1.0 to 1.2.0 in /java-wasm ([32bc685](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/32bc685b57f3e467b4ca8c4d977f4d340df5849a))
+* **deps-dev:** Bump friendsofphp/php-cs-fixer in /php ([dc461c3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/dc461c305d3283747b7587402b0dbaf80222fc99))
+* **deps-dev:** Bump org.codehaus.mojo:build-helper-maven-plugin ([671ce21](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/671ce21bd8032af5d29e5dfd3edc571fbad31018))
+* **deps-dev:** Bump org.codehaus.mojo:build-helper-maven-plugin ([62f2d88](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/62f2d8889670e80a75b7dad276f5654287f0e93d))
+* **deps-dev:** Bump oxlint from 1.90.0 to 1.92.0 in /node ([8418166](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/841816612a6dab862babbbf9141a9b718b25d6da))
+* **deps-dev:** Bump phpstan/phpstan from 2.3.3 to 2.3.4 in /php ([a32f628](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a32f6280c06478afc875b039f2f3fe8cb2e1fdd8))
+* **deps-dev:** Bump phpstan/phpstan from 2.3.4 to 2.3.5 in /php ([4349d75](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/4349d75e94300a46b55c5f97704ea21ea9a920e2))
+* **deps-dev:** Bump playwright from 1.64.1 to 1.65.0 in /node ([8257fc2](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/8257fc2ddba781b6c89a1bfe0416f1994d500756))
+* **deps-dev:** Bump wrangler ([e48da05](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e48da050671daf015d8f58d12e22af7a5d790d06))
+* **deps:** Bump cc from 1.10.0 to 1.11.1 in /rust ([01e6822](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/01e68221c65f94617b0aa07bca08e9dd8b82872b))
+* **deps:** Bump cc from 1.10.0 to 1.11.1 in /rust/fuzz ([10d90a3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/10d90a37fe50d4f1e113a877a96d2208425049b0))
+* **deps:** Bump debian from `f6b08b0` to `a72b443` in /tools/reproduce ([441f458](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/441f4585ac03b9d76e4ae4f23b31401fa3c92c6c))
+* **deps:** Bump distroless/static-debian13 in /rust/server ([6414573](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/64145730e0c3808b07505ea16f0beac47a62a16b))
+* **deps:** Bump github.com/apple/swift-crypto from 5.0.3 to 5.1.1 ([0e2bba3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/0e2bba307e16cab2b525262936c663dfd66c8507))
+* **deps:** Bump hyper from 1.11.1 to 1.12.0 in /rust/server ([f7aa1bc](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f7aa1bc9957cb5c7a8868eca45745f41d86ad0ff))
+* **deps:** Bump jiff from 0.2.38 to 0.2.39 in /rust ([142f7d1](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/142f7d14defb4081b7fcaa401b9581df981d1f5a))
+* **deps:** Bump jiff from 0.2.38 to 0.2.39 in /rust/fuzz ([5be6976](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/5be6976a9d035f2d152f50975598da84d1ae094b))
+* **deps:** Bump minitest in /ruby ([24e5444](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/24e544492ea2b24d1581bb1b833b5dc2c261c31f))
+* **deps:** Bump openssl from 0.10.81 to 0.10.82 in /rust ([f937060](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/f9370608dc8b51644969e94dfb0bd611fc8a2fe0))
+* **deps:** Bump openssl from 0.10.81 to 0.10.82 in /rust/fuzz ([2896401](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/289640107bc73c46a2210e8046d899374d664361))
+* **deps:** Bump platformdirs from 4.14.0 to 4.14.5 in /python ([c9aecd9](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c9aecd98edc9cd1b265a519ff9ed487b4d86fdbd))
+* **deps:** Bump rubocop in /ruby/gemfiles/tools ([eaa140e](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/eaa140ece5e75e14e7fff3e0299beca88cf930e5))
+* **deps:** Bump ruby/setup-ruby ([1d06365](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1d063651e6a16f502755a1883f180d2c4041d4c0))
+* **deps:** Bump ruff from 0.17.3 to 0.17.4 in /python ([db0ccd3](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/db0ccd33641e64613dbac0d9b39466ff43825a89))
+* **deps:** Bump rust-toolchain from 1.99.1 to 1.100.0 in /rust ([1820176](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/1820176e0923d45d23c57a118503e4d85931a29c))
+* **deps:** Bump the actions group across 1 directory with 6 updates ([3109468](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/3109468d68d322deb7a6d83851b617b6fb1d3bb0))
+* **deps:** Bump wat from 1.262.0 to 1.263.0 in /rust/server ([a777fda](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a777fda6ebed61f714d0faf5d1e86e39f1a6268e))
+* **dotnet:** regenerate lock files for the november sdk patches ([7df9205](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/7df92057dcf9e0afe1ed71b5fb80159c273d6193))
+* **node:** move the minimatch override to 11.0.5 ([623577f](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/623577fb9f892e93d3a41c38132fa2330c99a79f))
+* **repo:** move the reproduce image's rustup to 1.29.3 ([e25b304](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/e25b304d39a6e61e1255d8994acc16b73c0a0946))
+* **repo:** move the wasm-tools pin to 1.263.0 ([a4ad16a](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/a4ad16a46774a7faa2ab0ec5696fb578ce2a80be))
+* **rust:** hold rust 1.100.0 back until its image clears the cooldown ([fc30a1c](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/fc30a1c86fa6d88cb2f8e5969e819674e3bb837a))
+* **rust:** hold the distroless digest back until it is seven days old ([c9b7dba](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/c9b7dba5139b7591f2f3c31a71332ac047f96c68))
+* **rust:** move rustix to 1.1.6 outside the audited workspace ([ff8f120](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/ff8f120189900ef00f59a3d28445c8978c0f4271))
+* **rust:** refresh the vendored openssl-sys to 0.9.118 ([b0d61f8](https://github.com/emindeniz99/apple-purchase-receipt-verifier/commit/b0d61f859619f7e58d07925a2752bee44956f172))
+
 ## [0.13.0](https://github.com/emindeniz99/apple-purchase-receipt-verifier/compare/v0.12.0...v0.13.0) (2026-11-05)
 
 
