@@ -544,7 +544,7 @@ jobs:
       # python-build-standalone, including the 3.11 floor.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           python-version: ${{ matrix.python }}
       # uv sync from the committed lock, the suite, and the suite again with
       # the compile cache warm; the script says why each one is there.
@@ -1218,7 +1218,7 @@ jobs:
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         run: .github/scripts/python-suite.sh 3.11
@@ -1309,7 +1309,7 @@ jobs:
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
@@ -1929,7 +1929,7 @@ jobs:
           host: python
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           python-version: "3.13"
       - name: the fuzzer's environment and the generated seed
         run: ./run.sh build
@@ -2620,7 +2620,7 @@ jobs:
           path: ${{ runner.temp }}/server
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           enable-cache: false
       - name: Schemathesis against a started server, without and with a token
         run: |
@@ -3103,7 +3103,7 @@ jobs:
       # over these workflows.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
       - run: uvx zizmor@1.32.0 .github/workflows/ .github/actions/
 
   # Lint and formatting for the Node port. Separate from the `node` job
@@ -3173,7 +3173,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
       # reviewed versions rather than whatever resolved this morning. The
