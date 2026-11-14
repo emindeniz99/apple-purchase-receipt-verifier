@@ -111,7 +111,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
@@ -133,11 +133,11 @@ jobs:
           persist-credentials: false
       # Two JDKs: 8 for the test JVM (exposed as JAVA_HOME_8_X64), then 25
       # last so it wins JAVA_HOME and drives Maven itself.
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '8'
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '25'
@@ -162,7 +162,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -268,7 +268,7 @@ jobs:
       # The runner-side JDK only compiles; the pom's --release 8 applies to the
       # test sources too, so target/test-classes is major version 52 and loads
       # on every JRE in the matrix.
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '25'
@@ -490,7 +490,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
@@ -1086,7 +1086,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1129,7 +1129,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1183,7 +1183,7 @@ jobs:
         with:
           host: ruby
       - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1200,7 +1200,7 @@ jobs:
         with:
           host: dotnet
       - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
             8.0.x
@@ -1293,7 +1293,7 @@ jobs:
         with:
           host: dotnet
       - if: ${{ !cancelled() && needs.changes.outputs.dotnet == 'true' }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
             8.0.x
@@ -1336,7 +1336,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1373,7 +1373,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -1715,7 +1715,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: dotnet
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
       # dotnet/bench sits outside the .sln for the same reason fuzz does, so
@@ -1857,7 +1857,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -2059,7 +2059,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2734,11 +2734,11 @@ jobs:
           (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
       # The JVM under test first (its home is exported as JAVA_HOME_<v>_X64),
       # then JDK 21 last, which wins JAVA_HOME and runs Maven.
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2780,11 +2780,11 @@ jobs:
           .github/scripts/place-module.sh "$RUNNER_TEMP/aprv" java
           chmod +x "$RUNNER_TEMP/server/aprv-x86_64-unknown-linux-musl"
           (cd "$RUNNER_TEMP/server" && sha256sum aprv-x86_64-unknown-linux-musl > SHA256SUMS)
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '8'
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -2823,7 +2823,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: java
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2861,7 +2861,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: java
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3037,7 +3037,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: dotnet
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
             8.0.x
@@ -3264,7 +3264,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
             8.0.x
@@ -3288,7 +3288,7 @@ jobs:
       # 10.0.401 asked 8.0.31), so a job restoring under an older SDK trips
       # locked mode with NU1004 on a lock file that is correct.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
       - if: ${{ !cancelled() }}
@@ -3325,7 +3325,7 @@ jobs:
       # The SDK that wrote packages.lock.json; see dotnet-mono. The sample
       # still targets net9.0, which this SDK builds and publishes.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
       - if: ${{ !cancelled() }}
@@ -3348,7 +3348,7 @@ jobs:
       # 10.0 packs (it is the SDK that wrote packages.lock.json, see
       # dotnet-mono); 8.0 is the runtime the net8.0 smoke runs on.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
             8.0.x
@@ -3401,7 +3401,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3423,7 +3423,7 @@ jobs:
       # name). HostPolicyProbe then shows the premise on the same JDK: under the
       # same policy the JDK's own PKIX refuses the chain the suite accepted.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -3451,7 +3451,7 @@ jobs:
       # interop tests. Never part of the release: jvm-interop has no
       # release-please entry and no <module> anywhere.
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3471,7 +3471,7 @@ jobs:
         run: mvn -B -f java-bench/pom.xml -Dlibrary.version="$(cat version.txt)" compile
       # --- smoke-maven -------------------------------------------------------
       - if: ${{ !cancelled() }}
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -3749,7 +3749,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1.336.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
