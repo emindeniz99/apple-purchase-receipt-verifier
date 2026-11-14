@@ -12,6 +12,6 @@ source "https://rubygems.org"
 #
 # minitest ships with Ruby as a bundled gem; naming it keeps `bundle exec`
 # honest on rubies where the bundled set changes.
-gem "minitest", "~> 6.0"
+gem "minitest", "~> 6.1"
 gem "rake", "~> 13.0"
 gem "wasmtime", ">= 50.0.0"

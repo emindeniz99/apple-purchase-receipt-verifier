@@ -62,7 +62,7 @@ python3 scripts/corpus.py --aprv $BIN $R --mode http --lifecycle fresh
 python3 scripts/corpus.py --aprv $BIN $R --mode http --lifecycle pool
 python3 scripts/corpus.py --aprv $BIN $R --mode cli
 
-npx --yes @stoplight/spectral-cli@6.17.0 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
+npx --yes @stoplight/spectral-cli@6.17.1 lint --fail-severity=hint --ruleset .spectral.yaml openapi.yaml
 
 # Schemathesis writes .schemathesis/ and .hypothesis/ into its working
 # directory (both in the root .gitignore); run it from a scratch directory.

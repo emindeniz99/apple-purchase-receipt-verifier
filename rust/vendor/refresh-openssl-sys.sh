@@ -13,8 +13,8 @@
 #
 #   rust/vendor/refresh-openssl-sys.sh
 set -eu
-VERSION=0.9.117
-SHA256=b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695
+VERSION=0.9.118
+SHA256=19c413d6ec9ebaf5e1c829d355cb3e9f783778d700f135be0921d52fce3c60ae
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

@@ -44,7 +44,7 @@
     "runtime:node": "node runtime-smoke/node-like.mjs",
     "runtime:bun": "npx --yes bun@1.4.4 runtime-smoke/node-like.mjs",
     "runtime:deno": "npx --yes deno@2.9.6 run --allow-read --allow-env=JCO_DEBUG runtime-smoke/node-like.mjs",
-    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20261028.1",
+    "runtime:workerd": "node runtime-smoke/run-workerd.mjs workerd@1.20261107.1",
     "runtime:edge": "node --experimental-vm-modules runtime-smoke/edge.mjs",
     "runtime:browser": "node runtime-smoke/browser.mjs"
   },
@@ -54,16 +54,16 @@
     "licenses"
   ],
   "devDependencies": {
-    "@bytecodealliance/jco": "1.39.0",
+    "@bytecodealliance/jco": "1.41.0",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.19.43",
     "oxlint": "^1.85.0",
-    "playwright": "1.64.1",
+    "playwright": "1.65.0",
     "prettier": "^3.9.9",
     "typescript": "^7.0.2"
   },
   "types": "dist/index.d.ts",
   "overrides": {
-    "minimatch": "11.0.4"
+    "minimatch": "11.0.5"
   }
 }

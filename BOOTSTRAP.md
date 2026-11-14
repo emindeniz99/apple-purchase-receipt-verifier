@@ -89,7 +89,7 @@ empty stub gem for it.
 
 The 0.8 core runs on OpenSSL 4 through `aprv-openssl`, and the workspace
 builds it with a one-line `[patch.crates-io]` of `openssl-sys`, because
-`openssl-sys` 0.9.117 does not accept `openssl-src` 400.x. A patch applies
+`openssl-sys` 0.9.118 does not accept `openssl-src` 400.x. A patch applies
 only inside this workspace: a crates.io build of the crate would get
 OpenSSL 3, which `aprv-openssl`'s build script refuses. So neither crate
 has ever been published to crates.io (no version exists there, 0.7

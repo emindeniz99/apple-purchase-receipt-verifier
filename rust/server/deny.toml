@@ -1,0 +1,19 @@
+# Advisories for aprv-server's own lockfile, which ci.yml's
+# rust-supply-chain job checks with `cargo deny check advisories` (licences
+# and bans are rust/deny.toml's, for the workspace; see the job's comment).
+
+[advisories]
+version = 2
+yanked = "deny"
+# cargo-deny reports an unsound advisory only for a direct dependency by
+# default. This lockfile is the shipped binary's, so a transitive one counts
+# too: RUSTSEC-2026-0486 (rustix, through wasmtime) went unreported under the
+# default.
+unsound = "all"
+ignore = [
+    # unsafe-libyaml is unmaintained. It reaches aprv-server only as a
+    # build-dependency, through serde_yaml_ng in build.rs, which converts the
+    # committed openapi.yaml to the JSON the binary serves. No YAML is parsed
+    # at run time, and the input is this repository's own file.
+    { id = "RUSTSEC-2024-0449", reason = "build-time only: build.rs reads the committed openapi.yaml" },
+]

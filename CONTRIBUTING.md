@@ -28,7 +28,7 @@ rust/bindings/abi/build.sh "$OUT"
 ```
 
 `tools/wasm-toolchain.sh` downloads and checks, by SHA-256, the pinned
-wasi-sdk (34.0), wasm-tools (1.262.0), wit-bindgen (0.63.0) and the
+wasi-sdk (34.0), wasm-tools (1.263.0), wit-bindgen (0.63.0) and the
 OpenSSL 4.0.3 source, builds OpenSSL for `wasm32-wasip1`, and prints the
 variables `build.sh` reads. The Rust compiler is the one
 `rust/rust-toolchain.toml` pins (1.99.1, with the `wasm32-wasip1`
@@ -87,7 +87,8 @@ APRV_TEST_COMPONENT="$OUT/aprv.component.wasm" \
 # The module alone, through a host that traps on any import but random-get
 node tools/wasm-trap-host.mjs cases "$OUT/aprv.wasm" fixtures/cases.json
 
-# Java, the independent implementation (Java 8 target, any modern JDK)
+# Java, the independent implementation (Java 8 target, any modern JDK;
+# Maven 3.9.0 or later, which build-helper-maven-plugin 3.7.0 requires)
 mvn -B -f java/pom.xml verify
 
 # Java -wasm (Endive on Java 11+; the server-engine tests need the binary)

@@ -10,15 +10,15 @@
 #
 # Linux x86_64 only, as the pinned toolchain archives are. Dependabot keeps
 # the digest current.
-FROM --platform=linux/amd64 debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+FROM --platform=linux/amd64 debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git make perl xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
-# rustup 1.29.2; the hash is the one static.rust-lang.org publishes beside it.
-ARG RUSTUP_VERSION=1.29.2
-ARG RUSTUP_SHA256=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4
+# rustup 1.29.3; the hash is the one static.rust-lang.org publishes beside it.
+ARG RUSTUP_VERSION=1.29.3
+ARG RUSTUP_SHA256=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
 RUN curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
  && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c - \

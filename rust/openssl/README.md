@@ -153,7 +153,7 @@ The adapter needs **OpenSSL 4.0 or later**; `build.rs` refuses to build
 against anything older (it calls 4.0 API and relies on 4.0's inclusive
 `notAfter`).
 
-**Vendored (the default feature).** openssl-sys 0.9.117 builds OpenSSL
+**Vendored (the default feature).** openssl-sys 0.9.118 builds OpenSSL
 from source through openssl-src, but its manifest takes only openssl-src
 300.x (OpenSSL 3.x). `../vendor/openssl-sys` is the crates.io release with
 that one requirement changed to 400.0.1 (OpenSSL 4.0.2);
