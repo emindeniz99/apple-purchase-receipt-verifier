@@ -305,12 +305,12 @@ when you change a manifest:
 
 | Package | Lockfile | Regenerate with |
 |---|---|---|
-| node | `node/package-lock.json` | `npm install` |
+| node | `node/package-lock.json` | `npm install` with npm 11 or later; under Node 22 or older, whose bundled npm is 10, `npx npm@11 install`. npm 10 drops the `libc` fields npm 11 (and Dependabot) writes, so its lockfile diff is all churn |
 | rust | `rust/Cargo.lock` (the workspace: the core, the adapter, the bindings and the C ABI) | `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile` in `rust/`; a plain `cargo update` ignores `rust-version` and can lock crates the declared floor cannot build |
 | rust | `rust/server/Cargo.lock` (`aprv-server`, outside the workspace) | `cargo generate-lockfile` in `rust/server` |
 | rust | `rust/bindings/abi/tests/Cargo.lock` (the Wasmtime ABI tests) | `cargo generate-lockfile` in `rust/bindings/abi/tests` |
 | rust | `rust/fuzz/Cargo.lock` | `cargo generate-lockfile` in `rust/fuzz` |
-| tools | `tools/package-lock.json` | `npm install` in `tools/` |
+| tools | `tools/package-lock.json` | `npm install` in `tools/`, with npm 11 as for node |
 | python | `python/uv.lock` | `uv lock` |
 | php | `php/composer.lock` | `composer update` (resolves at the 8.2 floor, see below) |
 | ruby | `ruby/Gemfile.lock`, `ruby/gemfiles/tools/Gemfile.lock`, `ruby/gemfiles/fuzz/Gemfile.lock` | `bundle lock` in `ruby/`, with `BUNDLE_GEMFILE` set to the bundle's `Gemfile` for the two under `gemfiles/` |
