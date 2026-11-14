@@ -2100,7 +2100,9 @@ jobs:
   # and one against a version we do use cannot hide behind a fresh resolve.
   rust-supply-chain:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # server too: changed-areas.sh files rust/server/ under an area of its
+    # own, and this job now audits that lockfile.
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
