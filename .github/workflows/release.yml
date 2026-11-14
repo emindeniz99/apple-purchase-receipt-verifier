@@ -704,11 +704,11 @@ jobs:
         with:
           pattern: aprv-*
           path: ${{ runner.temp }}/in
-      - name: install cargo-cyclonedx 0.5.9
+      - name: install cargo-cyclonedx 0.5.10
         working-directory: rust
         run: |
           rustup toolchain install
-          cargo install cargo-cyclonedx --version 0.5.9 --locked --root "$RUNNER_TEMP/cargo-tools"
+          cargo install cargo-cyclonedx --version 0.5.10 --locked --root "$RUNNER_TEMP/cargo-tools"
           echo "$RUNNER_TEMP/cargo-tools/bin" >> "$GITHUB_PATH"
       - name: write and check the SBOMs
         run: |
@@ -907,10 +907,10 @@ jobs:
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-x86_64-unknown-linux-musl/aprv-x86_64-unknown-linux-musl" "$ctx/aprv-amd64"
           install -m 0755 "$RUNNER_TEMP/in/aprv-server-aarch64-unknown-linux-musl/aprv-aarch64-unknown-linux-musl" "$ctx/aprv-arm64"
           # The builder's BuildKit image by digest, not the moving tag: this
-          # job pushes and attests the image it builds. v0.34.1, pushed
-          # 2026-10-20; tools/toolchain-watch.mjs reports when the tag moves.
+          # job pushes and attests the image it builds. v0.34.2, pushed
+          # 2026-11-03; tools/toolchain-watch.mjs reports when the tag moves.
           docker buildx create --use --name aprv \
-            --driver-opt image=moby/buildkit:buildx-stable-1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+            --driver-opt image=moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
           ann=()
           for kv in "source=https://github.com/$GITHUB_REPOSITORY" "revision=$GITHUB_SHA" "version=$version" \
                     "licenses=MIT" "description=aprv-server: Apple receipt and JWS verification over HTTP, running aprv.wasm"; do
