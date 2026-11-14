@@ -3017,7 +3017,13 @@ jobs:
           coverage: none
       - run: composer config --unset platform.php
         working-directory: php
-      - run: composer update symfony/process --with "symfony/process:$SYMFONY_PROCESS" --no-scripts --no-progress --no-interaction --prefer-dist
+      # php-cs-fixer is a dev tool this leg never runs, and it pins its own
+      # symfony/process floor (3.95.29 needs ^8.1.10 on 8.x), which would
+      # stop the 8.0.5 floor from resolving. Drop it here only; listing it
+      # in the update lets composer take it and its tree out of the lock.
+      - run: composer remove --dev --no-update friendsofphp/php-cs-fixer
+        working-directory: php
+      - run: composer update symfony/process friendsofphp/php-cs-fixer --with "symfony/process:$SYMFONY_PROCESS" --no-scripts --no-progress --no-interaction --prefer-dist
         working-directory: php
         env:
           SYMFONY_PROCESS: ${{ matrix.symfony-process }}
