@@ -90,12 +90,18 @@ here; the workflow files belong to the integration of this branch.
 
 ## Dependabot
 
-14. `rust/vendor/openssl-sys` is a patched copy of openssl-sys 0.9.117. A
-    Dependabot bump of `openssl-sys` past 0.9.117 leaves the patch unused
+14. `rust/vendor/openssl-sys` is a patched copy of openssl-sys 0.9.118. A
+    Dependabot bump of `openssl-sys` past 0.9.118 leaves the patch unused
     and brings back openssl-src 300.x, which the build refuses. Ignore
     `openssl-sys` (and keep `openssl-src` on 400.x) in the three cargo
     ecosystems; move it with `rust/vendor/refresh-openssl-sys.sh`, which
     downloads the release, checks its SHA-256 and changes the one line.
+    A bump of the `openssl` crate does the same when its own openssl-sys
+    floor passes the copy: openssl 0.10.82 needs openssl-sys 0.9.118, and
+    Dependabot's #561 resolved that from crates.io, put the copy under
+    `[[patch.unused]]` and failed every rust leg on OpenSSL 3.6. Refresh
+    the copy first, then `cargo update -p openssl-sys` points the lock
+    back at it.
 15. `aprv-openssl` imports `ForeignType` and `ForeignTypeRef` from
     foreign-types 0.3 to reach the raw pointers behind the openssl crate's
     `X509` and CMS types. Those types implement the traits of the

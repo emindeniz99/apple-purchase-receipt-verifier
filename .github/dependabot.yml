@@ -303,7 +303,7 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      # rust/vendor/openssl-sys is a patched copy of openssl-sys 0.9.117; a
+      # rust/vendor/openssl-sys is a patched copy of openssl-sys 0.9.118; a
       # newer openssl-sys leaves the patch unused and brings back
       # openssl-src 300.x (OpenSSL 3), which aprv-openssl refuses. Both move
       # by hand with rust/vendor/refresh-openssl-sys.sh (rust/openssl/CI-NOTES.md).
