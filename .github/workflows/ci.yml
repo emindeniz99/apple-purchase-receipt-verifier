@@ -624,7 +624,7 @@ jobs:
           - swift: "6.3"
             image: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
           - swift: "6.4"
-            image: swift:6.4@sha256:82152e9f18ee21fc997fd4580b93a14097e465cb10d7a7eee3f2dc85364dd135 # 6.4.1; the tag moved to 6.4.2 on 2026-10-30
+            image: swift:6.4@sha256:0384f00cf80f81064a907c249a0ad56a1648906f65075a95b1827e88de666e21 # 6.4.2, pushed 2026-11-12
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
