@@ -201,8 +201,16 @@ final class Guest: @unchecked Sendable {
             throw .unusableAnswer(export: "cabi", detail: "a write of \(bytes.count) bytes at \(p) is outside memory")
         }
         guard !bytes.isEmpty else { return }
-        memory.withUnsafeMutableBufferPointer(offset: UInt(p), count: bytes.count) { to in
-            bytes.withUnsafeBytes { to.copyMemory(from: $0) }
+        // WasmKit 0.5.0 made Memory's buffer accessors throw a Trap on an
+        // out-of-bounds range; 0.4.x declares them rethrows and traps by
+        // precondition. The `try` compiles on both lines (a warning on
+        // 0.4.x), since `from: "0.4.1"` resolves either one.
+        do {
+            try memory.withUnsafeMutableBufferPointer(offset: UInt(p), count: bytes.count) { to in
+                bytes.withUnsafeBytes { to.copyMemory(from: $0) }
+            }
+        } catch {
+            throw .unusableAnswer(export: "cabi", detail: "a write of \(bytes.count) bytes at \(p) failed: \(error)")
         }
     }
 
@@ -210,7 +218,12 @@ final class Guest: @unchecked Sendable {
         guard UInt64(p) + UInt64(n) <= UInt64(memory.byteCount) else {
             throw .unusableAnswer(export: "cabi", detail: "a read of \(n) bytes at \(p) is outside memory")
         }
-        return n == 0 ? [] : memory.withUnsafeBufferPointer(offset: UInt(p), count: Int(n)) { [UInt8]($0) }
+        guard n > 0 else { return [] }
+        do {
+            return try memory.withUnsafeBufferPointer(offset: UInt(p), count: Int(n)) { [UInt8]($0) }
+        } catch {
+            throw .unusableAnswer(export: "cabi", detail: "a read of \(n) bytes at \(p) failed: \(error)")
+        }
     }
 
     static func le(_ v: UInt32) -> [UInt8] { (0..<4).map { UInt8(truncatingIfNeeded: v >> (8 * $0)) } }

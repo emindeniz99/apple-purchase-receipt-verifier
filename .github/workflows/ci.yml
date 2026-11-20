@@ -544,7 +544,7 @@ jobs:
       # python-build-standalone, including the 3.11 floor.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
           python-version: ${{ matrix.python }}
       # uv sync from the committed lock, the suite, and the suite again with
       # the compile cache warm; the script says why each one is there.
@@ -569,11 +569,11 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm]
         python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
-          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:50c205a1d4c3625cec60ee88750e2cd33937699d69a63b3b024f98a18a310190" } # python3.11-alpine, uv 0.13.7
-          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:aef1a1327a732e74892765e22fa528499eca3f828140a66ed46b2f8df51bd0dc" } # python3.12-alpine, uv 0.13.7
-          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:7b02bf9f2d812bf1b21b4d790901eb22250523943b82af93e8c543ea54b6b4d5" } # python3.13-alpine, uv 0.13.7
-          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:df6ea28f3caf5eb77ebae34d38e9b177b41a4e58ee963b1cbc5c8c1c92710238" } # python3.14-alpine, uv 0.13.7
-          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:f008ab85c84befffaaa8cbde7eb2b749331769df4e18be766269d0c4904deb40" } # python3.15-alpine, uv 0.13.7
+          - { python: "3.11", image: "ghcr.io/astral-sh/uv:python3.11-alpine@sha256:8252c14c3586b178379b9bc728c8e62b12fbc6ebdc6ff3b151eadda6b5c7f0b3" } # python3.11-alpine, uv 0.13.8
+          - { python: "3.12", image: "ghcr.io/astral-sh/uv:python3.12-alpine@sha256:77f6e42a88636e1a4eb30d0a250aaba62226e93566df21855bc3a2709865b3be" } # python3.12-alpine, uv 0.13.8
+          - { python: "3.13", image: "ghcr.io/astral-sh/uv:python3.13-alpine@sha256:f2d6278d0821c35881b010ddbf75825049661a98dbfdf61bbd1407e8dd544d00" } # python3.13-alpine, uv 0.13.8
+          - { python: "3.14", image: "ghcr.io/astral-sh/uv:python3.14-alpine@sha256:a7eb1d733796a8ccaeb6fe6f395e7e9d02a620f6e63ee5c1e9dfde33ba5df1d6" } # python3.14-alpine, uv 0.13.8
+          - { python: "3.15", image: "ghcr.io/astral-sh/uv:python3.15-alpine@sha256:8d2c75bbf0f4155bc2a4ae2297bcd33bea4e775fd68ca21d6c38c1220b720735" } # python3.15-alpine, uv 0.13.8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -624,7 +624,7 @@ jobs:
           - swift: "6.3"
             image: swift:6.3@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
           - swift: "6.4"
-            image: swift:6.4@sha256:82152e9f18ee21fc997fd4580b93a14097e465cb10d7a7eee3f2dc85364dd135 # 6.4.1; the tag moved to 6.4.2 on 2026-10-30
+            image: swift:6.4@sha256:0384f00cf80f81064a907c249a0ad56a1648906f65075a95b1827e88de666e21 # 6.4.2, pushed 2026-11-12
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1218,7 +1218,7 @@ jobs:
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         run: .github/scripts/python-suite.sh 3.11
@@ -1309,7 +1309,7 @@ jobs:
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
       - name: python 3.11
         if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
         shell: bash
@@ -1929,7 +1929,7 @@ jobs:
           host: python
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
           python-version: "3.13"
       - name: the fuzzer's environment and the generated seed
         run: ./run.sh build
@@ -2631,7 +2631,7 @@ jobs:
           path: ${{ runner.temp }}/server
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
           enable-cache: false
       - name: Schemathesis against a started server, without and with a token
         run: |
@@ -2650,9 +2650,9 @@ jobs:
           trap 'kill "$p1" "$p2" 2>/dev/null || true; cat serve1.log serve2.log' EXIT
           up 18080
           up 18081
-          uvx --from schemathesis==4.33.1 schemathesis run http://127.0.0.1:18080/openapi.json \
+          uvx --from schemathesis==4.33.4 schemathesis run http://127.0.0.1:18080/openapi.json \
             --checks all --max-examples 50 --workers 1
-          uvx --from schemathesis==4.33.1 schemathesis run http://127.0.0.1:18081/openapi.json \
+          uvx --from schemathesis==4.33.4 schemathesis run http://127.0.0.1:18081/openapi.json \
             --checks all --max-examples 30 --workers 1 -H "X-Aprv-Token: $token"
 
   # The Docker image both ways it is built: from source (the Dockerfile's
@@ -2881,7 +2881,7 @@ jobs:
       # current Gradle consumer sees.
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
-          gradle-version: "9.9.0"
+          gradle-version: "9.9.1"
           cache-disabled: true
       - name: the -wasm jar refuses the main jar; Gradle refuses both
         run: java-wasm/scripts/classpath-guard.sh
@@ -3120,7 +3120,7 @@ jobs:
       # over these workflows.
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
       - run: uvx zizmor@1.32.0 .github/workflows/ .github/actions/
 
   # Lint and formatting for the Node port. Separate from the `node` job
@@ -3190,7 +3190,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.7"
+          version: "0.13.8"
           python-version: "3.13"
       # From the committed lock, dev extra included, so ruff and mypy are the
       # reviewed versions rather than whatever resolved this morning. The
@@ -3231,7 +3231,7 @@ jobs:
       # built; --python names it explicitly, because under continue-on-error
       # a mis-resolved environment would look like findings rather than like
       # the misconfiguration it is.
-      - run: uvx ty@0.0.99 check --python .venv apple_purchase_receipt_verifier
+      - run: uvx ty@0.0.102 check --python .venv apple_purchase_receipt_verifier
         working-directory: python
         continue-on-error: true
 

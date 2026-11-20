@@ -63,6 +63,12 @@ jobs:
         #     packages query for Red Hat answers "No package(s) found"); the
         #     leg failed before any test ran. Drop the entry when Foojay
         #     lists Red Hat 21 again.
+        #   dragonwell 25: since 25.0.5 (first nightly 2026-11-16) the
+        #     release also carries Alibaba_Dragonwell_Extended_*_x64_linux
+        #     -jmods.tar.gz, and setup-java 6.2.0 downloads that archive,
+        #     which holds jmods and no bin/java, so "the JVM under test"
+        #     failed before any test ran. Drop the entry when setup-java
+        #     picks the JDK archive again.
         #
         # The second list, with `subset` only, keeps two legs:
         #   corretto 8   the Java 8 floor on a non-Temurin build that is still
@@ -74,7 +80,7 @@ jobs:
         #                the JIT-sensitive failure that removed Semeru.
         exclude: >-
           ${{ fromJSON(format('[{0}{1}]',
-          '{"vendor":"graalvm","jdk":"8"},{"vendor":"jetbrains","jdk":"8"},{"vendor":"microsoft","jdk":"8"},{"vendor":"oracle","jdk":"8"},{"vendor":"sapmachine","jdk":"8"},{"vendor":"redhat","jdk":"25"},{"vendor":"redhat","jdk":"21"}',
+          '{"vendor":"graalvm","jdk":"8"},{"vendor":"jetbrains","jdk":"8"},{"vendor":"microsoft","jdk":"8"},{"vendor":"oracle","jdk":"8"},{"vendor":"sapmachine","jdk":"8"},{"vendor":"redhat","jdk":"25"},{"vendor":"redhat","jdk":"21"},{"vendor":"dragonwell","jdk":"25"}',
           inputs.subset && ',{"vendor":"dragonwell"},{"vendor":"jetbrains"},{"vendor":"kona"},{"vendor":"liberica"},{"vendor":"microsoft"},{"vendor":"oracle"},{"vendor":"redhat"},{"vendor":"sapmachine"},{"vendor":"zulu"},{"vendor":"corretto","jdk":"21"},{"vendor":"corretto","jdk":"25"},{"vendor":"graalvm","jdk":"21"}' || '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
