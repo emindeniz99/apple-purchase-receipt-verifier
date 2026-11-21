@@ -24,7 +24,7 @@
 # the full build precompiles for the platform's own baseline target.
 
 # rust:1.99.1-slim-trixie
-FROM rust:1.99.1-slim-trixie@sha256:ea0999ff67355d958b8799b6751c879a6d770076d26047dca66f6e51e77930d3 AS build
+FROM rust:1.99.1-slim-trixie@sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7 AS build
 ARG COMPONENT_SHA256
 ARG TARGETARCH
 WORKDIR /src
