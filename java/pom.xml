@@ -59,7 +59,7 @@
          the floor. When Dependabot moves the pin past 1.86, add a CI leg
          running the suite with -Dbouncycastle.version=1.86 (floors are
          tested claims). -->
-    <bouncycastle.version>1.86</bouncycastle.version>
+    <bouncycastle.version>1.87</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
          under Jackson's default StreamReadConstraints, built into their
          own factory (JsonFields.JSON) so a process-wide override
@@ -68,7 +68,7 @@
          and Verifier.create throws IllegalStateException below 2.16.
          The java-jackson-floor CI job runs the suite with
          -Djackson.version=2.16.1. -->
-    <jackson.version>2.22.4</jackson.version>
+    <jackson.version>2.23.0</jackson.version>
     <!-- Annotations only, and only at compile time: see the <optional>
          dependency below. -->
     <jspecify.version>1.0.1</jspecify.version>
@@ -161,7 +161,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
-        <version>3.7.0</version>
+        <version>3.8.0</version>
         <executions>
           <execution>
             <id>add-shared-sources</id>
