@@ -54,11 +54,11 @@
     "licenses"
   ],
   "devDependencies": {
-    "@bytecodealliance/jco": "1.41.0",
+    "@bytecodealliance/jco": "1.42.0",
     "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.19.43",
     "oxlint": "^1.85.0",
-    "playwright": "1.65.0",
+    "playwright": "1.65.1",
     "prettier": "^3.9.9",
     "typescript": "^7.0.2"
   },
