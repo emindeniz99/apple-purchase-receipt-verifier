@@ -8,10 +8,12 @@ package applereceipt_test
 //
 // This adapter knows nothing about any individual case. It loads the
 // file, resolves fixture ids to bytes and checks their recorded digest,
-// builds a Config from the case's trusted roots and clock, dispatches on
-// operation, and evaluates the expectation on the JSON the library
-// returns: ReceiptPayload.ToJSON(), JsonPayload.JSON() or the endpoint's
-// response body. The file's top-level comment defines the semantics
+// builds a Config from the case's trusted roots, revocation settings and
+// clock, dispatches on operation, and evaluates the expectation on the JSON
+// the library returns: ReceiptPayload.ToJSON(), JsonPayload.JSON() or the
+// endpoint's response body. buildConfig cases build the Config and a
+// Verifier, and check that NewVerifier refuses it or reports the two
+// revocation values the case states. The file's top-level comment defines the semantics
 // implemented here. There is no skip list, no case count in the source,
 // and no per-case fix-up: a vector that disagrees with the library is a
 // bug report against one of the two, never something to special-case
@@ -57,8 +59,21 @@ type trustedRootsSpec struct {
 	Fixtures []string `json:"fixtures"`
 }
 
+// revocationSpec is a config's revocation member: lists and issuers are
+// fixture ids (an id may repeat), distrust entries are passed exactly as
+// written, malformed ones included.
+type revocationSpec struct {
+	Lists    []string `json:"lists"`
+	Issuers  []string `json:"issuers"`
+	Distrust []struct {
+		Issuer string `json:"issuer"`
+		Serial string `json:"serial"`
+	} `json:"distrust"`
+}
+
 type caseConfigSpec struct {
 	TrustedRoots trustedRootsSpec `json:"trustedRoots"`
+	Revocation   *revocationSpec  `json:"revocation"`
 	Environment  string           `json:"environment"`
 }
 
@@ -70,6 +85,9 @@ type caseInputSpec struct {
 	Fixture     string   `json:"fixture"`
 	RequestBody string   `json:"requestBody"`
 	Texts       []string `json:"texts"`
+	// TrustedRoots and Revocation are a buildConfig case's configuration.
+	TrustedRoots *trustedRootsSpec `json:"trustedRoots"`
+	Revocation   *revocationSpec   `json:"revocation"`
 }
 
 type caseExpectedSpec struct {
@@ -89,6 +107,11 @@ type caseExpectedSpec struct {
 	// json.Number), must be one of these, and the call must not crash. No
 	// field is pinned.
 	OneOf []any `json:"oneOf"`
+	// RevocationURLs and RevocationValidUntil are what an ok buildConfig
+	// case reports: the URLs in order, and an instant
+	// (YYYY-MM-DDTHH:MM:SSZ) or null, raw so a missing member stays apart.
+	RevocationURLs       []string        `json:"revocationUrls"`
+	RevocationValidUntil json.RawMessage `json:"revocationValidUntil"`
 }
 
 type conformanceCase struct {
@@ -155,8 +178,8 @@ func loadCases(t testing.TB) (string, casesDocument) {
 	if err := dec.Decode(&parsed); err != nil {
 		t.Fatalf("harness error: cannot parse %s: %v", casesFileName, err)
 	}
-	if parsed.SchemaVersion != 2 {
-		t.Fatalf("harness error: %s is schemaVersion %d, this adapter implements 2",
+	if parsed.SchemaVersion != 3 {
+		t.Fatalf("harness error: %s is schemaVersion %d, this adapter implements 3",
 			casesFileName, parsed.SchemaVersion)
 	}
 	return dir, parsed
@@ -246,24 +269,41 @@ func buildConfig(t testing.TB, dir string, fixtures map[string]fixtureEntry, spe
 	switch spec.TrustedRoots.Source {
 	case "defaults":
 	case "fixtures":
-		roots := make([]*x509.Certificate, 0, len(spec.TrustedRoots.Fixtures))
-		for _, id := range spec.TrustedRoots.Fixtures {
-			der := fixtureBytesIn(t, dir, fixtures, id)
-			cert, err := x509.ParseCertificate(der)
-			if err != nil {
-				t.Fatalf("harness error: root %q does not parse: %v", id, err)
-			}
-			roots = append(roots, cert)
-		}
-		opts.Roots = roots
+		opts.Roots = certificatesIn(t, dir, fixtures, spec.TrustedRoots.Fixtures)
 	default:
 		t.Fatalf("harness error: unknown trustedRoots source %q", spec.TrustedRoots.Source)
+	}
+	if revocation := spec.Revocation; revocation != nil {
+		for _, id := range revocation.Lists {
+			opts.RevocationLists = append(opts.RevocationLists, fixtureBytesIn(t, dir, fixtures, id))
+		}
+		if len(revocation.Issuers) > 0 {
+			opts.RevocationIssuers = certificatesIn(t, dir, fixtures, revocation.Issuers)
+		}
+		for _, entry := range revocation.Distrust {
+			opts.Distrust = append(opts.Distrust, applereceipt.RevokedCertificate{Issuer: entry.Issuer, Serial: entry.Serial})
+		}
 	}
 	if clock != nil {
 		now := parseInstantMs(t, clock.Now)
 		opts.Clock = func() int64 { return now }
 	}
 	return applereceipt.NewConfig(opts)
+}
+
+// certificatesIn parses certificate fixtures, the way a caller holds roots
+// and revocation issuers in this package: as *x509.Certificate.
+func certificatesIn(t testing.TB, dir string, fixtures map[string]fixtureEntry, ids []string) []*x509.Certificate {
+	t.Helper()
+	certificates := make([]*x509.Certificate, 0, len(ids))
+	for _, id := range ids {
+		cert, err := x509.ParseCertificate(fixtureBytesIn(t, dir, fixtures, id))
+		if err != nil {
+			t.Fatalf("harness error: certificate %q does not parse: %v", id, err)
+		}
+		certificates = append(certificates, cert)
+	}
+	return certificates
 }
 
 // parseInstantMs reads YYYY-MM-DDTHH:MM:SSZ to epoch milliseconds, the
@@ -572,8 +612,12 @@ func recordRan(id string) {
 
 func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c conformanceCase) {
 	recordRan(c.ID)
-	if c.Operation == "decodeBase64" {
+	switch c.Operation {
+	case "decodeBase64":
 		runDecodeBase64(t, c)
+		return
+	case "buildConfig":
+		runBuildConfig(t, dir, fixtures, c)
 		return
 	}
 	verifier := buildVerifier(t, buildConfig(t, dir, fixtures, c.Config, c.Clock))
@@ -728,6 +772,53 @@ func runCase(t testing.TB, dir string, fixtures map[string]fixtureEntry, c confo
 
 	for _, failure := range check(c.ID, expected, actual) {
 		t.Error(failure)
+	}
+}
+
+// runBuildConfig builds the case's configuration into a Verifier. An error
+// case must be refused by NewVerifier with a plain error (the message is
+// not checked); an ok case must build and report the case's
+// revocationUrls, in order, and revocationValidUntil.
+func runBuildConfig(t testing.TB, dir string, fixtures map[string]fixtureEntry, c conformanceCase) {
+	if c.Input.TrustedRoots == nil {
+		t.Fatalf("%s: harness error: buildConfig needs input.trustedRoots", c.ID)
+	}
+	config := buildConfig(t, dir, fixtures,
+		&caseConfigSpec{TrustedRoots: *c.Input.TrustedRoots, Revocation: c.Input.Revocation}, c.Clock)
+	verifier, err := applereceipt.NewVerifier(config)
+	switch c.Expected.Status {
+	case "error":
+		if err == nil {
+			t.Fatalf("%s: the configuration built, want it refused", c.ID)
+		}
+		if _, isFailure := applereceipt.ReasonOf(err); isFailure {
+			t.Fatalf("%s: a refused configuration is a *Failure, want a plain error: %v", c.ID, err)
+		}
+	case "ok":
+		if err != nil {
+			t.Fatalf("%s: the configuration was refused: %v", c.ID, err)
+		}
+		if c.Expected.RevocationURLs == nil || len(c.Expected.RevocationValidUntil) == 0 {
+			t.Fatalf("%s: harness error: an ok buildConfig case states no revocationUrls or revocationValidUntil", c.ID)
+		}
+		if got := verifier.RevocationURLs(); !slices.Equal(got, c.Expected.RevocationURLs) {
+			t.Errorf("%s: RevocationURLs %q, want %q", c.ID, got, c.Expected.RevocationURLs)
+		}
+		var want *string
+		if err := json.Unmarshal(c.Expected.RevocationValidUntil, &want); err != nil {
+			t.Fatalf("%s: harness error: revocationValidUntil %s is not a string or null", c.ID, c.Expected.RevocationValidUntil)
+		}
+		until, ok := verifier.RevocationValidUntil()
+		switch {
+		case want == nil && ok:
+			t.Errorf("%s: RevocationValidUntil %s, want none", c.ID, until.Format(time.RFC3339Nano))
+		case want != nil && !ok:
+			t.Errorf("%s: RevocationValidUntil none, want %s", c.ID, *want)
+		case want != nil && until.UnixMilli() != parseInstantMs(t, *want):
+			t.Errorf("%s: RevocationValidUntil %s, want %s", c.ID, until.Format(time.RFC3339Nano), *want)
+		}
+	default:
+		t.Fatalf("%s: harness error: unknown status %q", c.ID, c.Expected.Status)
 	}
 }
 

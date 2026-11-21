@@ -11,8 +11,9 @@ namespace ApplePurchaseReceiptVerifier
     /// <remarks>
     /// Members are PascalCase because that is the .NET naming rule; the
     /// SCREAMING_SNAKE token lives in <see cref="VerificationReasonCodes"/>.
-    /// This is the 0.7 set (docs/design/0.7-api.md, Result): eight values,
-    /// none shared with the 0.6 vocabulary's <c>WRONG_*</c> or
+    /// This is the 0.7 set (docs/design/0.7-api.md, Result) plus
+    /// <see cref="CertificateRevoked"/> (0.14, docs/design/revocation.md):
+    /// nine values, none shared with the 0.6 vocabulary's <c>WRONG_*</c> or
     /// <c>DEVICE_HASH_MISMATCH</c> members, which 0.7 drops along with the
     /// policy the library no longer judges.
     /// </remarks>
@@ -41,6 +42,13 @@ namespace ApplePurchaseReceiptVerifier
 
         /// <summary>The library failed; alert, do not retry.</summary>
         InternalError,
+
+        /// <summary>
+        /// A certificate on the path is revoked: by the list built into the
+        /// module, by <see cref="Config.Distrust"/>, or by a list passed in
+        /// <see cref="Config.RevocationLists"/>. Judged whatever date the payload states.
+        /// </summary>
+        CertificateRevoked,
     }
 
     /// <summary>
@@ -68,6 +76,7 @@ namespace ApplePurchaseReceiptVerifier
                 case VerificationReason.InvalidCertificatePurpose: return "INVALID_CERTIFICATE_PURPOSE";
                 case VerificationReason.UnreadablePayload: return "UNREADABLE_PAYLOAD";
                 case VerificationReason.InternalError: return "INTERNAL_ERROR";
+                case VerificationReason.CertificateRevoked: return "CERTIFICATE_REVOKED";
                 default:
                     throw new ArgumentOutOfRangeException(nameof(reason), reason,
                         "no canonical code for this reason");
@@ -75,7 +84,7 @@ namespace ApplePurchaseReceiptVerifier
         }
 
         /// <summary>Parses a canonical token back into a <see cref="VerificationReason"/>.</summary>
-        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the eight tokens.</returns>
+        /// <returns><see langword="true"/> when <paramref name="code"/> is one of the nine tokens.</returns>
         public static bool TryParse(string? code, out VerificationReason reason)
         {
             switch (code)
@@ -88,6 +97,7 @@ namespace ApplePurchaseReceiptVerifier
                 case "INVALID_CERTIFICATE_PURPOSE": reason = VerificationReason.InvalidCertificatePurpose; return true;
                 case "UNREADABLE_PAYLOAD": reason = VerificationReason.UnreadablePayload; return true;
                 case "INTERNAL_ERROR": reason = VerificationReason.InternalError; return true;
+                case "CERTIFICATE_REVOKED": reason = VerificationReason.CertificateRevoked; return true;
                 default: reason = default; return false;
             }
         }

@@ -1,5 +1,6 @@
 //! One X.509 certificate, parsed by OpenSSL.
 
+use crate::item::Decoded;
 use crate::{d2i_whole, drain_errors, init};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use libc::c_int;
@@ -212,8 +213,13 @@ impl Certificate {
     /// [`Certificate::issued_by`]. Judging `keyUsage` here too would drop
     /// the "not a CA" report OpenSSL gives for such an issuer
     /// (REVIEW-LOG.md §11.3); merging the walks is left for later.
+    ///
+    /// The core also asks it, of a configured root and a certificate that
+    /// signs revocation lists, when it accepts that certificate as a list
+    /// issuer (`rust/src/revocation.rs`); the root is trusted, so its key is
+    /// the only one used.
     #[must_use]
-    pub(crate) fn signed_by(&self, issuer: &Certificate) -> bool {
+    pub fn signed_by(&self, issuer: &Certificate) -> bool {
         init();
         let named = issuer
             .0
@@ -247,6 +253,174 @@ impl Certificate {
         let ca = unsafe { crate::sys::X509_check_ca(self.0.as_ptr()) };
         drain_errors();
         ca != 0
+    }
+
+    /// The certificate's `subject` Name and `subjectPublicKeyInfo`, each as
+    /// the bytes it has inside the certificate's `TBSCertificate`, never a
+    /// re-encoding. OpenSSL keeps the `TBSCertificate`'s original encoding
+    /// and writes it back unchanged (`i2d_X509`), and the header walk splits
+    /// it into its fields; no value is decoded here. `None` when the fields
+    /// are not where RFC 5280 section 4.1 puts them.
+    #[must_use]
+    pub fn subject_and_key_der(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        let [subject, key] = self.tbs_fields([4, 5])?;
+        Some((subject, key))
+    }
+
+    /// The certificate's `issuer` Name as the bytes it has inside the
+    /// certificate's `TBSCertificate`, never a re-encoding, as
+    /// [`Certificate::subject_and_key_der`] reads its fields.
+    #[must_use]
+    pub fn issuer_name_der(&self) -> Option<Vec<u8>> {
+        let [issuer] = self.tbs_fields([2])?;
+        Some(issuer)
+    }
+
+    /// The `TBSCertificate` fields at `indices`, counted from
+    /// serialNumber (0: serialNumber, 1: signature, 2: issuer, 3: validity,
+    /// 4: subject, 5: subjectPublicKeyInfo), each as encoded.
+    fn tbs_fields<const N: usize>(&self, indices: [usize; N]) -> Option<[Vec<u8>; N]> {
+        let der = self.to_der();
+        let certificate = crate::walk::children(&der)?;
+        let tbs = crate::walk::children(certificate.first()?)?;
+        // An explicit version is a context-specific [0] before the serial.
+        let skip = tbs
+            .first()
+            .and_then(|first| crate::walk::header(first))
+            .is_some_and(|first| {
+                first.class == crate::sys::V_ASN1_CONTEXT_SPECIFIC && first.tag == 0
+            });
+        let fields = tbs.get(usize::from(skip)..)?;
+        let mut out = indices.map(|_| Vec::new());
+        for (slot, index) in out.iter_mut().zip(indices) {
+            *slot = fields.get(index)?.to_vec();
+        }
+        Some(out)
+    }
+
+    /// The serial number, as OpenSSL holds it.
+    #[must_use]
+    pub fn serial(&self) -> Option<crate::Integer> {
+        // SAFETY: the serial is owned by the live certificate.
+        let serial = unsafe { ffi::X509_get_serialNumber(self.0.as_ptr()) };
+        crate::crl::integer_of(serial)
+    }
+
+    /// Whether `basicConstraints` marks the certificate a CA (`cA` true),
+    /// as OpenSSL's cached extension flags record it (`EXFLAG_CA`, set from
+    /// that one extension). `EXFLAG_INVALID` is not consulted: OpenSSL sets
+    /// it for things unrelated to `basicConstraints` (a `proxyCertInfo` on a
+    /// CA, an undecodable `SubjectAltName`), which no caller here judges.
+    #[must_use]
+    pub fn is_ca(&self) -> bool {
+        // SAFETY: reads, and on first use caches under OpenSSL's own lock,
+        // the live certificate's extension flags.
+        let flags = unsafe { ffi::X509_get_extension_flags(self.0.as_ptr()) };
+        drain_errors();
+        flags & ffi::EXFLAG_CA != 0
+    }
+
+    /// Whether the certificate's `keyUsage`, when it has one, includes
+    /// `cRLSign`. True when it has none. Read from the extension itself:
+    /// `X509_get_key_usage` answers 0 for a certificate OpenSSL flags as
+    /// invalid for any reason, and only `cRLSign` is asked here.
+    #[must_use]
+    pub fn key_usage_permits_crl_sign(&self) -> bool {
+        let mut critical: c_int = 0;
+        // SAFETY: X509_get_ext_d2i decodes the keyUsage into a new BIT
+        // STRING the caller owns, or returns null and sets `critical` to -1
+        // when it is absent.
+        let decoded = unsafe {
+            ffi::X509_get_ext_d2i(
+                self.0.as_ptr(),
+                ffi::NID_key_usage,
+                &raw mut critical,
+                ptr::null_mut(),
+            )
+        };
+        if decoded.is_null() {
+            drain_errors();
+            return critical == -1;
+        }
+        let bits = decoded.cast::<ffi::ASN1_BIT_STRING>();
+        // SAFETY: reads the live BIT STRING decoded above (bit 6 is
+        // cRLSign, RFC 5280 section 4.2.1.3; a shorter string answers 0),
+        // then frees it, once.
+        let crl_sign = unsafe {
+            let bit = crate::sys::ASN1_BIT_STRING_get_bit(bits, 6);
+            ffi::ASN1_BIT_STRING_free(bits);
+            bit
+        } == 1;
+        drain_errors();
+        crl_sign
+    }
+
+    /// The `SubjectKeyIdentifier` extension's value, when there is one that
+    /// reads: one OCTET STRING filling its `extnValue`. Read from the
+    /// extension itself: `X509_get0_subject_key_id` answers null for a
+    /// certificate OpenSSL flags as invalid for any reason, and passes over
+    /// octets left after the value.
+    #[must_use]
+    pub fn subject_key_identifier(&self) -> Option<Vec<u8>> {
+        // SAFETY: the item getter returns a static ASN1_ITEM.
+        let item = unsafe { crate::sys::ASN1_OCTET_STRING_it() };
+        let decoded = self.exact_extension(ffi::NID_subject_key_identifier, item)?;
+        Some(crate::crl::string_octets(decoded.value().cast()))
+    }
+
+    /// The first extension with `nid`, decoded as exactly one value of
+    /// `item` ([`crate::crl::exact_value`]); `None` when there is none or
+    /// it does not read.
+    fn exact_extension(&self, nid: c_int, item: *const crate::sys::ASN1_ITEM) -> Option<Decoded> {
+        // SAFETY: looks the extension up in the live certificate, which
+        // owns it.
+        let extension = unsafe {
+            let location = ffi::X509_get_ext_by_NID(self.0.as_ptr(), nid, -1);
+            if location < 0 {
+                return None;
+            }
+            ffi::X509_get_ext(self.0.as_ptr(), location)
+        };
+        crate::crl::exact_value(extension, item)
+    }
+
+    /// Every URI among the `fullName`s of the certificate's
+    /// cRLDistributionPoints, in order; empty when it has none, or when its
+    /// value leaves octets over (it does not read). The scheme is not
+    /// judged here.
+    #[must_use]
+    pub fn crl_distribution_uris(&self) -> Vec<String> {
+        init();
+        // SAFETY: as in `exact_extension`, read-only.
+        let present = unsafe {
+            ffi::X509_get_ext_by_NID(self.0.as_ptr(), ffi::NID_crl_distribution_points, -1)
+        } >= 0;
+        // SAFETY: the item getter returns a static ASN1_ITEM.
+        let item = unsafe { crate::sys::CRL_DIST_POINTS_it() };
+        if present
+            && self
+                .exact_extension(ffi::NID_crl_distribution_points, item)
+                .is_none()
+        {
+            return Vec::new();
+        }
+        let uris = self
+            .0
+            .crl_distribution_points()
+            .map(|points| {
+                points
+                    .iter()
+                    .filter_map(|point| point.distpoint()?.fullname())
+                    .flat_map(|names| {
+                        names
+                            .iter()
+                            .filter_map(|name| name.uri().map(str::to_owned))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        drain_errors();
+        uris
     }
 
     /// Whether `notAfter` is at or after `secs` (Unix seconds).

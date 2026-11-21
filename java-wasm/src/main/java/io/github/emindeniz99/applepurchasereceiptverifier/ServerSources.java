@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
  * Turns the server engine's sources into one working server, trying them in
  * the caller's order (ARCHITECTURE.md §7.8). A source works when the server
  * it names answers {@code GET /v1/info}, trusts exactly the
- * {@link Config}'s roots and states the module's {@code max_input_bytes};
+ * {@link Config}'s roots, runs exactly its revocation settings and states
+ * the module's {@code max_input_bytes} and revocation state;
  * otherwise it fails with a reason and the next is tried. When none works,
  * {@link #open} throws with every reason.
  */
@@ -25,19 +26,18 @@ final class ServerSources {
 
     static ServerConnection open(Config config, Engine.Server engine) {
         Path cache = engine.cacheDirectory() != null ? engine.cacheDirectory() : Platform.defaultCacheDirectory();
-        String rootsLine = InitConfig.json(config.roots());
-        Set<String> fingerprints = InitConfig.fingerprints(config.roots());
+        String configLine = InitConfig.json(config);
         List<String> reasons = new ArrayList<>();
         for (ServerSource source : engine.sources()) {
             ServerConnection connection = null;
             try {
-                connection = connect(source, cache, rootsLine);
-                connection.maxInputBytes(checkInfo(connection, fingerprints));
+                connection = connect(source, cache, configLine);
+                connection.initAnswer(checkInfo(connection, config));
                 return connection;
             } catch (InitRefused e) {
-                // Every source runs the same module, which would refuse the same roots.
+                // Every source runs the same module, which would refuse the same configuration.
                 throw new IllegalArgumentException(
-                        "the verifier module refused a root in the config: " + e.getMessage(), e);
+                        "the verifier module refused the configuration: " + e.getMessage(), e);
             } catch (IOException | RuntimeException e) {
                 if (connection != null) {
                     connection.close();
@@ -48,12 +48,12 @@ final class ServerSources {
         throw new IllegalStateException("no aprv-server source worked: " + String.join("; ", reasons));
     }
 
-    private static ServerConnection connect(ServerSource source, Path cache, String rootsLine) throws IOException {
+    private static ServerConnection connect(ServerSource source, Path cache, String configLine) throws IOException {
         switch (source.kind()) {
             case URL:
                 return ServerConnection.fixed(target(source.uri(), source.token()), source.toString());
             case EXECUTABLE:
-                return ServerConnection.managed(new ServerProcess(source.path(), null, rootsLine), source.toString());
+                return ServerConnection.managed(new ServerProcess(source.path(), null, configLine), source.toString());
             case MAVEN: {
                 String target = platformTarget();
                 if (!target.endsWith("-linux-musl")) {
@@ -72,21 +72,21 @@ final class ServerSources {
                     }
                     return in;
                 });
-                return ServerConnection.managed(new ServerProcess(binary, pin, rootsLine), source.toString());
+                return ServerConnection.managed(new ServerProcess(binary, pin, configLine), source.toString());
             }
             case GITHUB: {
                 String target = platformTarget();
                 String pin = pin(target);
                 URI asset = ServerBinary.githubAsset(target);
                 Path binary = ServerBinary.install(cache, pin, () -> ServerBinary.download(asset, false));
-                return ServerConnection.managed(new ServerProcess(binary, pin, rootsLine), source.toString());
+                return ServerConnection.managed(new ServerProcess(binary, pin, configLine), source.toString());
             }
             default: {
                 URI uri = source.uri();
                 boolean loopback = source.loopbackHttpForTests();
                 Path binary = ServerBinary.install(cache, source.sha256(), () -> ServerBinary.download(uri, loopback));
                 return ServerConnection.managed(
-                        new ServerProcess(binary, source.sha256(), rootsLine), source.toString());
+                        new ServerProcess(binary, source.sha256(), configLine), source.toString());
             }
         }
     }
@@ -124,12 +124,18 @@ final class ServerSources {
 
     /**
      * Refuses a server that does not answer {@code GET /v1/info}, or that
-     * trusts other roots than the config: it would run something else. Returns
-     * the {@code limits.max_input_bytes} the server read from its module's
-     * {@code init} answer (DECISIONS.md R42); a server that states none runs
-     * a module older than this library and is refused too.
+     * trusts other roots or runs other revocation settings than the config:
+     * it would run something else. The lists are compared by SHA-256 in any
+     * order, the added issuers by SHA-256 of their DER in order, and the
+     * distrust entries as written, in order. Returns what the server read
+     * from its module's {@code init} answer: the
+     * {@code limits.max_input_bytes} (DECISIONS.md R42), and the
+     * {@code revocation_urls} and {@code revocation_valid_until_ms}
+     * (docs/design/revocation.md §8); a server that states them not runs a
+     * module older than this library and is refused too.
      */
-    static int checkInfo(ServerConnection connection, Set<String> fingerprints) {
+    static InitAnswer checkInfo(ServerConnection connection, Config config) {
+        Set<String> fingerprints = InitConfig.fingerprints(config.roots());
         HttpConn.Response response = connection.send("GET", "/v1/info", new byte[0], null);
         if (response.status != 200) {
             throw ServerJson.problem(response);
@@ -153,6 +159,33 @@ final class ServerSources {
             throw new IllegalStateException("the server states no limits.max_input_bytes in GET /v1/info, so its"
                     + " module is older than this library");
         }
-        return ((Number) max).intValue();
+        Object lists = ServerJson.member(info, "revocation_lists");
+        Object issuers = ServerJson.member(info, "revocation_issuers");
+        Object distrust = ServerJson.member(info, "distrust");
+        if (!(lists instanceof List) || !(issuers instanceof List) || !(distrust instanceof List)) {
+            throw new IllegalStateException(
+                    "the server reports no revocation settings in GET /v1/info, so it is" + " older than this library");
+        }
+        List<Object> sortedLists = new ArrayList<>((List<?>) lists);
+        sortedLists.sort((a, b) -> String.valueOf(a).compareTo(String.valueOf(b)));
+        if (!sortedLists.equals(new ArrayList<Object>(InitConfig.listSha256s(config)))
+                || !issuers.equals(InitConfig.issuerSha256s(config))
+                || !distrust.equals(InitConfig.distrust(config))) {
+            throw new IllegalStateException("the server runs other revocation settings than the Config: start it"
+                    + " with --revocation-list, --revocation-issuer and --distrust for exactly the Config's");
+        }
+        try {
+            return new InitAnswer(
+                    ((Number) max).intValue(),
+                    Wire.strings(ServerJson.member(info, "revocation_urls"), "revocation_urls"),
+                    // A JSON null is the module's null; a missing member reads as Java's null and is refused.
+                    Wire.epochMillisOrNull(
+                            ServerJson.member(info, "revocation_valid_until_ms"), "revocation_valid_until_ms"));
+        } catch (GuestFailure e) {
+            throw new IllegalStateException(
+                    "the server states no revocation_urls and revocation_valid_until_ms in"
+                            + " GET /v1/info, so its module is older than this library",
+                    e);
+        }
     }
 }

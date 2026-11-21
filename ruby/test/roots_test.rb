@@ -43,6 +43,6 @@ class RootsTest < Minitest::Test
   def test_a_pem_string_with_no_certificate_is_refused_by_the_module_at_create
     empty = "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n"
     error = assert_raises(ArgumentError) { verify_under([pem_of(apple_ders.first), empty]) }
-    assert_match(/refused config\.roots/, error.message)
+    assert_match(/refused the configuration: roots\[1\]/, error.message)
   end
 end

@@ -12,9 +12,10 @@
  * - the ABI check: the module must export the `@0.2.0` operations this
  *   package calls and import exactly `random-get`, or `createVerifier`
  *   fails naming what the module has;
- * - `init` once per instance, with the roots of the caller's `Config`, and
- *   the `max_input_bytes` its answer states: the most bytes of one input
- *   the module needs, which the instance's calls cut their input to;
+ * - `init` once per instance, with the roots and revocation settings of the
+ *   caller's `Config`, and what its answer states: `max_input_bytes`, the
+ *   most bytes of one input the module needs, which the instance's calls
+ *   cut their input to, and the revocation state the `Verifier` reports;
  * - dropping an instance after any failure inside it. A trapped component
  *   instance refuses every later call ("cannot enter component instance"),
  *   so the next call instantiates a fresh one and runs `init` again.
@@ -39,7 +40,10 @@ export class AbiMismatchError extends Error {
   }
 }
 
-/** `init` refused the configuration: a root that is not a certificate. */
+/**
+ * `init` refused the configuration: a root or an issuer that is not a
+ * certificate, a revocation list or `distrust` entry the module refuses.
+ */
 export class InitRefusedError extends Error {
   /** `init`'s answer, exactly as the module wrote it. */
   readonly answer: string;
@@ -121,17 +125,57 @@ function checkAbi(): void {
 
 const utf8 = new TextEncoder();
 
-/** `init`'s configuration: the roots' bytes (DER or PEM) as base64, or `{}` for Apple's roots. */
-export function initConfig(rootsBase64?: readonly string[]): Uint8Array {
-  return utf8.encode(JSON.stringify(rootsBase64 === undefined ? {} : { roots: rootsBase64 }));
+/** The revocation members of `init`'s configuration: base64 of each list and issuer, and the distrust entries. */
+export interface InitRevocation {
+  readonly lists?: readonly string[];
+  readonly issuers?: readonly string[];
+  readonly distrust?: readonly { readonly issuer: string; readonly serial: string }[];
 }
 
 /**
- * Reads `init`'s answer: the `max_input_bytes` of `{"ok":true,
- * "max_input_bytes":N}`, a positive integer. An accepting answer without
- * it comes from a module of another ABI version and is no answer.
+ * `init`'s configuration: the roots' bytes (DER or PEM) as base64, or no
+ * `roots` member for Apple's roots, and each revocation setting that is
+ * not empty. With neither it is `{}`.
  */
-export function initAnswer(text: string): number {
+export function initConfig(
+  rootsBase64?: readonly string[],
+  revocation: InitRevocation = {},
+): Uint8Array {
+  const config: Record<string, unknown> = {};
+  if (rootsBase64 !== undefined) {
+    config['roots'] = rootsBase64;
+  }
+  const { lists = [], issuers = [], distrust = [] } = revocation;
+  if (lists.length > 0) {
+    config['revocation_lists'] = lists;
+  }
+  if (issuers.length > 0) {
+    config['revocation_issuers'] = issuers;
+  }
+  if (distrust.length > 0) {
+    // Exactly the two members the module reads, whatever else the object holds.
+    config['distrust'] = distrust.map(({ issuer, serial }) => ({ issuer, serial }));
+  }
+  return utf8.encode(JSON.stringify(config));
+}
+
+/** What an accepting `init` answer states. */
+export interface InitAnswer {
+  /** The most bytes of one input the module needs. */
+  readonly maxInputBytes: number;
+  /** The URLs of the revocation lists the verifier would use, in the module's order. */
+  readonly revocationUrls: readonly string[];
+  /** The earliest `nextUpdate` of the lists held, epoch milliseconds, or null. */
+  readonly revocationValidUntilMs: number | null;
+}
+
+/**
+ * Reads `init`'s answer: `{"ok":true,"max_input_bytes":N,
+ * "revocation_urls":[...],"revocation_valid_until_ms":N|null}`, with a
+ * positive integer N. An accepting answer without all three comes from a
+ * module of another version and is no answer.
+ */
+export function initAnswer(text: string): InitAnswer {
   let answer: unknown;
   try {
     answer = JSON.parse(text);
@@ -139,29 +183,47 @@ export function initAnswer(text: string): number {
     throw new Error('init answered something that is not JSON');
   }
   if (answer !== null && typeof answer === 'object') {
-    const { ok, message, max_input_bytes: maxInputBytes } = answer as Record<string, unknown>;
-    if (ok === true && Number.isSafeInteger(maxInputBytes) && (maxInputBytes as number) > 0) {
-      return maxInputBytes as number;
+    const {
+      ok,
+      message,
+      max_input_bytes: maxInputBytes,
+      revocation_urls: urls,
+      revocation_valid_until_ms: validUntil,
+    } = answer as Record<string, unknown>;
+    if (
+      ok === true &&
+      Number.isSafeInteger(maxInputBytes) &&
+      (maxInputBytes as number) > 0 &&
+      Array.isArray(urls) &&
+      urls.every((url) => typeof url === 'string') &&
+      (validUntil === null || Number.isSafeInteger(validUntil))
+    ) {
+      return Object.freeze({
+        maxInputBytes: maxInputBytes as number,
+        revocationUrls: Object.freeze([...(urls as string[])]),
+        revocationValidUntilMs: validUntil as number | null,
+      });
     }
     if (ok === false && typeof message === 'string') {
       throw new InitRefusedError(message, text);
     }
   }
   throw new Error(
-    'init answered neither {"ok":true,"max_input_bytes":N} nor {"ok":false,"message":...}',
+    'init answered neither {"ok":true,"max_input_bytes":N,"revocation_urls":[...],' +
+      '"revocation_valid_until_ms":N|null} nor {"ok":false,"message":...}',
   );
 }
 
-/** An initialised instance and the input length its `init` stated. */
+/** An initialised instance and what its `init` stated. */
 interface Instance {
   readonly bindings: Bindings;
-  readonly maxInputBytes: number;
+  readonly answer: InitAnswer;
 }
 
 function freshInstance(config: Uint8Array): Instance {
   checkAbi();
   const bindings = instantiate(getCoreModule, IMPORTS).verify;
-  return { bindings, maxInputBytes: initAnswer(bindings.init(config)) };
+  return { bindings, answer: initAnswer(bindings.init(config)) };
 }
 
 /**
@@ -172,11 +234,20 @@ function freshInstance(config: Uint8Array): Instance {
 export class Slot {
   #config: Uint8Array;
   #instance: Instance | null;
+  /**
+   * The first instance's `init` answer. A later instance gets the same
+   * configuration, so its answer is not read again for the revocation state.
+   */
+  readonly initAnswer: InitAnswer;
 
-  /** Instantiates and runs `init` now, so a refused root fails the caller's `createVerifier`. */
+  /**
+   * Instantiates and runs `init` now, so a refused root or revocation
+   * setting fails the caller's `createVerifier`.
+   */
   constructor(config: Uint8Array) {
     this.#config = config;
     this.#instance = freshInstance(config);
+    this.initAnswer = this.#instance.answer;
   }
 
   /**
@@ -188,7 +259,7 @@ export class Slot {
   call<T>(op: (bindings: Bindings, maxInputBytes: number) => string, read: (text: string) => T): T {
     try {
       this.#instance ??= freshInstance(this.#config);
-      return read(op(this.#instance.bindings, this.#instance.maxInputBytes));
+      return read(op(this.#instance.bindings, this.#instance.answer.maxInputBytes));
     } catch (error) {
       this.#instance = null;
       throw error;

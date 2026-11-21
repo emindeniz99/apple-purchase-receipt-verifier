@@ -11,8 +11,8 @@ mod runtime;
 mod tests;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use roots::Roots;
-use runtime::{Instance, Load, Op, Runtime, Verifier};
+use roots::{Revocation, Roots, Settings};
+use runtime::{InitAnswer, Instance, Load, Op, Runtime, Verifier};
 use std::io::{BufRead, Read, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
@@ -58,8 +58,9 @@ enum Cmd {
         #[command(flatten)]
         args: OneShotArgs,
     },
-    /// The component's SHA-256, the Wasmtime version and features, the limits
-    Info(ComponentArg),
+    /// The component's SHA-256, the Wasmtime version and features, the limits, and what init
+    /// answers for the roots and revocation flags given
+    Info(InfoArgs),
     /// Precompile a component for TARGET's baseline ISA (full build only)
     Precompile {
         #[arg(value_name = "COMPONENT.wasm")]
@@ -93,15 +94,21 @@ struct ComponentArg {
 }
 
 #[derive(Args)]
+struct InfoArgs {
+    #[command(flatten)]
+    config: ConfigArgs,
+    #[command(flatten)]
+    component: ComponentArg,
+}
+
+#[derive(Args)]
 struct OneShotArgs {
     /// The verification clock, ms since the Unix epoch, 0 to 9223372036854775807 [default: the
     /// system clock]
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(i64).range(0..))]
     now_ms: Option<i64>,
-    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
-    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
-    #[arg(long, value_name = "FILE")]
-    roots: Vec<String>,
+    #[command(flatten)]
+    config: ConfigArgs,
     /// The guest time limit per call [default: 10000]
     #[arg(long, value_name = "N")]
     time_limit_ms: Option<NonZeroU64>,
@@ -109,18 +116,39 @@ struct OneShotArgs {
     component: ComponentArg,
 }
 
+/// The roots and the revocation settings (docs/design/revocation.md §4),
+/// passed to `init` as they are: the module judges every one.
+#[derive(Args)]
+struct ConfigArgs {
+    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
+    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
+    #[arg(long, value_name = "FILE")]
+    roots: Vec<String>,
+    /// A certificate revocation list, repeatable: a DER CRL file as downloaded [default: none]
+    #[arg(long, value_name = "FILE")]
+    revocation_list: Vec<String>,
+    /// A CA certificate that signs revocation lists, repeatable; the --roots file format
+    /// [default: none beyond the built-in WWDR G5 and G6]
+    #[arg(long, value_name = "FILE")]
+    revocation_issuer: Vec<String>,
+    /// A certificate to refuse, repeatable: its issuer id (64 hex digits), a colon, its serial
+    /// in hex [default: none]
+    #[arg(long, value_name = "ISSUER:SERIAL")]
+    distrust: Vec<String>,
+}
+
 #[derive(Args)]
 struct ServeArgs {
     /// The bind address; overrides APRV_LISTEN [default: 127.0.0.1:8080]
     #[arg(long, value_name = "ADDR")]
     listen: Option<String>,
-    /// The child of a parent process: token and roots on stdin, 127.0.0.1:0
-    #[arg(long, conflicts_with_all = ["listen", "roots", "token_file"])]
+    /// The child of a parent process: token and configuration on stdin, 127.0.0.1:0
+    #[arg(long, conflicts_with_all = [
+        "listen", "roots", "token_file", "revocation_list", "revocation_issuer", "distrust",
+    ])]
     managed: bool,
-    /// A trusted root file, repeatable: a DER certificate (an Apple .cer), or base64 lines and PEM
-    /// blocks (README.md, "Flags and environment") [default: the module's Apple roots]
-    #[arg(long, value_name = "FILE")]
-    roots: Vec<String>,
+    #[command(flatten)]
+    config: ConfigArgs,
     /// The token /v1/ routes require; overrides APRV_TOKEN
     #[arg(long, value_name = "FILE")]
     token_file: Option<String>,
@@ -229,18 +257,36 @@ fn load(component: &ComponentArg, time_limit_ms: Option<NonZeroU64>) -> Result<R
     )
 }
 
-/// The `--roots` files, in order; none means the module's Apple roots.
-fn roots_from(paths: &[String]) -> Result<Roots, String> {
-    let files = paths
+/// Each file of a repeatable flag, `(path, bytes)`, in order.
+fn read_files(flag: &str, paths: &[String]) -> Result<Vec<(String, Vec<u8>)>, String> {
+    paths
         .iter()
         .map(|p| {
             std::fs::read(p)
-                .map(|b| (p.as_str(), b))
-                .map_err(|e| format!("--roots {p}: {e}"))
+                .map(|b| (p.clone(), b))
+                .map_err(|e| format!("--{flag} {p}: {e}"))
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let files: Vec<(&str, &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
-    Roots::from_files(&files)
+        .collect()
+}
+
+fn borrowed(files: &[(String, Vec<u8>)]) -> Vec<(&str, &[u8])> {
+    files
+        .iter()
+        .map(|(p, b)| (p.as_str(), b.as_slice()))
+        .collect()
+}
+
+impl ConfigArgs {
+    /// The `--roots` files, in order (none means the module's Apple roots),
+    /// and the revocation flags.
+    fn settings(&self) -> Result<Settings, String> {
+        let roots = Roots::from_files(&borrowed(&read_files("roots", &self.roots)?))?;
+        let lists = read_files("revocation-list", &self.revocation_list)?;
+        let issuers = read_files("revocation-issuer", &self.revocation_issuer)?;
+        let revocation =
+            Revocation::from_flags(&borrowed(&lists), &borrowed(&issuers), &self.distrust)?;
+        Ok(Settings { roots, revocation })
+    }
 }
 
 // ------------------------------------------------------------ one-shot CLI
@@ -259,8 +305,8 @@ enum Command {
 /// size refusal; that answer is printed like any other and the exit status
 /// is 3.
 fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
-    let roots = match roots_from(&o.roots) {
-        Ok(r) => r,
+    let settings = match o.config.settings() {
+        Ok(s) => s,
         Err(e) => return usage(&e),
     };
     let runtime = match load(&o.component, o.time_limit_ms) {
@@ -273,7 +319,7 @@ fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
     // LLVM libunwind a static musl binary links; the kernel frees it all at
     // exit anyway (docs/evidence/2026-09-27-static-musl-server.md §3).
     let runtime = std::mem::ManuallyDrop::new(runtime);
-    let (instance, max_input) = match ready(&runtime, &roots.config_json()) {
+    let (instance, max_input) = match ready(&runtime, &settings.config_json()) {
         Ok(ready) => ready,
         Err(code) => return code,
     };
@@ -297,13 +343,13 @@ fn one_shot(cmd: Command, o: OneShotArgs) -> i32 {
 }
 
 /// A fresh instance after `init`, and the `max_input_bytes` its answer
-/// states; otherwise the exit status, with the reason on stderr: 2 for
-/// roots `init` refused, 70 for a failure.
+/// states; otherwise the exit status, with the reason on stderr: 2 for a
+/// configuration `init` refused, 70 for a failure.
 fn ready(runtime: &Runtime, config_json: &[u8]) -> Result<(Instance, usize), i32> {
     match runtime.ready_instance(config_json) {
-        Ok(Ok(ready)) => Ok(ready),
+        Ok(Ok((instance, init))) => Ok((instance, init.max_input_bytes)),
         Ok(Err(answer)) => {
-            eprintln!("aprv: the component refused the roots configuration: {answer}");
+            eprintln!("aprv: the component refused the configuration: {answer}");
             Err(EXIT_USAGE)
         }
         Err(e) => Err(die(e)),
@@ -374,27 +420,63 @@ fn build_info(runtime: &Runtime, max_input_bytes: usize) -> serde_json::Value {
     })
 }
 
-fn info(component: ComponentArg) -> i32 {
+/// The revocation members of `GET /v1/info`: what the module's first
+/// `init` answered (`revocation_urls`, `revocation_valid_until_ms`), and
+/// what the server was given (`revocation_lists`, `revocation_issuers`,
+/// `distrust`; [`Revocation::info`]), so a client can refuse a server
+/// whose revocation state differs from its own configuration.
+fn add_revocation_info(info: &mut serde_json::Value, init: &InitAnswer, r: &Revocation) {
+    info["revocation_urls"] = init.revocation_urls.clone().into();
+    info["revocation_valid_until_ms"] = init.revocation_valid_until_ms.into();
+    let (lists, issuers, distrust) = r.info();
+    info["revocation_lists"] = lists;
+    info["revocation_issuers"] = issuers;
+    info["distrust"] = distrust;
+}
+
+/// `aprv info`: one instance's `init` on the configuration the flags give
+/// (the built-in roots and nothing else without them) states the input
+/// length and the revocation state, which `GET /v1/info` states for a
+/// server. A configuration `init` refuses exits 2, as the one-shot
+/// commands do, so a client that runs one process per call (PHP's
+/// `CliTransport`) learns both values and any refusal in one call.
+fn info(a: InfoArgs) -> i32 {
     let t = Instant::now();
-    // The input length is the module's: one instance with the built-in
-    // roots says it.
-    let ready = load(&component, None).and_then(|runtime| {
+    let settings = match a.config.settings() {
+        Ok(s) => s,
+        Err(e) => return usage(&e),
+    };
+    let ready = load(&a.component, None).and_then(|runtime| {
         let runtime = std::mem::ManuallyDrop::new(runtime);
-        match runtime.ready_instance(&Roots::Defaults.config_json()) {
-            Ok(Ok((instance, max))) => {
+        match runtime.ready_instance(&settings.config_json()) {
+            Ok(Ok((instance, init))) => {
                 std::mem::forget(instance);
-                Ok((runtime, max))
+                Ok(Ok((runtime, init)))
             }
-            Ok(Err(answer)) => Err(format!(
-                "the component refused its built-in roots: {answer}"
-            )),
+            // The module refusing its own roots is a broken module; a
+            // configuration given is the caller's to fix.
+            Ok(Err(answer))
+                if settings.roots == Roots::Defaults
+                    && settings.revocation == Revocation::default() =>
+            {
+                Err(format!(
+                    "the component refused its built-in roots: {answer}"
+                ))
+            }
+            Ok(Err(answer)) => Ok(Err(answer)),
             Err(e) => Err(format!("the component failed its init: {e}")),
         }
     });
     match ready {
-        Ok((runtime, max_input_bytes)) => {
+        Ok(Err(answer)) => {
+            eprintln!("aprv: the component refused the configuration: {answer}");
+            EXIT_USAGE
+        }
+        Ok(Ok((runtime, init))) => {
             // As the CLI: exit without the runtime's slow teardown.
-            let mut v = build_info(&runtime, max_input_bytes);
+            let mut v = build_info(&runtime, init.max_input_bytes);
+            v["roots"] = settings.roots.info();
+            add_revocation_info(&mut v, &init, &settings.revocation);
             v["load_ms"] = serde_json::json!((t.elapsed().as_secs_f64() * 1e4).round() / 10.0);
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
             EXIT_OK
@@ -445,9 +527,9 @@ fn token_from_file(p: &str) -> Result<Vec<u8>, String> {
 
 fn serve(o: ServeArgs) -> i32 {
     let t0 = Instant::now();
-    let (listen, token, roots) = if o.managed {
+    let (listen, token, settings) = if o.managed {
         match managed_handshake() {
-            Ok((token, roots)) => ("127.0.0.1:0".to_owned(), Some(token), roots),
+            Ok((token, settings)) => ("127.0.0.1:0".to_owned(), Some(token), settings),
             Err(e) => {
                 eprintln!("aprv: managed mode: {e}");
                 return EXIT_USAGE;
@@ -469,19 +551,22 @@ fn serve(o: ServeArgs) -> i32 {
                 .filter(|t| !t.is_empty())
                 .map(String::into_bytes),
         };
-        let roots = match roots_from(&o.roots) {
-            Ok(r) => r,
+        let settings = match o.config.settings() {
+            Ok(s) => s,
             Err(e) => return usage(&e),
         };
-        (listen, token, roots)
+        (listen, token, settings)
     };
     let runtime = match load(&o.component, o.time_limit_ms) {
         Ok(r) => r,
         Err(e) => return die(e),
     };
     let load_ms = t0.elapsed().as_secs_f64() * 1e3;
-    let verifier = match Verifier::new(runtime, roots.config_json(), o.lifecycle == Lifecycle::Pool)
-    {
+    let verifier = match Verifier::new(
+        runtime,
+        settings.config_json(),
+        o.lifecycle == Lifecycle::Pool,
+    ) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("aprv: {e}");
@@ -497,7 +582,8 @@ fn serve(o: ServeArgs) -> i32 {
         },
         NonZeroUsize::get,
     );
-    info["roots"] = roots.info();
+    info["roots"] = settings.roots.info();
+    add_revocation_info(&mut info, verifier.init_answer(), &settings.revocation);
     info["lifecycle"] = verifier.lifecycle_name().into();
     info["workers"] = workers.into();
     info["time_limit_ms"] = o
@@ -558,20 +644,26 @@ fn serve(o: ServeArgs) -> i32 {
     })
 }
 
+/// The longest configuration line managed mode reads: base64 of 16 lists
+/// of 1 MiB each (about 22.4 MiB), plus roots and issuers
+/// (docs/design/revocation.md §8).
+const MAX_CONFIG_LINE: usize = 32 << 20;
+
 /// Managed mode (the child of a Java 8 or PHP parent): the first stdin line
 /// is the token (at least 32 bytes; the parent sends 256 random bits), the
-/// second the roots as `init` takes them (`{}` for the built-in Apple
-/// roots). stdin then stays open; EOF means the parent is gone, and the
-/// server exits.
-fn managed_handshake() -> Result<(Vec<u8>, Roots), String> {
+/// second the configuration as `init` takes it (`{}` for the built-in
+/// Apple roots and no revocation setting). stdin then stays open; EOF
+/// means the parent is gone, and the server exits.
+fn managed_handshake() -> Result<(Vec<u8>, Settings), String> {
     let mut stdin = std::io::stdin().lock();
     let token = read_line(&mut stdin, 1024)?;
     if token.len() < 32 {
         return Err("the first stdin line must be a token of at least 32 bytes".into());
     }
-    let roots_line = read_line(&mut stdin, 1 << 20)?;
-    let roots_text = String::from_utf8(roots_line).map_err(|_| "the roots line is not UTF-8")?;
-    let roots = Roots::from_config_json(&roots_text)?;
+    let config_line = read_line(&mut stdin, MAX_CONFIG_LINE)?;
+    let config_text =
+        String::from_utf8(config_line).map_err(|_| "the configuration line is not UTF-8")?;
+    let settings = Settings::from_config_json(&config_text)?;
     drop(stdin);
     std::thread::Builder::new()
         .name("aprv-stdin".into())
@@ -582,7 +674,7 @@ fn managed_handshake() -> Result<(Vec<u8>, Roots), String> {
             std::process::exit(EXIT_OK);
         })
         .map_err(|e| format!("stdin watcher: {e}"))?;
-    Ok((token, roots))
+    Ok((token, settings))
 }
 
 /// One line without its `\n` (and a `\r` before it), at most `max` bytes.
@@ -714,6 +806,12 @@ mod cli_tests {
                 "64",
                 "--header-timeout-ms",
                 "1000",
+                "--revocation-list",
+                "wwdrg6.crl",
+                "--revocation-issuer",
+                "i.cer",
+                "--distrust",
+                "ab:01",
                 "--component",
                 "c.wasm",
             ][..],
@@ -733,6 +831,12 @@ mod cli_tests {
                 "r",
                 "--time-limit-ms",
                 "1",
+                "--revocation-list",
+                "root.crl",
+                "--revocation-list",
+                "wwdrg6.crl",
+                "--distrust",
+                "ab:01",
                 "--component",
                 "c.wasm",
             ],
@@ -741,6 +845,17 @@ mod cli_tests {
             &["verify-receipt-endpoint", "sandbox"],
             &["info", "--component", "c.wasm"],
             &["info"],
+            &[
+                "info",
+                "--roots",
+                "r",
+                "--revocation-list",
+                "l.crl",
+                "--revocation-issuer",
+                "i.cer",
+                "--distrust",
+                "ab:01",
+            ],
             &[
                 "precompile",
                 "c.wasm",
@@ -760,6 +875,11 @@ mod cli_tests {
             &["serve", "--managed", "--roots", "r"],
             &["serve", "--managed", "--listen", "127.0.0.1:1"],
             &["serve", "--managed", "--token-file", "t"],
+            // The configuration line carries the revocation settings.
+            &["serve", "--managed", "--revocation-list", "l.crl"],
+            &["serve", "--managed", "--revocation-issuer", "i.cer"],
+            &["serve", "--managed", "--distrust", "ab:01"],
+            &["verify-receipt", "--revocation-list"],
             &["serve", "--workers", "0"],
             // Four request bodies per worker: MAX_PERMITS / 4 + 1 workers
             // would need more upload permits than a semaphore holds.
@@ -782,7 +902,8 @@ mod cli_tests {
             &["verify-receipt", "--roots"],
             &["verify-receipt-endpoint"],
             &["verify-receipt-endpoint", "staging"],
-            &["info", "--roots", "r"],
+            &["info", "--now-ms", "1"],
+            &["info", "--workers", "1"],
             &["precompile", "c.wasm"],
         ] {
             let e = parse(bad).err().unwrap_or_else(|| panic!("{bad:?} parsed"));
@@ -808,10 +929,33 @@ mod cli_tests {
             .unwrap()
             .command
         {
-            Cmd::VerifyReceipt(a) => a.roots,
+            Cmd::VerifyReceipt(a) => a.config.roots,
             _ => unreachable!(),
         };
         assert_eq!(roots, ["a.cer", "b.pem"]);
+        // So do the three revocation flags.
+        let r = match parse(&[
+            "serve",
+            "--revocation-list",
+            "a.crl",
+            "--distrust",
+            "x:1",
+            "--revocation-list",
+            "b.crl",
+            "--revocation-issuer",
+            "i.cer",
+            "--distrust",
+            "y:2",
+        ])
+        .unwrap()
+        .command
+        {
+            Cmd::Serve(s) => s.config,
+            _ => unreachable!(),
+        };
+        assert_eq!(r.revocation_list, ["a.crl", "b.crl"]);
+        assert_eq!(r.revocation_issuer, ["i.cer"]);
+        assert_eq!(r.distrust, ["x:1", "y:2"]);
     }
 
     /// Each count stops at the largest value its semaphores can hold, on

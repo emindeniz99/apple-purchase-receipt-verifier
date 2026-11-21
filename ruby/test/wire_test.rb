@@ -125,13 +125,21 @@ class WireTest < Minitest::Test
     end
   end
 
+  REVOCATION = ',"revocation_urls":[],"revocation_valid_until_ms":null'
+
   def test_init_answers
-    assert_equal 3_145_729, WIRE.init_answer('{"ok":true,"max_input_bytes":3145729}')
-    assert_equal 1, WIRE.init_answer('{"ok":true,"max_input_bytes":1}')
+    answer = WIRE.init_answer(%({"ok":true,"max_input_bytes":3145729#{REVOCATION}}))
+    assert_equal 3_145_729, answer.max_input_bytes
+    assert_equal 1, WIRE.init_answer(%({"ok":true,"max_input_bytes":1#{REVOCATION}})).max_input_bytes
+    stated = WIRE.init_answer('{"ok":true,"max_input_bytes":1,"revocation_urls":["https://b","http://a"],' \
+                              '"revocation_valid_until_ms":-1}')
+    assert_equal %w[https://b http://a], stated.revocation_urls
+    assert_predicate stated.revocation_urls, :frozen?
+    assert_equal(-1, stated.revocation_valid_until_ms, "a date before 1970 is the module's to state")
     no = assert_raises(Internals::RootsRejected) { WIRE.init_answer('{"ok":false,"message":"no"}') }
     assert_equal "no", no.message
     unnamed = assert_raises(Internals::RootsRejected) { WIRE.init_answer('{"ok":false}') }
-    assert_equal "the roots were refused", unnamed.message
+    assert_equal "the configuration was refused", unnamed.message
     refused("{}") { |t| WIRE.init_answer(t) }
     refused("[]") { |t| WIRE.init_answer(t) }
   end
@@ -142,6 +150,21 @@ class WireTest < Minitest::Test
     ['{"ok":true}', '{"ok":true,"max_input_bytes":0}', '{"ok":true,"max_input_bytes":-1}',
      '{"ok":true,"max_input_bytes":"3145729"}', '{"ok":true,"max_input_bytes":3145729.0}',
      '{"ok":true,"max_input_bytes":1.5}', '{"ok":true,"max_input_bytes":null}'].each do |text|
+      refused(text) { |t| WIRE.init_answer(t) }
+    end
+  end
+
+  # An accepting answer without the revocation state is a module older than
+  # this wrapper: refused like one without an input length.
+  def test_an_accepting_init_answer_without_the_revocation_state_is_refused
+    ['{"ok":true,"max_input_bytes":1}',
+     '{"ok":true,"max_input_bytes":1,"revocation_valid_until_ms":null}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":null,"revocation_valid_until_ms":null}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":"http://a","revocation_valid_until_ms":null}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":[1],"revocation_valid_until_ms":null}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":[]}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":[],"revocation_valid_until_ms":1.5}',
+     '{"ok":true,"max_input_bytes":1,"revocation_urls":[],"revocation_valid_until_ms":"1"}'].each do |text|
       refused(text) { |t| WIRE.init_answer(t) }
     end
   end

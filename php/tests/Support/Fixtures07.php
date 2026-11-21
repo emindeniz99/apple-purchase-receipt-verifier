@@ -12,7 +12,7 @@ use RuntimeException;
  * SHA-256 the registry records for its DECODED logical bytes.
  *
  * A sibling of {@see Fixtures}, kept separate because the 0.7 cases file
- * has its own schema (schemaVersion 2) and lives beside the 0.6 one while
+ * has its own schema (schemaVersion 3) and lives beside the 0.6 one while
  * ports migrate one by one (docs/design/0.7-api.md, "Release").
  */
 final class Fixtures07

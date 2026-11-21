@@ -1,5 +1,6 @@
-//! Compiles `payload.c` and `envelope.c`, the receipt payload grammar and
-//! a shallow CMS envelope as OpenSSL ASN.1 templates, against the headers of the OpenSSL that openssl-sys links
+//! Compiles `payload.c`, `envelope.c` and `crl.c`, the receipt payload
+//! grammar, a shallow CMS envelope and a revocation list as OpenSSL ASN.1
+//! templates, against the headers of the OpenSSL that openssl-sys links
 //! (its `include` metadata), for the same target and with the C compiler
 //! the `cc` crate picks for it (`CC_<target>` and `CFLAGS_<target>` for
 //! wasm32-wasip1).
@@ -7,6 +8,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=payload.c");
     println!("cargo:rerun-if-changed=envelope.c");
+    println!("cargo:rerun-if-changed=crl.c");
     // The adapter is written and tested against OpenSSL 4.0: it calls 4.0
     // API (ASN1_BIT_STRING_get_length) and relies on 4.0's inclusive
     // notAfter. An older OpenSSL is refused here rather than linked and
@@ -33,10 +35,11 @@ fn main() {
     build
         .file("payload.c")
         .file("envelope.c")
+        .file("crl.c")
         .include(include)
         .warnings(true)
         .extra_warnings(true);
-    // envelope.c checks its struct layouts with C11's _Static_assert, which
+    // envelope.c and crl.c check their struct layouts with C11's _Static_assert, which
     // MSVC compiles only in its C11 mode. Only there: every other compiler
     // accepts it by default, and a flag there would change the objects the
     // released aprv.wasm is built from.

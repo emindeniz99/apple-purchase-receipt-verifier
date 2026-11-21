@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.cert.TrustAnchor;
+import java.security.cert.X509Certificate;
 import java.util.Collections;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Integer;
@@ -245,7 +246,14 @@ class ReceiptDecoderTest {
         assertThrows(java.io.IOException.class, () -> ASN1Primitive.fromByteArray(tooDeep));
         VerificationException envelope = assertThrows(
                 VerificationException.class,
-                () -> ReceiptCore.verifyDer(tooDeep, Collections.<TrustAnchor>emptySet(), System.currentTimeMillis()));
+                () -> ReceiptCore.verifyDer(
+                        tooDeep,
+                        Collections.<TrustAnchor>emptySet(),
+                        Revocation.build(
+                                Collections.<X509Certificate>emptyList(),
+                                Config.defaults(),
+                                BuiltInRevocations.apple()),
+                        System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, envelope.reason());
         VerificationException content = assertThrows(VerificationException.class, () -> ReceiptDecoder.parse(tooDeep));
         assertEquals(Reason.UNREADABLE_PAYLOAD, content.reason());

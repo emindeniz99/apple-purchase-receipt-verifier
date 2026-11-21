@@ -104,6 +104,10 @@ Especially interesting:
 - Signature or certificate-chain validation bypasses (forged receipt accepted)
 - Trust-anchor confusion (accepting chains not rooted in the pinned Apple roots
   in `certs/`)
+- Revocation bypasses: a certificate on the built-in list, on a revocation
+  list the caller passed, or in `distrust` that still verifies, or a list
+  no accepted issuer signed that changes a verdict
+  ([docs/design/revocation.md](./docs/design/revocation.md))
 - Differentials between the Rust core and the Java implementation, or a
   package answering differently from the module it runs — if two disagree
   on the same receipt, one of them is wrong

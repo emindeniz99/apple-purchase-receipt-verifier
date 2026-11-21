@@ -1,14 +1,12 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
-import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
@@ -16,7 +14,8 @@ import org.junit.jupiter.api.Tag;
 /**
  * The conformance cases on the server engine, through
  * {@link ServerSource#executable} and the managed child. One child runs per
- * root set (the roots go to it in the handshake); each case's clock reaches
+ * configuration (the roots and revocation settings go to it in the
+ * handshake); each case's clock reaches
  * it as {@code X-Aprv-Now-Ms}, since the shared verifier reads a clock that
  * answers with the clock of the case calling it.
  */
@@ -49,7 +48,8 @@ class ServerConformanceCasesTest extends ConformanceCases {
         }
     };
 
-    private final Map<Set<X509Certificate>, ServerVerifier> children = new HashMap<>();
+    /** One child per configuration, keyed by the handshake line it gets. */
+    private final Map<String, ServerVerifier> children = new HashMap<>();
 
     @AfterEach
     void stopTheChildren() {
@@ -66,17 +66,23 @@ class ServerConformanceCasesTest extends ConformanceCases {
         return "server";
     }
 
-    private ServerVerifier child(Set<X509Certificate> roots) {
+    private ServerVerifier child(Config config) {
         synchronized (children) {
-            return children.computeIfAbsent(roots, r -> (ServerVerifier) Verifier.create(
-                    Config.builder().roots(r).clock(CLOCK).build(),
+            return children.computeIfAbsent(InitConfig.json(config), line -> (ServerVerifier) Verifier.create(
+                    Config.builder()
+                            .roots(config.roots())
+                            .revocationLists(config.revocationLists())
+                            .revocationIssuers(config.revocationIssuers())
+                            .distrust(config.distrust())
+                            .clock(CLOCK)
+                            .build(),
                     Engine.server(ServerSource.executable(ServerTests.binary()))));
         }
     }
 
     @Override
     Verifier verifier(Config config) {
-        ServerVerifier child = child(new HashSet<>(config.roots()));
+        ServerVerifier child = child(config);
         Clock clock = config.clock();
         return new Verifier() {
             @Override
@@ -107,6 +113,16 @@ class ServerConformanceCasesTest extends ConformanceCases {
                 } finally {
                     CASE_CLOCK.remove();
                 }
+            }
+
+            @Override
+            public List<String> revocationUrls() {
+                return child.revocationUrls();
+            }
+
+            @Override
+            public @Nullable Instant revocationValidUntil() {
+                return child.revocationValidUntil();
             }
         };
     }

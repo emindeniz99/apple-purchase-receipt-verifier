@@ -115,7 +115,7 @@ test('a verified answer without an environment of the three values throws', () =
   }
 });
 
-test('each of the eight reasons comes back as a failure with its message and no cause', () => {
+test('each of the nine reasons comes back as a failure with its message and no cause', () => {
   for (const reason of Object.values(Reason)) {
     for (const read of [receiptAnswer, jwsAnswer]) {
       const result = read(JSON.stringify({ verified: false, reason, message: 'why' }));

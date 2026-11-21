@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module ApplePurchaseReceiptVerifier
-  # The machine-readable failure vocabulary. Eight reasons, closed by the
+  # The machine-readable failure vocabulary. Nine reasons, closed by the
   # cross-port contract: `fixtures/cases.schema.json` holds the same enum
-  # and every port mirrors it. A ninth reason is a change to that file, to
+  # and every port mirrors it. A tenth reason is a change to that file, to
   # docs/design/0.7-api.md and to every port in one pull request.
   #
   # The values are Symbols spelled in SCREAMING_SNAKE so that
@@ -20,10 +20,15 @@ module ApplePurchaseReceiptVerifier
     # Not the client's fault. The library failed before it could decide:
     # alert and escalate, never retry. Deterministic for the same input.
     INTERNAL_ERROR = :INTERNAL_ERROR
+    # A certificate on the verified path is revoked: by the list built into
+    # the module, by {Config#distrust}, or by a list in
+    # {Config#revocation_lists}, whatever date the input states (whoever
+    # holds a leaked key chooses that date). docs/design/revocation.md.
+    CERTIFICATE_REVOKED = :CERTIFICATE_REVOKED
 
     ALL = [
       MALFORMED, TOO_LARGE, INVALID_SIGNATURE, UNTRUSTED_CHAIN, INVALID_CERTIFICATE,
-      INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR
+      INVALID_CERTIFICATE_PURPOSE, UNREADABLE_PAYLOAD, INTERNAL_ERROR, CERTIFICATE_REVOKED
     ].freeze
   end
 

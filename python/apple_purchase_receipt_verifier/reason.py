@@ -38,3 +38,9 @@ class Reason(enum.Enum):
     #: ``Failure.cause`` carries the exception. Deterministic for the same
     #: input unless the clock was the cause: alert, do not blindly retry.
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    #: A certificate on the path is revoked: by the list built into the
+    #: module, by ``Config.distrust``, or by a list passed in
+    #: ``Config.revocation_lists`` (docs/design/revocation.md section 3).
+    #: Checked after the signature and before the payload is read. Status
+    #: 21003 at the endpoint.
+    CERTIFICATE_REVOKED = "CERTIFICATE_REVOKED"

@@ -5,7 +5,9 @@ import java.nio.CharBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -26,30 +28,72 @@ final class WasmVerifier implements Verifier {
     private final Clock clock;
     private final GuestPool pool;
 
+    private final GuestFactory factory;
+
     /**
      * @throws IllegalArgumentException if the probe is on and the module
-     *     refuses one of the roots
+     *     refuses the configuration: a root, a revocation list or issuer, or
+     *     a distrust entry
      * @throws IllegalStateException if the probe is on and the module cannot
      *     be instantiated or initialised here
      */
     WasmVerifier(Config config, GuestFactory factory) {
         this.clock = config.clock();
+        this.factory = factory;
         this.pool = new GuestPool(
                 factory,
-                InitConfig.json(config.roots()).getBytes(StandardCharsets.US_ASCII),
+                InitConfig.json(config).getBytes(StandardCharsets.UTF_8),
                 Math.max(2, Runtime.getRuntime().availableProcessors()));
         if (config.runtimeProbe()) {
-            try {
-                pool.prime();
-            } catch (InitRefused e) {
-                throw new IllegalArgumentException(
-                        "the verifier module refused a root in the config: " + e.getMessage(), e);
-            } catch (GuestFailure e) {
-                throw new IllegalStateException(
-                        "this runtime cannot run the verifier module (" + factory.describe() + "): " + e.getMessage(),
-                        e);
-            }
+            initAnswer();
         }
+    }
+
+    /**
+     * The module's {@code init} answer, making the first instance now when
+     * the probe was off.
+     *
+     * @throws IllegalArgumentException if the module refuses the configuration
+     * @throws IllegalStateException if the module cannot be instantiated or
+     *     initialised here
+     */
+    private InitAnswer initAnswer() {
+        try {
+            return pool.initAnswer();
+        } catch (InitRefused e) {
+            throw new IllegalArgumentException("the verifier module refused the configuration: " + e.getMessage(), e);
+        } catch (GuestFailure e) {
+            throw new IllegalStateException(
+                    "this runtime cannot run the verifier module (" + factory.describe() + "): " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>As the module's {@code init} answered it. With the runtime probe
+     * off, the first call of this method or of a verify method makes the
+     * first module instance.</p>
+     *
+     * @throws IllegalArgumentException with the probe off, if the module
+     *     refuses the configuration
+     * @throws IllegalStateException with the probe off, if the module cannot
+     *     run here
+     */
+    @Override
+    public List<String> revocationUrls() {
+        return initAnswer().revocationUrls;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>As the module's {@code init} answered it; throws as
+     * {@link #revocationUrls()}.</p>
+     */
+    @Override
+    public @Nullable Instant revocationValidUntil() {
+        return initAnswer().revocationValidUntil();
     }
 
     /** How many module instances this verifier has made, for tests. */

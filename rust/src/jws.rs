@@ -6,7 +6,8 @@
 //! ES256 only, exactly three `x5c` certificates, the chain to a pinned root
 //! at the payload's `signedDate` (else its `receiptCreationDate`, as Apple's
 //! App Store Server Library reads an app transaction, else the clock), Apple's
-//! marker OIDs on leaf and intermediate, then the signature. The
+//! marker OIDs on leaf and intermediate, then the signature, then
+//! revocation (docs/design/revocation.md §3), then the payload. The
 //! order of the checks is observable: an input that fails an early check
 //! reports that check's reason, and the shared cases pin it.
 
@@ -15,6 +16,7 @@ use crate::environment::Environment;
 use crate::error::{malformed, Failure, Reason};
 use crate::json::{instant, string, strings, whole_object_members, JsonError, Members};
 use crate::path::validate_pair;
+use crate::revocation::Revocation;
 use crate::roots::{TrustAnchor, SIGNING_LEAF_OID, WWDR_INTERMEDIATE_OID};
 use crate::verifier::Clock;
 use aprv_openssl::{verify_es256, Certificate};
@@ -131,6 +133,7 @@ impl std::error::Error for Unreadable {
 pub(crate) fn verify(
     jws: &[u8],
     anchors: &[TrustAnchor],
+    revocation: &Revocation,
     clock: &Clock<'_>,
 ) -> Result<JsonPayload, Failure> {
     if jws.len() > MAX_JWS_BYTES {
@@ -182,7 +185,7 @@ pub(crate) fn verify(
         Some(millis) => millis,
         None => clock.now()?,
     };
-    validate_pair(&leaf, &intermediate, anchors, at_millis)?;
+    let anchor = validate_pair(&leaf, &intermediate, anchors, at_millis)?;
     // The marker OIDs after the chain, as on the receipt path: a foreign
     // chain is UNTRUSTED_CHAIN whatever it carries, and only a pinned chain
     // can be the wrong kind of Apple certificate. This still runs before
@@ -200,6 +203,10 @@ pub(crate) fn verify(
         ));
     }
     verify_signature(&leaf, header_b64, payload_b64, &signature)?;
+    // Revocation after the signature and before the payload's verdict
+    // (docs/design/revocation.md §3): a payload signed with a revoked key
+    // is never judged, so it cannot answer UNREADABLE_PAYLOAD.
+    revocation.check(&[leaf, intermediate, anchor], clock)?;
     signed_payload(payload)
 }
 

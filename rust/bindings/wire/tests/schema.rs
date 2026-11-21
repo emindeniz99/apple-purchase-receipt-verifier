@@ -5,7 +5,7 @@
 //! so the third plants one wrong type per rule and requires a refusal.
 
 use apple_purchase_receipt_verifier::__internal as seams;
-use aprv_surface::{Reason, Verifier};
+use aprv_surface::Reason;
 use base64::Engine as _;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -100,9 +100,42 @@ impl Cases {
         }
     }
 
+    /// The case's configuration: `config`, or a `buildConfig` case's
+    /// `input`.
+    fn config(case: &Value) -> &Value {
+        if case["operation"] == "buildConfig" {
+            &case["input"]
+        } else {
+            &case["config"]
+        }
+    }
+
+    /// The case's revocation settings as `init` takes them: each list and
+    /// issuer in padded standard base64, the distrust entries as written.
+    fn revocation(&self, case: &Value) -> serde_json::Map<String, Value> {
+        let spec = &Cases::config(case)["revocation"];
+        let mut members = serde_json::Map::new();
+        for (member, name) in [
+            ("lists", "revocation_lists"),
+            ("issuers", "revocation_issuers"),
+        ] {
+            if let Some(ids) = spec[member].as_array() {
+                let encoded: Vec<String> = ids
+                    .iter()
+                    .map(|id| standard(&self.fixture(id.as_str().expect("id"))))
+                    .collect();
+                members.insert(name.to_owned(), json!(encoded));
+            }
+        }
+        if let Some(entries) = spec["distrust"].as_array() {
+            members.insert("distrust".to_owned(), Value::Array(entries.clone()));
+        }
+        members
+    }
+
     /// The case's roots, as DER: empty for the defaults.
     fn roots(&self, case: &Value) -> Vec<Vec<u8>> {
-        let spec = &case["config"]["trustedRoots"];
+        let spec = &Cases::config(case)["trustedRoots"];
         if spec.is_null() || spec["source"] == "defaults" {
             return Vec::new();
         }
@@ -185,18 +218,37 @@ fn every_answer_to_every_shared_case_validates() {
         let id = case["id"].as_str().expect("id");
         let roots = cases.roots(case);
         // `{}` is the one spelling of the Apple roots; an empty list is refused.
-        let config = if roots.is_empty() {
-            json!({})
-        } else {
-            json!({"roots": roots.iter().map(|der| standard(der)).collect::<Vec<_>>()})
-        };
-        let config = config.to_string();
+        let mut config = cases.revocation(case);
+        if !roots.is_empty() {
+            config.insert(
+                "roots".to_owned(),
+                json!(roots.iter().map(|der| standard(der)).collect::<Vec<_>>()),
+            );
+        }
+        let config = Value::Object(config).to_string();
         check(&config_schema, SCHEMAS[2], id, &config);
-        let made = aprv_wire::read_init_config(config.as_bytes())
-            .and_then(|roots| Verifier::new(&roots).map_err(|error| error.message));
-        let init = aprv_wire::init_result(&made.as_ref().map(|_| ()).map_err(Clone::clone));
+        let made =
+            aprv_wire::read_init_config(config.as_bytes()).and_then(|config| config.verifier());
+        let init = aprv_wire::init_result(&made.as_ref().map_err(Clone::clone));
         check(&init_schema, SCHEMAS[3], id, &init);
         counts[2] += 1;
+        if case["operation"] == "buildConfig" {
+            let refused = case["expected"]["status"] == "error";
+            assert_eq!(made.is_err(), refused, "{id}: {init}");
+            if !refused {
+                let answer: Value = serde_json::from_str(&init).expect("init JSON");
+                assert_eq!(
+                    answer["revocation_urls"], case["expected"]["revocationUrls"],
+                    "{id}"
+                );
+                let until = &case["expected"]["revocationValidUntil"];
+                let want = until
+                    .as_str()
+                    .map_or(Value::Null, |text| json!(instant(text)));
+                assert_eq!(answer["revocation_valid_until_ms"], want, "{id}");
+            }
+            continue;
+        }
         let verifier = made.unwrap_or_else(|message| panic!("{id}: init refused: {message}"));
         let at = now(case);
         match case["operation"].as_str().expect("operation") {
@@ -265,7 +317,7 @@ fn every_expected_value_in_the_shared_cases_fits_the_schemas() {
         for token in reasons {
             let reason: Reason = token
                 .parse()
-                .unwrap_or_else(|_| panic!("{id}: {token} is not one of the eight"));
+                .unwrap_or_else(|_| panic!("{id}: {token} is not one of the nine"));
             let failure = seams::failure(reason, "");
             check(
                 &receipt_schema,
@@ -371,7 +423,17 @@ fn a_planted_wrong_type_fails_every_rule() {
     }
     let config = validator(SCHEMAS[2]);
     assert!(config.is_valid(&json!({})) && config.is_valid(&json!({"roots": ["AQID"]})));
+    assert!(config.is_valid(&json!({
+        "revocation_lists": ["AQID"],
+        "revocation_issuers": ["AQID"],
+        "distrust": [{"issuer": "ab", "serial": "01"}]
+    })));
     for planted in [
+        json!({"revocation_lists": ["AQ"]}),
+        json!({"revocation_issuers": "AQID"}),
+        json!({"distrust": [{"issuer": "ab"}]}),
+        json!({"distrust": [{"issuer": "ab", "serial": 1}]}),
+        json!({"distrust": [{"issuer": "ab", "serial": "01", "note": ""}]}),
         json!({"roots": [1]}),
         json!({"roots": "AQID"}),
         json!({"root": []}),
@@ -381,16 +443,34 @@ fn a_planted_wrong_type_fails_every_rule() {
         assert!(!config.is_valid(&planted), "{planted}");
     }
     let init = validator(SCHEMAS[3]);
+    let ok = |extra: Value| {
+        let mut answer = json!({
+            "ok": true,
+            "max_input_bytes": 3_145_729,
+            "revocation_urls": ["http://crl.example.test/a.crl"],
+            "revocation_valid_until_ms": null
+        });
+        for (key, value) in extra.as_object().expect("object") {
+            answer[key] = value.clone();
+        }
+        answer
+    };
     assert!(
-        init.is_valid(&json!({"ok": true, "max_input_bytes": 3_145_729}))
+        init.is_valid(&ok(json!({})))
+            && init.is_valid(&ok(
+                json!({"revocation_valid_until_ms": 1_800_000_000_000_i64})
+            ))
             && init.is_valid(&json!({"ok": false, "message": "m"}))
     );
     for planted in [
         json!({"ok": false}),
         json!({"ok": true}),
-        json!({"ok": true, "max_input_bytes": "3145729"}),
-        json!({"ok": true, "max_input_bytes": 0}),
-        json!({"ok": true, "max_input_bytes": 3_145_729, "message": "m"}),
+        json!({"ok": true, "max_input_bytes": 3_145_729}),
+        ok(json!({"max_input_bytes": "3145729"})),
+        ok(json!({"max_input_bytes": 0})),
+        ok(json!({"message": "m"})),
+        ok(json!({"revocation_urls": "http://crl.example.test/a.crl"})),
+        ok(json!({"revocation_valid_until_ms": "1800000000000"})),
         json!({"ok": false, "max_input_bytes": 3_145_729, "message": "m"}),
         json!({"ok": "true", "max_input_bytes": 3_145_729}),
     ] {

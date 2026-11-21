@@ -7,6 +7,7 @@ answers with to the 0.7 types (docs/rust-core/ARCHITECTURE.md section 4).
 
 import os
 from collections.abc import Callable
+from datetime import datetime
 
 from . import _host, _wire
 from .config import Config
@@ -56,12 +57,14 @@ class Verifier:
     :raises ValueError: if ``config.roots`` is an empty collection rather than
         ``None`` (a verifier with no roots would answer ``UNTRUSTED_CHAIN`` to
         everything and nobody would notice until production), or if the
-        module refuses a root, for example one that is not a certificate
+        module refuses a root, for example one that is not a certificate, or
+        a revocation setting (docs/design/revocation.md section 4); the
+        message names the first problem and its index
     :raises RuntimeError: if the bundled module cannot be started; an ABI
         mismatch is a ``RuntimeError`` naming the ABI version expected
     """
 
-    __slots__ = ("_clock", "_pool")
+    __slots__ = ("_clock", "_pool", "_revocation_urls", "_revocation_valid_until")
 
     def __init__(self, config: Config) -> None:
         self._setup(config, _host.default_runtime)
@@ -72,19 +75,38 @@ class Verifier:
         if config.roots is not None and not config.roots:
             raise ValueError("config.roots must not be empty")
         self._clock = config.clock
+        init_config = _wire.init_config(
+            config.roots, config.revocation_lists, config.revocation_issuers, config.distrust
+        )
         try:
-            self._pool = _host.Pool(
-                runtime(), _wire.init_config(config.roots), _pool_size(), _wire.init_accepted
-            )
-            # An answer the pool already read as accepting needs no second
-            # parse; any other is read for its refusal or its shape fault.
-            refusal = None if self._pool.accepted else _wire.check_init(self._pool.init_answer)
+            self._pool = _host.Pool(runtime(), init_config, _pool_size(), _wire.init_accepted)
+            # Every instance of the pool runs init with the same
+            # configuration, so the first answer's refusal or revocation
+            # state is the verifier's.
+            state = _wire.read_init(self._pool.init_answer)
         except _host.AbiMismatchError:
             raise
         except (_host.Fault, _wire.ResultShapeError) as error:
             raise RuntimeError("the verification module could not be started") from error
-        if refusal is not None:
-            raise ValueError(f"the module refused config.roots: {refusal}")
+        if isinstance(state, str):
+            raise ValueError(f"the module refused the configuration: {state}")
+        self._revocation_urls, self._revocation_valid_until = state
+
+    @property
+    def revocation_urls(self) -> "tuple[str, ...]":
+        """The URLs of the revocation lists this verifier would use, for the
+        caller to download (README, "Revocation"): the built-in issuers'
+        lists that chain to the configured roots, then the http and https
+        distribution points of ``Config.revocation_issuers``, each once."""
+        return self._revocation_urls
+
+    @property
+    def revocation_valid_until(self) -> "datetime | None":
+        """The earliest ``nextUpdate`` among the lists held for the issuers
+        this verifier expects lists from, as a UTC ``datetime``, or ``None``
+        when one of them has none. ``None`` means live revocation is not fully
+        in force; a time in the past means a list is stale. Alert on either."""
+        return self._revocation_valid_until
 
     def _now(self) -> int:
         """The clock, read once per call, before the input is looked at."""

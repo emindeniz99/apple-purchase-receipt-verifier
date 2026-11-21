@@ -52,7 +52,7 @@ façade that:
 - passes the input in as its UTF-8 bytes;
 - reads the module's answer into the types below;
 - gives each `Verifier` one instance of the module, set up with that
-  `Verifier`'s roots.
+  `Verifier`'s roots and revocation settings.
 
 The module imports one function, a source of random bytes, which the
 package answers from `crypto.getRandomValues`. It reads no file, no
@@ -108,8 +108,9 @@ WebAssembly.
   you pass to `createConfig`, or Apple's three published roots, which
   `createConfig()` selects when you pass none and which are compiled into
   the module.
-- **Touch the network.** No OCSP, no CRL, no AIA fetch, no root download.
-  Revocation checking is out of scope.
+- **Touch the network.** No OCSP, no AIA fetch, no root download, no CRL
+  download. Apple's revocation lists reach the module only as bytes you
+  pass in ([Revocation](#revocation)).
 - **Return anything partial.** A failed result carries a `failure` and no
   `payload`; a verified one carries a `payload` and no `failure`.
 - **Log, meter or call back into your code** except for the clock you give
@@ -153,6 +154,9 @@ files of its own. An empty `roots` array is a `TypeError`, from `createConfig` o
 nobody would notice until production. A root the module cannot read as a
 certificate is a `TypeError` from `createVerifier`.
 
+Three more options, `revocationLists`, `revocationIssuers` and `distrust`,
+are described under [Revocation](#revocation). Each defaults to empty.
+
 ### `createVerifier`: three methods
 
 | Method | Input | Result |
@@ -166,6 +170,10 @@ false, failure: Failure }`: check `result.verified` before touching either
 field. The endpoint always answers: the Apple status code is a field of the
 body, for every input. `environment` must be `Environment.PRODUCTION` or
 `Environment.SANDBOX`; anything else is a `TypeError`.
+
+Two more methods report the verifier's revocation state:
+`revocationUrls()` and `revocationValidUntil()` ([Revocation](#revocation)).
+The `/web` entry point returns both as Promises.
 
 `createVerifier` throws an `Error` naming the module's exports if the
 module is not the one this package was built for.
@@ -234,6 +242,7 @@ inside the module.
 | `INVALID_CERTIFICATE_PURPOSE` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UNREADABLE_PAYLOAD` | the chain and signature passed, but the signed content does not parse | 21009 |
 | `INTERNAL_ERROR` | the library failed, or the configured clock threw or answered no epoch milliseconds | 21009 |
+| `CERTIFICATE_REVOKED` | a certificate on the path is revoked: by the list built into the module, by `distrust`, or by a list you passed | 21003 |
 
 `UNREADABLE_PAYLOAD` and `INTERNAL_ERROR` are not the client's fault: alert,
 log the failure, and reconcile the purchase through the App Store Server API
@@ -318,10 +327,87 @@ function verifyNotification(signedPayload) {
 }
 ```
 
+## Revocation
+
+A verifier refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked inside the module
+with no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this package | always on; cannot be turned off |
+| `distrust` | you | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with `CERTIFICATE_REVOKED`
+(21003 at the endpoint), whatever date the payload states: whoever holds a
+leaked key chooses that date. A missing or stale list never fails a call.
+
+```js
+const config = createConfig({
+  revocationLists: [crlBytes],     // CRL files exactly as downloaded (DER)
+  revocationIssuers: [caBytes],    // optional: a CA that signs lists, DER or PEM, as a root
+  distrust: [{ issuer: issuerId, serial: '7D3920094EBEF3F8EFCA6C10EA8E4303' }],
+});
+```
+
+The package downloads nothing and runs no timer. Refresh on your own
+schedule, with your own HTTP client: download the lists the current
+verifier names, build a new verifier, and swap the reference.
+
+```js
+let verifier = createVerifier(createConfig());
+
+async function refreshRevocation() {
+  const revocationLists = [];
+  for (const url of verifier.revocationUrls()) {
+    const response = await fetch(url);
+    if (response.ok) {
+      revocationLists.push(new Uint8Array(await response.arrayBuffer()));
+    }
+  }
+  // A list the module refuses throws here, and the old verifier keeps serving.
+  verifier = createVerifier(createConfig({ revocationLists }));
+}
+```
+
+- **Take the URLs from `revocationUrls()`, never from Apple's PKI page.**
+  The page also links an old copy of Apple Root CA's list and a list signed
+  under a retired root name, which `createVerifier` refuses, and a 2.3 MB
+  WWDR G1 list over the 1 MiB cap. With Apple's roots the URLs are the lists
+  of Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are
+  `http://`: the module authenticates each list by its signature, not by the
+  transport.
+- **Monitor `revocationValidUntil()`.** It is the earliest `nextUpdate` of
+  the lists held, as a `Date`. `null` means some issuer the verifier
+  expects a list from has none (none passed, or the list was ignored); a
+  date in the past means a list is stale. Alert on both. Apple reissues
+  WWDR G6's list daily.
+- **`createVerifier` throws a `TypeError`** naming the first problem and its
+  index when a list is not a CRL, is over 1 MiB, is signed by no issuer the
+  verifier knows, or is older than the list this release was built with;
+  when there are more than 16 lists; when a `revocationIssuers` certificate
+  does not chain to your roots; or when a `distrust` entry is malformed or
+  there are more than 1,000. A genuine list in a form the module does not
+  support is ignored instead, and counts as missing. A `revocationIssuers`
+  certificate that is itself revoked is set aside with its own list, not
+  refused: a path through it fails with `CERTIFICATE_REVOKED`.
+- **`distrust`** takes `{ issuer, serial }` strings: `issuer` is the
+  SHA-256, in hex, of the issuing certificate's subject Name followed by its
+  subjectPublicKeyInfo, both as encoded in that certificate; `serial` is the
+  revoked certificate's serial number in hex. Either letter case.
+- **With your own roots** `revocationUrls()` is empty until you add
+  `revocationIssuers`; it then names the lists those issuers may appear on.
+  The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
+
 ## The clock
 
 The package reads your clock once per call, before it looks at the input,
-and the module uses the value for two things:
+and the module uses the value for three things:
 
 - **the certificate-validity instant, when the input states no usable date
   of its own**: a receipt whose creation date (attribute 12) is missing or
@@ -329,6 +415,9 @@ and the module uses the value for two things:
   representable `receiptCreationDate`. Otherwise the module judges the chain
   at the date the input states.
 - **`request_date`** in the endpoint's response.
+- **whether a revocation list is still fresh**, when it holds a
+  `certificateHold` entry for a certificate on the path: a hold counts only
+  until the list's `nextUpdate`.
 
 A clock that throws, or answers anything but epoch milliseconds between 0
 and `Number.MAX_SAFE_INTEGER`, makes the call `INTERNAL_ERROR` (21009 at the

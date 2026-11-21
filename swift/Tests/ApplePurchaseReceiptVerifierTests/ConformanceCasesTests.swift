@@ -149,11 +149,40 @@ private struct Vectors {
         throw HarnessError("unknown trustedRoots source \"\(source)\"")
     }
 
+    /// The fixture ids a revocation member names, as bytes: each list's
+    /// and each issuer's logical bytes, in order, an id as often as it is
+    /// named. A member that is absent names none.
+    func fixtureList(_ revocation: [String: Any], _ member: String) throws -> [[UInt8]] {
+        guard let value = revocation[member] else { return [] }
+        guard let ids = value as? [String] else { throw HarnessError("revocation.\(member) is not a list of fixture ids") }
+        return try ids.map { try bytes(of: $0) }
+    }
+
+    /// `revocation.distrust`, its strings exactly as written: some are
+    /// malformed on purpose, for the module to refuse.
+    func distrust(_ revocation: [String: Any]) throws -> [RevokedCertificate] {
+        guard let value = revocation["distrust"] else { return [] }
+        guard let entries = value as? [[String: Any]] else { throw HarnessError("revocation.distrust is not a list of objects") }
+        return try entries.map { entry in
+            guard let issuer = entry["issuer"] as? String, let serial = entry["serial"] as? String else {
+                throw HarnessError("a distrust entry needs an issuer and a serial string")
+            }
+            return RevokedCertificate(issuer: issuer, serial: serial)
+        }
+    }
+
+    /// A case's config (or a buildConfig case's input): `trustedRoots`, and
+    /// the optional `revocation` object (schema version 3).
     func config(_ config: [String: Any], clockMillis: Int64?) throws -> Config {
         let roots = try trustedRootsDER(config)
         var clock: (@Sendable () -> Int64)?
         if let clockMillis { clock = { clockMillis } }
-        return Config(roots: roots, clock: clock)
+        guard let member = config["revocation"] else { return Config(roots: roots, clock: clock) }
+        guard let revocation = member as? [String: Any] else { throw HarnessError("config.revocation is not an object") }
+        let lists = try fixtureList(revocation, "lists")
+        let issuers = try fixtureList(revocation, "issuers")
+        let entries = try distrust(revocation)
+        return Config(roots: roots, revocationLists: lists, revocationIssuers: issuers, distrust: entries, clock: clock)
     }
 }
 
@@ -161,8 +190,13 @@ private struct Vectors {
 private func clockMillis(_ kase: [String: Any]) throws -> Int64? {
     guard let clock = kase["clock"] as? [String: Any] else { return nil }
     guard let text = clock["now"] as? String else { throw HarnessError("case clock has no \"now\"") }
+    return try instantMillis(text, "clock.now")
+}
+
+/// An ISO-8601 instant as epoch milliseconds.
+private func instantMillis(_ text: String, _ what: String) throws -> Int64 {
     guard let date = ISO8601DateFormatter().date(from: text) else {
-        throw HarnessError("clock.now \"\(text)\" is not an ISO-8601 instant this harness can parse")
+        throw HarnessError("\(what) \"\(text)\" is not an ISO-8601 instant this harness can parse")
     }
     return Int64((date.timeIntervalSince1970 * 1000).rounded())
 }
@@ -313,7 +347,7 @@ private func withinBudget(_ limitMillis: Int, _ id: String, _ body: () -> Void) 
 
 final class ConformanceCasesTests: XCTestCase {
     static let coveredOperations: Set<String> = [
-        "verifyReceipt", "verifySignedData", "verifyReceiptEndpoint", "decodeBase64",
+        "verifyReceipt", "verifySignedData", "verifyReceiptEndpoint", "decodeBase64", "buildConfig",
     ]
 
     override func setUp() {
@@ -325,6 +359,7 @@ final class ConformanceCasesTests: XCTestCase {
     func testVerifySignedDataCases() throws { try run(operation: "verifySignedData") }
     func testVerifyReceiptEndpointCases() throws { try run(operation: "verifyReceiptEndpoint") }
     func testDecodeBase64Cases() throws { try run(operation: "decodeBase64") }
+    func testBuildConfigCases() throws { try run(operation: "buildConfig") }
 
     /// The field comparison itself. `download_id` is pinned at 2^63-1 to
     /// catch a value rounded through a `Double`, so a near miss must fail; a
@@ -402,6 +437,10 @@ final class ConformanceCasesTests: XCTestCase {
     private func runOne(_ kase: [String: Any], id: String, operation: String, vectors: Vectors) throws {
         if operation == "decodeBase64" {
             try runDecodeBase64(kase, id: id, texts: vectors.base64Texts[id])
+            return
+        }
+        if operation == "buildConfig" {
+            try runBuildConfig(kase, id: id, vectors: vectors)
             return
         }
         guard let config = kase["config"] as? [String: Any], let input = kase["input"] as? [String: Any],
@@ -596,6 +635,42 @@ final class ConformanceCasesTests: XCTestCase {
                     scalars.contains(UInt32(codepoint)),
                     "\(id): message contains forbidden code point U+\(String(codepoint, radix: 16))")
             }
+        }
+    }
+
+    // MARK: buildConfig
+
+    /// Builds the case's configuration into a ``Verifier``: an error case
+    /// must be refused with a ``ConfigError`` (the message is not checked),
+    /// an ok case must build and report the revocation URLs, in order, and
+    /// `revocationValidUntil` as the instant stated, or `nil` for null.
+    private func runBuildConfig(_ kase: [String: Any], id: String, vectors: Vectors) throws {
+        guard let input = kase["input"] as? [String: Any], let expected = kase["expected"] as? [String: Any],
+            let status = expected["status"] as? String
+        else { throw HarnessError("\(id): a buildConfig case needs input and expected.status") }
+        let config = try vectors.config(input, clockMillis: try clockMillis(kase))
+        if status == "error" {
+            XCTAssertThrowsError(try Verifier(config: config), "\(id): the configuration built") { error in
+                XCTAssertTrue(error is ConfigError, "\(id): \(error)")
+            }
+            return
+        }
+        guard status == "ok", let urls = expected["revocationUrls"] as? [String], let until = expected["revocationValidUntil"]
+        else { throw HarnessError("\(id): an ok buildConfig case needs revocationUrls and revocationValidUntil") }
+        let verifier: Verifier
+        do {
+            verifier = try Verifier(config: config)
+        } catch {
+            XCTFail("\(id): the configuration was refused: \(error)")
+            return
+        }
+        XCTAssertEqual(verifier.revocationUrls, urls, "\(id): revocationUrls")
+        let got = verifier.revocationValidUntil.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) }
+        if until is NSNull {
+            XCTAssertNil(got, "\(id): revocationValidUntil")
+        } else {
+            guard let text = until as? String else { throw HarnessError("\(id): revocationValidUntil is not a string") }
+            XCTAssertEqual(got, try instantMillis(text, "revocationValidUntil"), "\(id): revocationValidUntil")
         }
     }
 

@@ -5,9 +5,9 @@
 # trust anchors the caller pins.
 #
 # Nothing here reaches the network and nothing reads the operating system's
-# trust store. There is no OCSP, no CRL and no AIA fetch: revocation is
-# disabled by design, which is the same trade-off Apple's own libraries make
-# in offline mode.
+# trust store. There is no OCSP, no CRL download and no AIA fetch: Apple's
+# revocation lists reach the module only as bytes the caller downloads and
+# passes in {Config} (docs/design/revocation.md).
 #
 # The verification itself is `aprv.wasm`, one WebAssembly module built from
 # one Rust core and shared by every implementation of this repository. This

@@ -52,7 +52,8 @@ module TestSupport
       File.dirname(fixtures_root)
     end
 
-    # The 0.7 conformance vectors (docs/design/0.7-api.md), schema version 2.
+    # The 0.7 conformance vectors (docs/design/0.7-api.md) and the revocation
+    # cases (docs/design/revocation.md), schema version 3.
     def cases
       @cases ||= read_fixtures_json("cases.json")
     end

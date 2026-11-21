@@ -1,0 +1,20 @@
+Certificate Revocation List (CRL):
+        Version 2 (0x1)
+        Signature Algorithm: ecdsa-with-SHA384
+        Issuer: CN = Apple Root CA - G3, OU = Apple Certification Authority, O = Apple Inc., C = US
+        Last Update: Aug 25 00:08:08 2026 GMT
+        Next Update: Jan  7 00:08:07 2027 GMT
+        CRL extensions:
+            X509v3 Authority Key Identifier: 
+                BB:B0:DE:A1:58:33:88:9A:A4:8A:99:DE:BE:BD:EB:AF:DA:CB:24:AB
+            X509v3 CRL Number: 
+                56
+No Revoked Certificates.
+    Signature Algorithm: ecdsa-with-SHA384
+    Signature Value:
+        30:64:02:30:4e:05:26:75:40:ef:f7:02:d7:79:d1:f0:41:59:
+        29:dc:c1:b4:34:3f:1d:eb:19:12:db:a7:f3:e6:59:9b:ce:57:
+        dd:09:77:a4:87:81:0a:72:a1:9f:f4:00:64:da:94:fd:02:30:
+        58:81:45:9b:5d:92:47:34:fc:dd:47:9e:e1:cc:84:28:39:e0:
+        b9:b0:65:18:29:eb:d3:84:d5:f5:fe:70:bd:d9:8d:19:50:69:
+        48:81:25:9f:2e:13:b9:0a:db:47:67:b5

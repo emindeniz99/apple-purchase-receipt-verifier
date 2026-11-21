@@ -15,6 +15,12 @@
 // runners use), with ids `<case>#receipt-data/<i>` and `<case>#x5c/<i>`.
 // A case without a clock runs at one pinned instant, so both
 // implementations judge a dateless input at the same moment.
+//
+// Cases with revocation settings and buildConfig cases are skipped, and
+// counted on stderr: Differential.java builds its Verifier from the
+// config's roots only, so a call carrying lists, issuers or distrust
+// entries would compare a configured core against an unconfigured Java.
+// The shared cases run both implementations on them instead.
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readFixture } from '../lib/fixtures.mjs';
@@ -60,7 +66,12 @@ const b64url = (s) => Buffer.from(s).toString('base64url');
 const x5cProbe = (text) => `${b64url(JSON.stringify({ alg: 'ES256', x5c: [text, text, text] }))}.${b64url('{}')}.${b64url('signature')}`;
 
 const out = [];
+let skipped = 0;
 for (const kase of doc.cases) {
+  if (kase.operation === 'buildConfig' || kase.config?.revocation !== undefined) {
+    skipped++;
+    continue;
+  }
   const cfg = config(kase);
   const at = now(kase);
   switch (kase.operation) {
@@ -99,4 +110,5 @@ for (const kase of doc.cases) {
   }
 }
 process.stdout.write(out.map((r) => `${JSON.stringify(r)}\n`).join(''));
-console.error(`cases-calls: ${doc.cases.length} cases, ${out.length} calls`);
+console.error(`cases-calls: ${doc.cases.length} cases, ${out.length} calls, `
+  + `${skipped} revocation or buildConfig cases skipped`);

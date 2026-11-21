@@ -10,10 +10,12 @@
 //!   bytes. Each must end in a 500 problem while the server keeps answering.
 
 use crate::http::{self, App, ROUTES};
-use crate::roots::{Roots, DEFAULT_ROOT_SHA256};
+use crate::roots::{Revocation, Roots, Settings, DEFAULT_ROOT_SHA256};
 use crate::runtime::{Environment, Load, Op, Runtime, Verifier};
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
+use base64::engine::general_purpose::STANDARD as STANDARD_B64;
+use base64::Engine as _;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 use tower::ServiceExt;
@@ -299,7 +301,8 @@ async fn a_body_over_the_cap_is_413_with_the_module_answer_byte_for_byte() {
 fn the_cli_prints_the_module_answer_and_exits_3_over_the_cap() {
     let v = real();
     for (path, op, name, body) in size_inputs() {
-        let (instance, max) = v.runtime.ready_instance(b"{}").unwrap().unwrap();
+        let (instance, init) = v.runtime.ready_instance(b"{}").unwrap().unwrap();
+        let max = init.max_input_bytes;
         assert_eq!(max, max_input());
         let (input, over) = crate::read_input(&body[..], max).unwrap();
         let mut out = Vec::new();
@@ -673,7 +676,7 @@ fn a_refused_root_stops_the_server_at_start() {
     .err()
     .unwrap();
     assert!(
-        e.contains("refused the roots configuration") && e.contains(r#""ok":false"#),
+        e.contains("refused the configuration") && e.contains(r#""ok":false"#),
         "{e}"
     );
 }
@@ -734,10 +737,229 @@ fn a_trapped_pool_instance_is_discarded_and_the_next_call_gets_a_fresh_one() {
         .contains(r#""verified":true"#));
 }
 
+// ------------------------------------------------------------ revocation
+
+/// A file of the shared test PKI (fixtures/generated-0.7/revocation/,
+/// written by the Java RevocationFixtures generator).
+fn pki(name: &str) -> Vec<u8> {
+    std::fs::read(repo(&format!("fixtures/generated-0.7/revocation/{name}"))).unwrap()
+}
+
+/// The test root, and the revocation settings given.
+fn test_pki(lists: &[&str], issuers: &[&str], distrust: &[(&str, &str)]) -> Settings {
+    Settings {
+        roots: Roots::Configured(vec![pki("root.der")]),
+        revocation: Revocation {
+            lists: lists.iter().map(|n| pki(n)).collect(),
+            issuers: issuers.iter().map(|n| pki(n)).collect(),
+            distrust: distrust
+                .iter()
+                .map(|(i, s)| (i.to_string(), s.to_string()))
+                .collect(),
+        },
+    }
+}
+
+/// A pooled verifier of the real component on `settings`, and a router
+/// whose `/v1/info` carries what `serve` adds for them.
+fn configured(settings: &Settings) -> (Arc<Verifier>, axum::Router) {
+    let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
+    let v = Arc::new(Verifier::new(rt, settings.config_json(), true).expect("init"));
+    let mut info = serde_json::json!({ "roots": settings.roots.info() });
+    crate::add_revocation_info(&mut info, v.init_answer(), &settings.revocation);
+    let router = http::router(Arc::new(App {
+        verifier: v.clone(),
+        permits: Arc::new(tokio::sync::Semaphore::new(2)),
+        uploads: Arc::new(tokio::sync::Semaphore::new(8)),
+        body_timeout: http::BODY_TIMEOUT,
+        token: None,
+        info,
+    }));
+    (v, router)
+}
+
+/// The issuer id of the test intermediate (docs/design/revocation.md §2),
+/// as fixtures/cases.json states it.
+const TEST_INTERMEDIATE_ID: &str =
+    "a604eb835029c0019e7904b7c007eca2a68f799e9dcba0012fdd34660cbcd9fb";
+/// 2026-11-05T00:00:00Z, the clock of the shared revocation cases.
+const REVOCATION_NOW: &str = "1793836800000";
+
+/// A leaf on a list, or named by `distrust`, is `CERTIFICATE_REVOKED`
+/// through the verify routes and 21003 at the endpoint routes: the
+/// server passes the settings to `init` and the module's answer back,
+/// byte for byte. Without the settings the same inputs verify.
+#[tokio::test]
+async fn a_revoked_leaf_is_certificate_revoked_and_21003_at_the_endpoint() {
+    let jws = pki("jws.jws").trim_ascii().to_vec();
+    let receipt = STANDARD_B64.encode(pki("receipt.der"));
+    let request = format!(r#"{{"receipt-data":"{receipt}"}}"#).into_bytes();
+    let clock = [("x-aprv-now-ms", REVOCATION_NOW)];
+    for (settings, revoked) in [
+        (test_pki(&[], &[], &[]), false),
+        (
+            test_pki(
+                &["crl-fresh-revokes-leaves.der"],
+                &["intermediate.der"],
+                &[],
+            ),
+            true,
+        ),
+        // Serials 02 (the JWS leaf) and 03 (the receipt signer).
+        (
+            test_pki(
+                &[],
+                &[],
+                &[(TEST_INTERMEDIATE_ID, "02"), (TEST_INTERMEDIATE_ID, "3")],
+            ),
+            true,
+        ),
+    ] {
+        let (_, r) = configured(&settings);
+        let (s, _, body) = send(&r, "POST", "/v1/signed-data/verify", &clock, jws.clone()).await;
+        assert_eq!(s, StatusCode::OK);
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        if revoked {
+            assert_eq!(v["reason"], "CERTIFICATE_REVOKED", "{v}");
+        } else {
+            assert_eq!(v["verified"], true, "{v}");
+        }
+        let (s, _, body) = send(
+            &r,
+            "POST",
+            "/v1/receipt/verify",
+            &clock,
+            receipt.clone().into_bytes(),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["verified"], !revoked, "{v}");
+        let (s, _, body) = send(
+            &r,
+            "POST",
+            "/v1/verify-receipt/sandbox",
+            &clock,
+            request.clone(),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["status"], if revoked { 21003 } else { 0 }, "{v}");
+    }
+}
+
+/// `/v1/info` states the module's `revocation_urls` and
+/// `revocation_valid_until_ms`, and what the server was given: the
+/// lists' SHA-256s sorted, the issuers' in order, the distrust entries as
+/// written. With the built-in roots and nothing else, Apple's four list
+/// URLs and null (no list held).
+#[tokio::test]
+async fn info_reports_the_revocation_state() {
+    let defaults = Settings {
+        roots: Roots::Defaults,
+        revocation: Revocation::default(),
+    };
+    let (_, r) = configured(&defaults);
+    let (_, _, body) = send(&r, "GET", "/v1/info", &[], vec![]).await;
+    let info: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        info["revocation_urls"],
+        serde_json::json!([
+            "http://crl.apple.com/root.crl",
+            "http://crl.apple.com/applerootcag3.crl",
+            "http://crl.apple.com/wwdrg5.crl",
+            "http://crl.apple.com/wwdrg6.crl",
+        ])
+    );
+    assert_eq!(info["revocation_valid_until_ms"], Value::Null);
+    for k in ["revocation_lists", "revocation_issuers", "distrust"] {
+        assert_eq!(info[k], serde_json::json!([]), "{k}");
+    }
+
+    // The intermediate's list (nextUpdate 2026-12-01) given after the
+    // root's (2027-01-01): the lists are reported sorted, not in order.
+    let settings = test_pki(
+        &["root-crl-empty.der", "crl-fresh-empty.der"],
+        &["intermediate.der"],
+        &[(TEST_INTERMEDIATE_ID, "0080")],
+    );
+    let (v, r) = configured(&settings);
+    let (_, _, body) = send(&r, "GET", "/v1/info", &[], vec![]).await;
+    let info: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        info["revocation_urls"],
+        serde_json::json!([
+            "http://crl.example.test/aprv-test-root.crl",
+            "https://crl.example.test/aprv-test-root.crl",
+        ])
+    );
+    assert_eq!(info["revocation_valid_until_ms"], 1_796_083_200_000_i64);
+    assert_eq!(
+        v.init_answer().revocation_valid_until_ms,
+        Some(1_796_083_200_000)
+    );
+    assert_eq!(
+        info["revocation_lists"],
+        serde_json::json!([
+            // crl-fresh-empty.der, root-crl-empty.der
+            "90354a1c5dc87a26f423754de35d2d2ff4af0143b8c7c390b931163ce101c91b",
+            "d4eaebb31f28a7106665cff10683890396924ab996c1082ca892fe43436373f2",
+        ])
+    );
+    assert_eq!(
+        info["revocation_issuers"],
+        serde_json::json!(["c6da28177a22849e70e4efa2467e2432cb8ae0b1c6e96b9fec8482d6d71fc727"])
+    );
+    assert_eq!(
+        info["distrust"],
+        serde_json::json!([{ "issuer": TEST_INTERMEDIATE_ID, "serial": "0080" }])
+    );
+}
+
+/// A list `init` refuses (here one whose signature does not verify), an
+/// issuer that does not chain to the roots, or a malformed distrust entry
+/// stops the server at start, as a refused root does.
+#[test]
+fn a_refused_revocation_setting_stops_the_server_at_start() {
+    for (settings, member) in [
+        (
+            test_pki(
+                &["crl-refused-bad-signature.der"],
+                &["intermediate.der"],
+                &[],
+            ),
+            "revocation_lists[0]",
+        ),
+        (
+            Settings {
+                roots: Roots::Defaults,
+                revocation: Revocation {
+                    issuers: vec![pki("intermediate.der")],
+                    ..Revocation::default()
+                },
+            },
+            "revocation_issuers[0]",
+        ),
+        (test_pki(&[], &[], &[("abc", "01")]), "distrust[0]"),
+    ] {
+        let rt = Runtime::new(Load::File(&component_path()), 10_000).unwrap();
+        let e = Verifier::new(rt, settings.config_json(), false)
+            .err()
+            .unwrap();
+        assert!(
+            e.contains("refused the configuration")
+                && e.contains(r#""ok":false"#)
+                && e.contains(member),
+            "{member}: {e}"
+        );
+    }
+}
+
 // ------------------------------------------------------------ hostile components
 
 /// A component with aprv.wasm's interface whose operations misbehave:
-/// init answers {"ok":true,"max_input_bytes":3145729}; verify-receipt loops
+/// init answers {"ok":true,"max_input_bytes":3145729,...}; verify-receipt loops
 /// forever; verify-signed-data grows memory by 16,384 pages (1 GiB);
 /// verify-receipt-endpoint returns bytes that are not UTF-8 as its string;
 /// and with env 1 asks the host for 1 GiB of random bytes first.

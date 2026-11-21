@@ -26,8 +26,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The JWS half of {@link Verifier#verifySignedData}, offline, against the
- * pinned roots: ES256, three {@code x5c} certificates, no revocation check.
- * Stateless; every cryptographic step uses {@link BouncyCastle#PROVIDER}.
+ * pinned roots: ES256, three {@code x5c} certificates, and the revocation
+ * check ({@link Revocation}) once the signature has verified. Stateless;
+ * every cryptographic step uses {@link BouncyCastle#PROVIDER}.
  */
 final class JwsCore {
 
@@ -45,7 +46,7 @@ final class JwsCore {
      * {@link Reason#UNREADABLE_PAYLOAD}: a parse problem in something Apple
      * signed is never {@code MALFORMED}.
      */
-    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, long now)
+    static JsonPayload verify(@Nullable String jws, Set<TrustAnchor> trustAnchors, Revocation revocation, long now)
             throws VerificationException {
         if (jws == null || jws.isEmpty()) {
             throw new VerificationException(Reason.MALFORMED, "jws is empty");
@@ -58,15 +59,15 @@ final class JwsCore {
         // reaches this catch (the steps below contain their own failures);
         // it keeps verify from throwing if one ever does.
         try {
-            return verifyUnguarded(jws, trustAnchors, now);
+            return verifyUnguarded(jws, trustAnchors, revocation, now);
         } catch (RuntimeException e) {
             throw VerificationException.unexpected(e);
         }
     }
 
-    /** Structure, then certificates, chain, OIDs, signature, and last the payload verdict. */
-    private static JsonPayload verifyUnguarded(String jws, Set<TrustAnchor> trustAnchors, long now)
-            throws VerificationException {
+    /** Structure, then certificates, chain, OIDs, signature, revocation, and last the payload verdict. */
+    private static JsonPayload verifyUnguarded(
+            String jws, Set<TrustAnchor> trustAnchors, Revocation revocation, long now) throws VerificationException {
         String[] parts = jws.split("\\.", -1);
         if (parts.length != 3) {
             throw new VerificationException(Reason.MALFORMED, "expected 3 dot-separated segments, got " + parts.length);
@@ -95,11 +96,15 @@ final class JwsCore {
         List<X509Certificate> path = authenticateTopDown(chain.get(0), chain.get(1), trustAnchors);
         X509Certificate leaf = path.get(0);
         X509Certificate intermediate = path.get(1);
+        X509Certificate root = path.get(2);
         PublicKey leafKey = AppleTrust.decodeKey(leaf, "x5c[0]");
-        validateChain(path, new Date(carried != null ? carried : now), trustAnchors);
+        validateChain(path.subList(0, 2), new Date(carried != null ? carried : now), trustAnchors);
         // After the chain, so a foreign chain is UNTRUSTED_CHAIN whatever it carries.
         AppleTrust.requireMarkers(leaf, intermediate, "x5c");
         verifyEs256(leafKey, parts[0] + "." + parts[1], signature);
+        // After the signature and before the payload verdict, so a payload
+        // signed with a revoked key is never judged.
+        revocation.check(path.subList(0, 2), root, now, "x5c");
         // A payload that did not read fails here, as UNREADABLE_PAYLOAD.
         Payload payload = read != null ? read : readPayload(payloadBytes);
         return new JsonPayload(new String(payloadBytes, StandardCharsets.UTF_8), payload.environment());
@@ -329,12 +334,14 @@ final class JwsCore {
      * Checks both signatures from a pinned root down, decoding a key only once
      * it is vouched for; see {@link AppleTrust}. A null certificate, one
      * {@link #decodeChain} passed over, is signed by nobody. Returns the two,
-     * leaf first.
+     * leaf first, then the pinned root that signed the intermediate.
      */
     private static List<X509Certificate> authenticateTopDown(
             @Nullable X509Certificate leaf, @Nullable X509Certificate intermediate, Set<TrustAnchor> trustAnchors)
             throws VerificationException {
-        if (intermediate == null || !AppleTrust.signedByAny(intermediate, AppleTrust.roots(trustAnchors))) {
+        X509Certificate root =
+                intermediate == null ? null : AppleTrust.signerAmong(intermediate, AppleTrust.roots(trustAnchors));
+        if (intermediate == null || root == null) {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "intermediate certificate is not signed by a pinned Apple root");
         }
@@ -347,7 +354,7 @@ final class JwsCore {
             throw new VerificationException(
                     Reason.UNTRUSTED_CHAIN, "leaf certificate is not signed by the intermediate");
         }
-        return Arrays.asList(leaf, intermediate);
+        return Arrays.asList(leaf, intermediate, root);
     }
 
     private static void validateChain(List<X509Certificate> chain, Date at, Set<TrustAnchor> trustAnchors)

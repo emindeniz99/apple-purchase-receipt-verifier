@@ -78,7 +78,7 @@ const LANGS = {
       [/\bx509\.(SystemCertPool|NewCertPool|CertPool|VerifyOptions|ParseCertificates?|ParseCertificateRequest)\b|\bCheckSignatureFrom\b|\bSetDefaultPaths\b/, 'a certificate parse or platform trust evaluation'],
     ],
     allow: [
-      { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots are *x509.Certificate (the 0.7 API); only .Raw, the DER, crosses into the module" },
+      { file: 'go/config.go', token: /"crypto\/x509"/, why: "Config's roots and revocation issuers are *x509.Certificate (the 0.7 API, and revocation.md §9 for the issuers); only .Raw, the DER, crosses into the module" },
       { file: 'go/internal/wasm/wasm.go', token: /"crypto\/sha256"/, why: 'checks the embedded aprv.wasm against its pinned SHA-256' },
     ],
   },
@@ -124,8 +124,8 @@ const LANGS = {
       [/\b(ECDsa|RSA|DSA)\s*\.\s*Create\b|ECDsa|\bRSA(Cng|OpenSsl)?\b|RSACryptoServiceProvider|Verify(Data|Hash)|Org\.BouncyCastle/, '.NET signature verification'],
     ],
     allow: [
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and the Config constructor\'s roots take X509Certificate2 (the 0.7 type); only its RawData, the DER, reaches the module' },
-      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots above; no chain, no key, no signature" },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Config.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: 'Config.Roots and the Config constructor\'s roots take X509Certificate2 (the 0.7 type), and so do Config.RevocationIssuers and the revocationIssuers parameter (revocation.md §9); only its RawData, the DER, reaches the module' },
+      { file: 'dotnet/src/ApplePurchaseReceiptVerifier/Internal/Certificates.cs', token: /using System\.Security\.Cryptography\.X509Certificates;|\bX509Certificate2\b/g, why: "wraps DER in an X509Certificate2 for Config.Roots and Config.RevocationIssuers above; no chain, no key, no signature" },
     ],
   },
   php: {

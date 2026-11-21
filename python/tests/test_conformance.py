@@ -20,7 +20,13 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from apple_purchase_receipt_verifier import Config, Environment, Reason, Verifier
+from apple_purchase_receipt_verifier import (
+    Config,
+    Environment,
+    Reason,
+    RevokedCertificate,
+    Verifier,
+)
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # Read as UTF-8 explicitly rather than in the locale encoding: the file
@@ -82,9 +88,28 @@ def trusted_roots(spec):
     return [fixture_bytes(i) for i in spec["fixtures"]]
 
 
+def revocation_settings(spec):
+    """The ``Config`` keyword arguments for a case's ``revocation`` object:
+    lists and issuers are fixture ids (an id may repeat), passed as their
+    bytes in order; distrust entries are passed exactly as written,
+    malformed ones included, for the module to judge."""
+    if spec is None:
+        return {}
+    return {
+        "revocation_lists": [fixture_bytes(i) for i in spec.get("lists", [])],
+        "revocation_issuers": [fixture_bytes(i) for i in spec.get("issuers", [])],
+        "distrust": [
+            RevokedCertificate(e["issuer"], e["serial"]) for e in spec.get("distrust", [])
+        ],
+    }
+
+
 def _config(case):
+    # A buildConfig case states its configuration as its input.
+    spec = case["input"] if case["operation"] == "buildConfig" else case["config"]
     clock = case_clock(case)
-    kwargs = {"roots": trusted_roots(case["config"]["trustedRoots"])}
+    kwargs = {"roots": trusted_roots(spec["trustedRoots"])}
+    kwargs.update(revocation_settings(spec.get("revocation")))
     if clock is not None:
         kwargs["clock"] = clock
     return Config(**kwargs)
@@ -290,11 +315,41 @@ def resolve_length(root, path):
 class ConformanceCasesTest(unittest.TestCase):
     """One test method per case in fixtures/cases.json (generated below)."""
 
+    def test_the_cases_are_schema_version_3(self):
+        # Version 3 added the revocation config member and the buildConfig
+        # operation (docs/design/revocation.md section 10).
+        self.assertEqual(3, CASES["schemaVersion"])
+
+    def run_build_config_case(self, case):
+        """Building the configuration either fails, the module's refusal
+        surfacing as the ``Verifier``'s ``ValueError``, or succeeds and
+        reports the two revocation values (docs/design/revocation.md
+        sections 4 and 7)."""
+        expected = case["expected"]
+        if expected["status"] == "error":
+            with self.assertRaises(ValueError, msg=f"{case['id']}: the configuration built"):
+                Verifier(_config(case))
+            return
+        verifier = Verifier(_config(case))
+        self.assertEqual(
+            tuple(expected["revocationUrls"]), verifier.revocation_urls, f"{case['id']}: urls"
+        )
+        until = verifier.revocation_valid_until
+        want = expected["revocationValidUntil"]
+        self.assertEqual(
+            None if want is None else datetime.fromisoformat(want.replace("Z", "+00:00")),
+            until,
+            f"{case['id']}: revocation_valid_until",
+        )
+
     def run_case(self, case):
         RAN.add(case["id"])
         if case["operation"] == "decodeBase64":
             failures = decode_base64_failures(case)
             self.assertEqual([], failures, "\n".join(failures))
+            return
+        if case["operation"] == "buildConfig":
+            self.run_build_config_case(case)
             return
         operation = OPERATIONS.get(case["operation"])
         if operation is None:

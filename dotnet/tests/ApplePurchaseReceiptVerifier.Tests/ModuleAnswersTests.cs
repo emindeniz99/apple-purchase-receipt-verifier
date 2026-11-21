@@ -152,16 +152,19 @@ public class ModuleAnswersTests
         Assert.Equal(40_000, ModuleAnswers.ReadReceipt(answer).Payload!.InApp.Count);
     }
 
+    /// <summary>The revocation members an accepting answer of this module version carries, with nothing held.</summary>
+    private const string NoRevocation = ",\"revocation_urls\":[],\"revocation_valid_until_ms\":null";
+
     [Fact]
     public void InitsAnswersAreOkWithTheInputLengthOrARefusalWithItsMessage()
     {
-        Assert.Equal(3_145_729, ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":3145729}"));
-        Assert.Equal(1, ModuleAnswers.CheckInit("{\"max_input_bytes\":1,\"ok\":true}"));
+        Assert.Equal(3_145_729, ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":3145729" + NoRevocation + "}").MaxInputBytes);
+        Assert.Equal(1, ModuleAnswers.CheckInit("{\"revocation_valid_until_ms\":null,\"max_input_bytes\":1,\"revocation_urls\":[],\"ok\":true}").MaxInputBytes);
         ArgumentException refused = Assert.Throws<ArgumentException>(
             () => ModuleAnswers.CheckInit("{\"ok\":false,\"message\":\"root 1: not a certificate\"}"));
         Assert.Contains("root 1: not a certificate", refused.Message, StringComparison.Ordinal);
         Assert.Throws<ModuleAnswers.AnswerException>(
-            () => ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":3145729,\"message\":\"x\"}"));
+            () => ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":3145729" + NoRevocation + ",\"message\":\"x\"}"));
         Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.CheckInit("{\"ok\":false}"));
         Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.CheckInit("ok"));
     }
@@ -187,6 +190,49 @@ public class ModuleAnswersTests
     {
         ModuleAnswers.AnswerException error = Assert.Throws<ModuleAnswers.AnswerException>(() => ModuleAnswers.CheckInit(answer));
         Assert.Contains("max_input_bytes", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The revocation state is read as the module wrote it
+    /// (docs/design/revocation.md §8): the URLs in order, and the valid-until
+    /// instant as epoch milliseconds or <see langword="null"/>. The URLs come
+    /// back unmodifiable.
+    /// </summary>
+    [Fact]
+    public void InitsRevocationStateIsReadAsTheModuleWroteIt()
+    {
+        ModuleAnswers.InitAnswer held = ModuleAnswers.CheckInit(
+            "{\"ok\":true,\"max_input_bytes\":1,\"revocation_urls\":[\"http://a.test/1.crl\",\"https://a.test/1.crl\"],"
+            + "\"revocation_valid_until_ms\":1795046400000}");
+        Assert.Equal(new[] { "http://a.test/1.crl", "https://a.test/1.crl" }, held.RevocationUrls);
+        Assert.Equal(1795046400000L, held.RevocationValidUntilMs);
+        IList<string> list = Assert.IsType<IList<string>>(held.RevocationUrls, exactMatch: false);
+        Assert.True(list.IsReadOnly);
+
+        ModuleAnswers.InitAnswer none = ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":1" + NoRevocation + "}");
+        Assert.Empty(none.RevocationUrls);
+        Assert.Null(none.RevocationValidUntilMs);
+    }
+
+    /// <summary>
+    /// An accepting answer without the revocation state comes from a module
+    /// older than revocation, and one with it in the wrong shape is not the
+    /// wire's: neither is init's answer.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"revocation_urls\":[]")]
+    [InlineData(",\"revocation_valid_until_ms\":null")]
+    [InlineData(",\"revocation_urls\":null,\"revocation_valid_until_ms\":null")]
+    [InlineData(",\"revocation_urls\":\"u\",\"revocation_valid_until_ms\":null")]
+    [InlineData(",\"revocation_urls\":[1],\"revocation_valid_until_ms\":null")]
+    [InlineData(",\"revocation_urls\":[],\"revocation_valid_until_ms\":\"1\"")]
+    [InlineData(",\"revocation_urls\":[],\"revocation_valid_until_ms\":1.5")]
+    [InlineData(",\"revocation_urls\":[],\"revocation_valid_until_ms\":9223372036854775808")]
+    public void AnAcceptingInitAnswerWithoutTheRevocationStateIsNotInitsAnswer(string members)
+    {
+        Assert.Throws<ModuleAnswers.AnswerException>(
+            () => ModuleAnswers.CheckInit("{\"ok\":true,\"max_input_bytes\":1" + members + "}"));
     }
 
     [Theory]
@@ -242,7 +288,7 @@ public class ModuleAnswersTests
     [Fact]
     public void ARepeatedMemberCountsOnceWithItsLastValue()
     {
-        Assert.Equal(7, ModuleAnswers.CheckInit("{\"ok\":false,\"ok\":true,\"max_input_bytes\":7}"));
+        Assert.Equal(7, ModuleAnswers.CheckInit("{\"ok\":false,\"ok\":true,\"max_input_bytes\":7" + NoRevocation + "}").MaxInputBytes);
         VerificationResult<JsonPayload> read = ModuleAnswers.ReadSignedData(
             "{\"verified\":true,\"payload\":\"first\",\"payload\":\"{}\",\"environment\":\"Sandbox\",\"environment\":null}");
         Assert.Equal("{}", read.Payload!.Json);

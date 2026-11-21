@@ -185,7 +185,7 @@ public class JsonTests
     {
         Assert.True(Fixtures070.Cases.ContainsKey("cases"));
         Assert.True(Fixtures070.Cases.ContainsKey("fixtures"));
-        Assert.Equal(2L, Fixtures070.Cases["schemaVersion"]);
+        Assert.Equal(3L, Fixtures070.Cases["schemaVersion"]);
         Assert.IsType<List<object?>>(Fixtures070.Cases["cases"]);
     }
 }

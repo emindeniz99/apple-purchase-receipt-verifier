@@ -7,9 +7,9 @@ import (
 
 // Reason is the machine-readable cause of a verification failure.
 //
-// The eight constants below are the complete vocabulary a verifier
+// The nine constants below are the complete vocabulary a verifier
 // returns. It is closed by the cross-port contract
-// (fixtures/cases.schema.json); a ninth reason is a change to every
+// (fixtures/cases.schema.json); a tenth reason is a change to every
 // implementation in one go, not a Go-local addition.
 type Reason string
 
@@ -42,6 +42,11 @@ const (
 	// the parser's error), or the configured clock panicked. Alert; do
 	// not retry.
 	ReasonInternalError Reason = "INTERNAL_ERROR"
+	// ReasonCertificateRevoked: a certificate on the verified path is
+	// revoked, by the list built into the module, by a Distrust entry, or
+	// by a revocation list passed in the Config, whatever date the input
+	// states (whoever holds a leaked key chooses that date).
+	ReasonCertificateRevoked Reason = "CERTIFICATE_REVOKED"
 )
 
 // AllReasons is the whole vocabulary, in the order the shared schema
@@ -56,6 +61,7 @@ func AllReasons() []Reason {
 		ReasonInvalidCertificatePurpose,
 		ReasonUnreadablePayload,
 		ReasonInternalError,
+		ReasonCertificateRevoked,
 	}
 }
 

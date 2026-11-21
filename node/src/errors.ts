@@ -21,6 +21,12 @@ export const Reason = {
   UNREADABLE_PAYLOAD: 'UNREADABLE_PAYLOAD',
   /** The library failed; alert, do not retry. */
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /**
+   * A certificate on the path is revoked: by the list built into aprv.wasm,
+   * by `distrust`, or by a revocation list passed in `Config`. Checked after
+   * the signature and before the payload is read.
+   */
+  CERTIFICATE_REVOKED: 'CERTIFICATE_REVOKED',
 } as const;
 
 export type Reason = (typeof Reason)[keyof typeof Reason];

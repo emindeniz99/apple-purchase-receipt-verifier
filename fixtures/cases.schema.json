@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/fixtures/cases.schema.json",
-  "title": "Apple purchase receipt verifier: cross-language conformance vectors for the 0.7 API",
-  "description": "Schema for fixtures/cases.json (schema version 2). Every port runs the same cases against the same fixture bytes through the three 0.7 methods of docs/design/0.7-api.md and must produce the same answer. The file's comment defines how runners hand inputs over and evaluate expectations.",
+  "title": "Apple purchase receipt verifier: cross-language conformance vectors for the 0.7 API and certificate revocation",
+  "description": "Schema for fixtures/cases.json (schema version 3). Every port runs the same cases against the same fixture bytes through the three 0.7 methods of docs/design/0.7-api.md, and builds the configurations of docs/design/revocation.md, and must produce the same answer. Version 3 added the revocation member of a config, the buildConfig operation and the reason CERTIFICATE_REVOKED. The file's comment defines how runners hand inputs over and evaluate expectations.",
   "type": "object",
   "additionalProperties": false,
   "required": ["$schema", "schemaVersion", "comment", "fixtures", "cases"],
   "properties": {
     "$schema": { "type": "string" },
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": { "const": 3 },
     "comment": { "type": "string", "minLength": 1 },
     "fixtures": {
       "type": "object",
@@ -34,12 +34,12 @@
       "properties": {
         "path": {
           "type": "string",
-          "description": "Path relative to fixtures/. generated-0.7/ holds the receipts re-minted for 0.7 and the inputs new in 0.7.",
-          "pattern": "^(generated|generated-0\\.7|public-receipts|apple-official|limits)/[A-Za-z0-9._/-]+$"
+          "description": "Path relative to fixtures/. generated-0.7/ holds the receipts re-minted for 0.7 and the inputs new in 0.7, generated-0.7/revocation/ the test PKI and lists of the revocation cases; apple-crls/ holds two lists as Apple publishes them.",
+          "pattern": "^(generated|generated-0\\.7|public-receipts|apple-official|limits|apple-crls)/[A-Za-z0-9._/-]+$"
         },
         "role": {
-          "description": "input = bytes handed to an operation; trust-anchor = a certificate the verifier is configured with; support = neither, kept registered so the tier stays accounted for.",
-          "enum": ["input", "trust-anchor", "support"]
+          "description": "input = bytes handed to an operation; trust-anchor = a certificate the verifier is configured with as a root; revocation-list = a certificate revocation list (or bytes offered as one) handed to the configuration in revocation.lists; revocation-issuer = a certificate handed to the configuration in revocation.issuers; support = none of these, kept registered so the tier stays accounted for.",
+          "enum": ["input", "trust-anchor", "revocation-list", "revocation-issuer", "support"]
         },
         "codec": {
           "description": "How the file encodes its logical bytes. raw = the file bytes; base64 = base64 text (whitespace stripped) decoding to the bytes; utf8 = text whose trimmed UTF-8 encoding is the bytes; text = the file bytes verbatim, untrimmed, handed to a string-taking method as the exact string a client sent.",
@@ -53,7 +53,7 @@
       }
     },
     "reason": {
-      "description": "The 0.7 Reason set (docs/design/0.7-api.md, Result).",
+      "description": "The 0.7 Reason set (docs/design/0.7-api.md, Result) and CERTIFICATE_REVOKED, the ninth reason (docs/design/revocation.md §3).",
       "enum": [
         "MALFORMED",
         "TOO_LARGE",
@@ -62,6 +62,7 @@
         "INVALID_CERTIFICATE",
         "INVALID_CERTIFICATE_PURPOSE",
         "UNREADABLE_PAYLOAD",
+        "CERTIFICATE_REVOKED",
         "INTERNAL_ERROR"
       ]
     },
@@ -90,11 +91,48 @@
         }
       ]
     },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "The three revocation settings of docs/design/revocation.md §4. Absent means all three are empty, as in Config.defaults().",
+      "properties": {
+        "lists": {
+          "type": "array",
+          "minItems": 1,
+          "description": "revocationLists: registered fixtures whose logical bytes are each handed over as one list, in this order. An id may repeat; each occurrence is one list.",
+          "items": { "$ref": "#/$defs/fixtureId" }
+        },
+        "issuers": {
+          "type": "array",
+          "minItems": 1,
+          "description": "revocationIssuers: registered certificate fixtures, handed over in the form the port's roots take, in this order.",
+          "items": { "$ref": "#/$defs/fixtureId" }
+        },
+        "distrust": {
+          "type": "array",
+          "minItems": 1,
+          "description": "distrust: revocation keys, handed over in this order with the strings exactly as written. The strings are deliberately unconstrained so a buildConfig case can hand over an entry the configuration must refuse.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["issuer", "serial"],
+            "properties": {
+              "issuer": { "type": "string", "description": "An issuer id: 64 hex digits (§2)." },
+              "serial": { "type": "string", "description": "A serial number in hex, either letter case, any digit count (§2)." }
+            }
+          }
+        }
+      }
+    },
     "verifyConfig": {
       "type": "object",
       "additionalProperties": false,
       "required": ["trustedRoots"],
-      "properties": { "trustedRoots": { "$ref": "#/$defs/trustedRoots" } }
+      "properties": {
+        "trustedRoots": { "$ref": "#/$defs/trustedRoots" },
+        "revocation": { "$ref": "#/$defs/revocation" }
+      }
     },
     "endpointConfig": {
       "type": "object",
@@ -102,6 +140,7 @@
       "required": ["trustedRoots", "environment"],
       "properties": {
         "trustedRoots": { "$ref": "#/$defs/trustedRoots" },
+        "revocation": { "$ref": "#/$defs/revocation" },
         "environment": {
           "description": "The Environment passed to verifyReceiptEndpoint: which of Apple's two URLs the call imitates.",
           "enum": ["PRODUCTION", "SANDBOX"]
@@ -134,7 +173,7 @@
       "properties": {
         "now": {
           "type": "string",
-          "description": "The instant the Config clock answers, ISO-8601 UTC. Required whenever the verdict or an asserted field moves with the clock.",
+          "description": "The instant the Config clock answers, ISO-8601 UTC. Required whenever the verdict or an asserted field moves with the clock. Building a configuration reads no clock; a buildConfig case states one only so the Config it builds is the one its verify cases build.",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
         }
       }
@@ -219,7 +258,8 @@
               "UNTRUSTED_CHAIN",
               "INVALID_CERTIFICATE",
               "INVALID_CERTIFICATE_PURPOSE",
-              "UNREADABLE_PAYLOAD"
+              "UNREADABLE_PAYLOAD",
+              "CERTIFICATE_REVOKED"
             ]
           }
         }
@@ -292,6 +332,35 @@
           "items": { "enum": [0, 21002, 21003, 21007, 21008, 21009] }
         }
       }
+    },
+    "isoInstant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "expectedBuildOk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "revocationUrls", "revocationValidUntil"],
+      "description": "The configuration builds, and the verifier built from it reports these two values (docs/design/revocation.md §7).",
+      "properties": {
+        "status": { "const": "ok" },
+        "revocationUrls": {
+          "type": "array",
+          "description": "revocationUrls(), compared in order.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "revocationValidUntil": {
+          "description": "revocationValidUntil() as an ISO-8601 UTC instant, or null when the port reports none. The module's revocation_valid_until_ms is the same instant in epoch milliseconds.",
+          "oneOf": [{ "$ref": "#/$defs/isoInstant" }, { "type": "null" }]
+        }
+      }
+    },
+    "expectedBuildError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "description": "Building the configuration fails: the Config builder throws, the module's init answers ok false, aprv-server refuses to start. The message is not pinned.",
+      "properties": { "status": { "const": "error" } }
     },
     "faultRequiredOnError": {
       "if": {
@@ -450,6 +519,31 @@
                 }
               ]
             },
+            "tags": { "$ref": "#/$defs/tags" }
+          }
+        },
+        {
+          "title": "buildConfig: a configuration builds, or is refused, and what the verifier reports",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "description", "operation", "input", "expected", "tags"],
+          "allOf": [{ "$ref": "#/$defs/faultRequiredOnError" }],
+          "properties": {
+            "id": { "$ref": "#/$defs/caseId" },
+            "description": { "$ref": "#/$defs/description" },
+            "operation": { "const": "buildConfig" },
+            "input": {
+              "$ref": "#/$defs/verifyConfig",
+              "description": "The configuration to build: trustedRoots and revocation exactly as a verify case's config."
+            },
+            "clock": { "$ref": "#/$defs/clock" },
+            "expected": {
+              "oneOf": [
+                { "$ref": "#/$defs/expectedBuildOk" },
+                { "$ref": "#/$defs/expectedBuildError" }
+              ]
+            },
+            "fault": { "$ref": "#/$defs/fault" },
             "tags": { "$ref": "#/$defs/tags" }
           }
         }

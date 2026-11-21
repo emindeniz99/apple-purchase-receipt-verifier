@@ -1,0 +1,110 @@
+Certificate Revocation List (CRL):
+        Version 2 (0x1)
+        Signature Algorithm: ecdsa-with-SHA384
+        Issuer: CN = Apple Worldwide Developer Relations Certification Authority, OU = G6, O = Apple Inc., C = US
+        Last Update: Nov  5 13:36:46 2026 GMT
+        Next Update: Nov 19 13:36:45 2026 GMT
+        CRL extensions:
+            X509v3 Authority Key Identifier: 
+                3F:2F:94:23:51:D3:50:C9:9A:28:3D:ED:B0:7C:E5:CF:A5:90:62:99
+            X509v3 CRL Number: 
+                2135
+Revoked Certificates:
+    Serial Number: 37D34791D02A56160329892A81C5A0EA
+        Revocation Date: Mar  6 23:59:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 60B6E8776CFE8C8E0710E521ADCC2C6F
+        Revocation Date: Jul  1 09:16:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 4B6F88DE48E5822739E368CBD31CE9E5
+        Revocation Date: Apr 15 17:41:01 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 375229468211E66808CDD808A28FC2A3
+        Revocation Date: Mar 10 20:41:01 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 6FAFF74C8A3FAE56DF44F8355EFF65DC
+        Revocation Date: Aug 13 21:05:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 1E06A88C9A5E1FDC2072E5BE9AF3FCF7
+        Revocation Date: Aug 13 21:05:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 766930566FF29A587D8BE196BC4F00C5
+        Revocation Date: May  4 15:03:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 1AB313C1E745231DE19F33ED595D0A72
+        Revocation Date: Mar 28 18:37:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 1737BF8D15406B20CBEA8828A33BD79F
+        Revocation Date: Sep 15 01:30:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 54884CB34A766BF5418AD35CF603032E
+        Revocation Date: Feb  9 12:39:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 42092A8296424852A12D24CCDBC8CA0B
+        Revocation Date: Feb  9 13:54:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 48E58537C0319BD157F1049E61936002
+        Revocation Date: Apr 16 23:12:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 5D63F49A8AF94ED7CF7FC93AFB26CC91
+        Revocation Date: Jun 24 15:52:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 4889DD7445B574454F49F9259571A30F
+        Revocation Date: Aug  1 03:32:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 5610AC1F192184591CF3E60348248E91
+        Revocation Date: Aug 14 11:03:51 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 6F39270AEA7D013322DCD61AC31AA4D0
+        Revocation Date: Oct 22 10:55:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 535555D671233C535C0D93C542134143
+        Revocation Date: Oct 22 10:49:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Serial Number: 21F4EE77681AA4D6C0547468875A0AA9
+        Revocation Date: Oct 21 10:50:00 2026 GMT
+        CRL entry extensions:
+            X509v3 CRL Reason Code: 
+                Key Compromise
+    Signature Algorithm: ecdsa-with-SHA384
+    Signature Value:
+        30:65:02:30:31:3d:f6:3f:a7:c3:dc:03:b7:9d:33:13:ee:c6:
+        1f:7e:9f:e8:30:15:88:0d:7a:aa:df:20:11:69:80:5e:2e:ea:
+        59:99:57:44:26:b2:55:d8:1d:ce:16:98:30:c9:47:f1:02:31:
+        00:c3:42:c7:a6:2f:02:c2:ae:18:b7:0c:d1:1c:3b:74:2f:8e:
+        56:e5:b8:79:e8:94:4c:23:74:b2:6e:63:87:e4:b8:2e:96:cf:
+        6d:47:64:c9:c2:f2:af:2c:76:b9:e9:8a:b4

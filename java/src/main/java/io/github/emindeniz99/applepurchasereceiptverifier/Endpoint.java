@@ -24,11 +24,15 @@ final class Endpoint {
     private Endpoint() {}
 
     static String respond(
-            Environment environment, @Nullable String requestJson, Set<TrustAnchor> trustAnchors, long now) {
+            Environment environment,
+            @Nullable String requestJson,
+            Set<TrustAnchor> trustAnchors,
+            Revocation revocation,
+            long now) {
         int status;
         ReceiptPayload receipt = null;
         try {
-            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, now);
+            receipt = ReceiptCore.verify(receiptData(requestJson), trustAnchors, revocation, now);
             status = status(environment, receipt);
         } catch (VerificationException e) {
             status = status(e.reason());
@@ -45,6 +49,7 @@ final class Endpoint {
             case UNTRUSTED_CHAIN:
             case INVALID_CERTIFICATE:
             case INVALID_CERTIFICATE_PURPOSE:
+            case CERTIFICATE_REVOKED:
                 return AppleStatus.RECEIPT_NOT_AUTHENTICATED;
             default:
                 return AppleStatus.INTERNAL_DATA_ACCESS_ERROR;

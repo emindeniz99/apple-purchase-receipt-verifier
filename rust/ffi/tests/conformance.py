@@ -30,7 +30,10 @@ names base64). Every document is checked to be the wire shape
 with a status that agrees, and an ok case's `expected.environment` against
 the document's; `--answers <dir>` also writes them, one per line, for
 tools/validate-wire.mjs (verify-receipt.jsonl, verify-signed-data.jsonl).
-After the run every case id in the file must have run.
+After the run every case id in the file must have run, or be counted as
+unreachable: the C ABI has no way to pass revocation settings
+(docs/design/revocation.md §8), so a buildConfig case and a verify case with
+a `revocation` member are counted and never passed.
 """
 
 from __future__ import annotations
@@ -432,8 +435,8 @@ def main() -> int:
     lib = load_library(Path(args[0]))
     directory = fixtures_dir(Path(__file__).parent)
     file = json.loads((directory / "cases.json").read_text(encoding="utf-8"))
-    if file["schemaVersion"] != 2:
-        raise SystemExit(f'cases.json is schemaVersion {file["schemaVersion"]}, this adapter is 2')
+    if file["schemaVersion"] != 3:
+        raise SystemExit(f'cases.json is schemaVersion {file["schemaVersion"]}, this adapter is 3')
     registry = file["fixtures"]
 
     print(
@@ -451,8 +454,12 @@ def main() -> int:
     pinned_clocks = 0
     checked = 0
     decode_groups = 0
+    unreachable = 0
     for case in file["cases"]:
         ran.add(case["id"])
+        if case["operation"] == "buildConfig" or "revocation" in (case.get("config") or {}):
+            unreachable += 1
+            continue
         if case["operation"] == "decodeBase64":
             decode_groups += 1
             problem = run_decode(lib, case)
@@ -487,6 +494,7 @@ def main() -> int:
     print(f"{passed} passed, {failed} failed, 0 skipped ({pinned_clocks} pin a clock)")
     print(f"{checked} expected fields and lengths checked, nested pointers included")
     print(f"{decode_groups} decodeBase64 groups through the verify calls")
+    print(f"{unreachable} revocation cases not reachable: the C ABI cannot pass revocation settings")
     if answers is not None:
         answers.mkdir(parents=True, exist_ok=True)
         for function, lines in ANSWERS.items():

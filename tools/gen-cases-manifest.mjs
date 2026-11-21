@@ -33,7 +33,7 @@
  *
  *   id                  the case id
  *   op                  verifyReceipt | verifySignedData
- *                       | verifyReceiptEndpoint | decodeBase64
+ *                       | verifyReceiptEndpoint | decodeBase64 | buildConfig
  *   input               path to the exact input string (verifyReceipt,
  *                       verifySignedData)
  *   request             path to the endpoint request body (endpoint cases)
@@ -58,10 +58,16 @@
  *   maxMillis           a wall-clock budget for the call: the harness runs the
  *                       case once to warm up, then times a second run
  *   skippedFields       how many expected pointers this manifest DROPPED
- *   abiUnreachable      set on every decodeBase64 group, and only there,
- *                       for a harness that drives the 0.7 C-string calls
- *                       (the Elixir example): it counts the group as not
- *                       reachable, never as passed
+ *   abiUnreachable      set on every decodeBase64 group, for a harness
+ *                       that drives the 0.7 C-string calls (the Elixir
+ *                       example), and on every case the C ABI cannot
+ *                       express at all: a buildConfig case, or a verify
+ *                       case with revocation settings (the C ABI has no
+ *                       way to pass lists, issuers or distrust entries;
+ *                       docs/design/revocation.md §8). A harness counts
+ *                       such a case as not reachable, never as passed;
+ *                       for the latter kind the line carries only `id`,
+ *                       `op` and this key
  *   probe               a decodeBase64 group's inputs, one per decoder and
  *                       text (repeated): `<decoder>~><1 if the text is
  *                       empty, else 0>~><path>`, the path holding a
@@ -143,8 +149,8 @@ function main() {
   } catch (e) {
     fail(e.message);
   }
-  if (file.schemaVersion !== 2) {
-    fail(`cases.json is schemaVersion ${file.schemaVersion}, this generator implements 2`);
+  if (file.schemaVersion !== 3) {
+    fail(`cases.json is schemaVersion ${file.schemaVersion}, this generator implements 3`);
   }
 
   const out = resolve(outDir);
@@ -171,6 +177,7 @@ function main() {
   let pinnedClocks = 0;
   let skippedFields = 0;
   let unreachable = 0;
+  let revocation = 0;
   for (const kase of file.cases) {
     const parts = [checkPart(kase.id, `id=${kase.id}`), `op=${kase.operation}`];
     if (kase.operation === 'decodeBase64') {
@@ -188,6 +195,13 @@ function main() {
       }
       lines.push(parts.join('\t'));
       unreachable += 1;
+      continue;
+    }
+    if (kase.operation === 'buildConfig' || kase.config?.revocation !== undefined) {
+      parts.push('abiUnreachable=the C ABI cannot pass revocation settings');
+      lines.push(parts.join('\t'));
+      unreachable += 1;
+      revocation += 1;
       continue;
     }
     const name = safeName(kase.id);
@@ -290,7 +304,8 @@ function main() {
   process.stdout.write(
     `${lines.length} cases -> ${join(out, 'cases.tsv')} ` +
       `(${pinnedClocks} pin a clock, ${skippedFields} nested pointers dropped, ` +
-      `${unreachable} decodeBase64 groups as probes)\n`,
+      `${unreachable - revocation} decodeBase64 groups as probes, `
+      + `${revocation} revocation cases the C ABI cannot express)\n`,
   );
 }
 

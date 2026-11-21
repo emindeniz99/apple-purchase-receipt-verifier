@@ -47,18 +47,24 @@ namespace ApplePurchaseReceiptVerifier.Internal
         };
 
         /// <summary>
-        /// Checks <c>init</c>'s answer and returns the input length it states.
-        /// <c>{"ok":true,"max_input_bytes":N}</c> passes, <c>N</c> being the most
-        /// bytes of one input the module needs (docs/rust-core/DECISIONS.md
-        /// R42): a longer input is cut to it, and the module answers TOO_LARGE
-        /// for that. <c>{"ok":false,"message":"..."}</c> is the module refusing
-        /// the configuration, which is the caller's roots. An accepting answer
-        /// without a positive integer <c>N</c> comes from a module of another
-        /// ABI version, and is not init's answer.
+        /// Checks <c>init</c>'s answer and returns what it states.
+        /// <c>{"ok":true,"max_input_bytes":N,"revocation_urls":[...],"revocation_valid_until_ms":M}</c>
+        /// passes, <c>N</c> being the most bytes of one input the module needs
+        /// (docs/rust-core/DECISIONS.md R42): a longer input is cut to it, and
+        /// the module answers TOO_LARGE for that. The two revocation members
+        /// are what the module worked out for the configuration
+        /// (docs/design/revocation.md §7, §8): the URLs of the lists it
+        /// expects, and the earliest <c>nextUpdate</c> of the lists it holds
+        /// for them, in epoch milliseconds, or <c>null</c>.
+        /// <c>{"ok":false,"message":"..."}</c> is the module refusing the
+        /// configuration: the caller's roots or revocation settings. An
+        /// accepting answer without a positive integer <c>N</c>, or without
+        /// either revocation member, comes from a module of another version,
+        /// and is not init's answer.
         /// </summary>
-        /// <exception cref="ArgumentException">The module refused the roots.</exception>
+        /// <exception cref="ArgumentException">The module refused the configuration.</exception>
         /// <exception cref="AnswerException">The answer is not init's (an <see cref="InvalidOperationException"/>).</exception>
-        internal static int CheckInit(string answer)
+        internal static InitAnswer CheckInit(string answer)
         {
             string message;
             using (JsonDocument document = ParseObject(answer))
@@ -76,15 +82,53 @@ namespace ApplePurchaseReceiptVerifier.Internal
                             "init accepted the configuration but states no max_input_bytes: the module is of another ABI version");
                     }
 
-                    RequireOnly(map, "ok", "max_input_bytes");
-                    return maxInputBytes;
+                    if (!map.ContainsKey("revocation_urls") || !map.ContainsKey("revocation_valid_until_ms"))
+                    {
+                        throw new AnswerException(
+                            "init states no revocation_urls or revocation_valid_until_ms: the module is of another version");
+                    }
+
+                    RequireOnly(map, "ok", "max_input_bytes", "revocation_urls", "revocation_valid_until_ms");
+                    List<string> urls = new List<string>();
+                    foreach (JsonElement url in Arr(map, "revocation_urls"))
+                    {
+                        urls.Add(url.ValueKind == JsonValueKind.String
+                            ? Text(url)
+                            : throw new AnswerException("a revocation_urls entry is not a string"));
+                    }
+
+                    return new InitAnswer(maxInputBytes, urls.AsReadOnly(), OptLong(map, "revocation_valid_until_ms"));
                 }
 
                 RequireOnly(map, "ok", "message");
                 message = Str(map, "message");
             }
 
-            throw new ArgumentException("the module refused the configured roots: " + message);
+            throw new ArgumentException("the module refused the configuration: " + message);
+        }
+
+        /// <summary>
+        /// What an accepting <c>init</c> answer states. Every instance of one
+        /// verifier runs <c>init</c> with the same configuration, so the
+        /// verifier reads it once, from its first instance.
+        /// </summary>
+        internal sealed class InitAnswer
+        {
+            internal InitAnswer(int maxInputBytes, IReadOnlyList<string> revocationUrls, long? revocationValidUntilMs)
+            {
+                MaxInputBytes = maxInputBytes;
+                RevocationUrls = revocationUrls;
+                RevocationValidUntilMs = revocationValidUntilMs;
+            }
+
+            /// <summary><c>max_input_bytes</c>: every verify input is cut to it.</summary>
+            internal int MaxInputBytes { get; }
+
+            /// <summary><c>revocation_urls</c>, in the module's order; unmodifiable.</summary>
+            internal IReadOnlyList<string> RevocationUrls { get; }
+
+            /// <summary><c>revocation_valid_until_ms</c>, or <see langword="null"/> for <c>null</c>.</summary>
+            internal long? RevocationValidUntilMs { get; }
         }
 
         /// <summary>A <c>verify-receipt</c> answer as a result.</summary>
@@ -132,7 +176,7 @@ namespace ApplePurchaseReceiptVerifier.Internal
             string token = Str(map, "reason");
             if (!VerificationReasonCodes.TryParse(token, out reason))
             {
-                throw new AnswerException("the module answered a reason outside the eight: " + Printable(token));
+                throw new AnswerException("the module answered a reason outside the nine: " + Printable(token));
             }
 
             message = Str(map, "message");

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Lints fixtures/cases.json — the normative cross-language conformance vectors
- * (schema version 2, the 0.7 API).
+ * (schema version 3: the 0.7 API plus certificate revocation).
  *
  *   node tools/lint-cases.mjs [--fixtures <dir>]
  *
@@ -20,11 +20,13 @@
  *   - a registered fixture file is missing, or its contentSha256 is wrong
  *   - a file under fixtures/generated-0.7/ or fixtures/public-receipts/ is
  *     not registered
- *   - a fixture with role "input" is referenced by no case
+ *   - a fixture with role "input", "revocation-list" or "revocation-issuer"
+ *     is referenced by no case
  *   - two cases share an id
  *   - a case references an unregistered fixture
- *   - an expected reason, or a oneOf outcome, is outside the 0.7 Reason set,
+ *   - an expected reason, or a oneOf outcome, is outside the Reason set,
  *     or is INTERNAL_ERROR, which no correct library answers to any input
+ *     (a buildConfig case expects no reason: it builds or it does not)
  *   - a requestBody fixture's codec is not "text"
  *   - a decodeBase64 case lists a decoder twice, lists a spelling another
  *     decodeBase64 case already lists, or holds a spelling whose answer
@@ -71,13 +73,16 @@ const CASES_PATH = join(FIXTURES_DIR, 'cases.json');
 const SCHEMA_PATH = join(FIXTURES_DIR, 'cases.schema.json');
 const SCANNED_TIERS = ['generated-0.7', 'public-receipts'];
 
-// The 0.7 Reason set (docs/design/0.7-api.md, Result). INTERNAL_ERROR is a
-// reason a port can return, but never one a case may expect.
+// The Reason set (docs/design/0.7-api.md, Result, plus CERTIFICATE_REVOKED
+// from docs/design/revocation.md §3). INTERNAL_ERROR is a reason a port can
+// return, but never one a case may expect.
 const REASONS = [
   'MALFORMED', 'TOO_LARGE', 'INVALID_SIGNATURE', 'UNTRUSTED_CHAIN',
   'INVALID_CERTIFICATE', 'INVALID_CERTIFICATE_PURPOSE', 'UNREADABLE_PAYLOAD',
-  'INTERNAL_ERROR',
+  'INTERNAL_ERROR', 'CERTIFICATE_REVOKED',
 ];
+// Fixture roles that only exist to be used by a case.
+const USED_ROLES = ['input', 'revocation-list', 'revocation-issuer'];
 const EXPECTABLE = REASONS.filter((reason) => reason !== 'INTERNAL_ERROR');
 
 const problems = [];
@@ -287,9 +292,23 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
           + `"text" (got ${JSON.stringify(codec)})`);
       }
     }
-    const roots = testCase.config?.trustedRoots;
-    if (typeOf(roots) === 'object' && Array.isArray(roots.fixtures)) {
-      for (const id of roots.fixtures) refs.push(['config.trustedRoots', id]);
+    // A verify case configures through `config`; a buildConfig case's
+    // `input` is the configuration.
+    for (const slot of ['config', 'input']) {
+      const settings = testCase[slot];
+      if (typeOf(settings) !== 'object') continue;
+      const roots = settings.trustedRoots;
+      if (typeOf(roots) === 'object' && Array.isArray(roots.fixtures)) {
+        for (const id of roots.fixtures) refs.push([`${slot}.trustedRoots`, id]);
+      }
+      const revocation = settings.revocation;
+      if (typeOf(revocation) !== 'object') continue;
+      for (const member of ['lists', 'issuers']) {
+        if (!Array.isArray(revocation[member])) continue;
+        for (const id of revocation[member]) {
+          if (typeof id === 'string') refs.push([`${slot}.revocation.${member}`, id]);
+        }
+      }
     }
     for (const [slot, id] of refs) {
       referenced.add(id);
@@ -302,7 +321,10 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
 
     const expected = testCase.expected;
     const outcomes = [];
-    if (typeOf(expected) === 'object' && expected.status === 'error') outcomes.push(expected.reason);
+    if (typeOf(expected) === 'object' && expected.status === 'error'
+      && testCase.operation !== 'buildConfig') {
+      outcomes.push(expected.reason);
+    }
     // An endpoint case's oneOf lists /status values, which the schema's
     // enum checks; every other oneOf lists "ok" or a reason.
     if (typeOf(expected) === 'object' && Array.isArray(expected.oneOf)
@@ -317,10 +339,11 @@ if (doc && typeOf(doc.fixtures) === 'object' && Array.isArray(doc.cases)) {
     }
   });
 
-  // Input fixtures nothing uses are dead weight.
+  // Input fixtures and revocation lists or issuers nothing uses are dead
+  // weight.
   for (const [id, fixture] of Object.entries(fixtures)) {
-    if (fixture?.role === 'input' && !referenced.has(id)) {
-      fail(`fixture "${id}"`, `has role "input" but is referenced by no case`);
+    if (USED_ROLES.includes(fixture?.role) && !referenced.has(id)) {
+      fail(`fixture "${id}"`, `has role "${fixture.role}" but is referenced by no case`);
     }
   }
 }

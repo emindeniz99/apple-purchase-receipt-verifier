@@ -5,10 +5,12 @@ declare(strict_types=1);
 // A stand-in for the `aprv` CLI, run through a generated shell wrapper (see
 // FakeCli). It logs what it was given and behaves as the directory's
 // `mode.json` says: {"exit": 0, "stdout": "...", "stderr": "...", "sleep": 0,
-// "read_stdin": true, "info": "<json>"}.
+// "read_stdin": true, "info": "<json>", "info_exit": 0, "info_stderr": "..."}.
 //
-// `info` answers the ABI line and the module's input length; every other
-// subcommand follows the mode.
+// `info` answers the ABI line, the module's input length and the
+// revocation state (or exits `info_exit` with `info_stderr`, as aprv does
+// for a configuration init refuses); every other subcommand follows the
+// mode.
 
 $dir = (string) getenv('FAKE_APRV_DIR');
 $mode = json_decode((string) @file_get_contents($dir . '/mode.json'), true);
@@ -16,9 +18,17 @@ $mode = is_array($mode) ? $mode : [];
 $arguments = array_slice($argv, 1);
 
 $rootsFile = null;
+$issuersFile = null;
+$lists = [];
 foreach ($arguments as $index => $argument) {
     if ($argument === '--roots' && isset($arguments[$index + 1])) {
         $rootsFile = $arguments[$index + 1];
+    }
+    if ($argument === '--revocation-issuer' && isset($arguments[$index + 1])) {
+        $issuersFile = $arguments[$index + 1];
+    }
+    if ($argument === '--revocation-list' && isset($arguments[$index + 1]) && is_file($arguments[$index + 1])) {
+        $lists[] = base64_encode((string) file_get_contents($arguments[$index + 1]));
     }
 }
 $stdin = ($mode['read_stdin'] ?? true) ? (string) stream_get_contents(STDIN) : '';
@@ -29,12 +39,19 @@ $entry = [
     'roots_file' => $rootsFile,
     'roots_file_mode' => $rootsFile !== null && is_file($rootsFile) ? substr(sprintf('%o', fileperms($rootsFile)), -4) : null,
     'roots_file_content' => $rootsFile !== null && is_file($rootsFile) ? file_get_contents($rootsFile) : null,
+    'issuers_file_content' => $issuersFile !== null && is_file($issuersFile) ? file_get_contents($issuersFile) : null,
+    'lists' => $lists,
     'env_names' => array_keys(getenv()),
 ];
 file_put_contents($dir . '/log.jsonl', json_encode($entry, JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND);
 
 if (($arguments[0] ?? '') === 'info') {
-    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729}}';
+    if (($mode['info_exit'] ?? 0) !== 0) {
+        fwrite(STDERR, (string) ($mode['info_stderr'] ?? ''));
+        exit((int) $mode['info_exit']);
+    }
+    echo $mode['info'] ?? '{"abi":"aprv:verifier@0.2.0","limits":{"max_input_bytes":3145729},'
+        . '"revocation_urls":["http://crl.apple.com/root.crl"],"revocation_valid_until_ms":null}';
     exit(0);
 }
 if (isset($mode['sleep'])) {

@@ -73,6 +73,9 @@ final class Guest: @unchecked Sendable {
     /// guest never grows to hold an input of any size a caller hands in.
     /// `nil` before ``start(_:)``, and an input is then passed whole.
     private(set) var maxInputBytes: Int?
+    /// The revocation state this instance's init answer stated for the
+    /// configuration. `nil` before ``start(_:)``.
+    private(set) var revocation: RevocationState?
 
     /// A fresh instance, before init. `random` supplies random-get's bytes.
     init(_ module: AprvModule, random: @escaping @Sendable (Int) -> [UInt8] = Guest.systemRandomBytes) throws(HostError) {
@@ -125,12 +128,15 @@ final class Guest: @unchecked Sendable {
         try call("init", [], config)
     }
 
-    /// init with `config`, keeping the input length its answer states:
-    /// ``HostError/initRefused(message:)`` when the module refuses the
-    /// configuration, ``HostError/unusableAnswer(export:detail:)`` when the
-    /// answer states no input length.
+    /// init with `config`, keeping the input length and the revocation
+    /// state its answer states: ``HostError/initRefused(message:)`` when the
+    /// module refuses the configuration,
+    /// ``HostError/unusableAnswer(export:detail:)`` when the answer states
+    /// no input length or no revocation state.
     func start(_ config: [UInt8]) throws(HostError) {
-        maxInputBytes = try Wire.initAnswer(initialize(config))
+        let answer = try Wire.initAnswer(initialize(config))
+        maxInputBytes = answer.maxInputBytes
+        revocation = answer.revocation
     }
 
     /// `input`, cut to ``maxInputBytes``. The one place an input is cut.

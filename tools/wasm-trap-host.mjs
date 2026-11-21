@@ -164,16 +164,30 @@ function requireOnlyRandomGet(module) {
 const enc = new TextEncoder();
 const bytesOf = (s) => enc.encode(s);
 // init's answer to a configuration it accepts: exactly
-// {"ok":true,"max_input_bytes":N}, N the most bytes of one input a host
-// hands the module (DECISIONS.md R42).
-const initAccepted = (answer) => {
+// {"ok":true,"max_input_bytes":N,"revocation_urls":[...],
+// "revocation_valid_until_ms":M|null}, N the most bytes of one input a host
+// hands the module (DECISIONS.md R42), the last two what the configuration
+// states about revocation (docs/design/revocation.md §7, §8).
+const parseInitAccepted = (answer) => {
   try {
     const a = JSON.parse(answer);
-    return Object.keys(a).join() === 'ok,max_input_bytes' && a.ok === true && Number.isSafeInteger(a.max_input_bytes) && a.max_input_bytes > 0;
+    const ok = Object.keys(a).join() === 'ok,max_input_bytes,revocation_urls,revocation_valid_until_ms'
+      && a.ok === true && Number.isSafeInteger(a.max_input_bytes) && a.max_input_bytes > 0
+      && Array.isArray(a.revocation_urls) && a.revocation_urls.every((u) => typeof u === 'string')
+      && (a.revocation_valid_until_ms === null || Number.isSafeInteger(a.revocation_valid_until_ms));
+    return ok ? a : null;
   } catch {
-    return false;
+    return null;
   }
 };
+const initAccepted = (answer) => parseInitAccepted(answer) !== null;
+// The answer every accepting init gives under the three Apple roots with no
+// revocation settings: the four built-in issuers' lists, in §7's order, and
+// null, since no list is held.
+const DEFAULT_INIT_ANSWER = '{"ok":true,"max_input_bytes":3145729,"revocation_urls":['
+  + '"http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl",'
+  + '"http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"],'
+  + '"revocation_valid_until_ms":null}';
 const isTrap = (e) => e instanceof WebAssembly.RuntimeError || e instanceof HostError;
 
 // --- fixtures/cases.json ---------------------------------------------------
@@ -200,11 +214,25 @@ function receiptText({ entry, bytes }) {
   return entry.codec === 'raw' || entry.codec === 'base64' ? Buffer.from(bytes).toString('base64') : Buffer.from(bytes).toString('utf8');
 }
 
-/** init's argument for a case: its roots as base64 DER, or {} for the three Apple roots. */
-function initConfig(kase, fixture) {
-  const spec = kase.config?.trustedRoots;
-  if (spec === undefined || spec.source === 'defaults') return '{}';
-  return JSON.stringify({ roots: spec.fixtures.map((id) => Buffer.from(fixture(id).bytes).toString('base64')) });
+/**
+ * init's argument for a configuration (a verify case's `config`, a
+ * buildConfig case's `input`): its roots as base64 DER, or none for the
+ * three Apple roots, then its revocation settings, each only when given:
+ * lists and issuers as base64 of the fixtures' bytes, distrust entries as
+ * written. `{}` when there is nothing.
+ */
+function initConfig(settings, fixture) {
+  const b64 = (id) => Buffer.from(fixture(id).bytes).toString('base64');
+  const config = {};
+  const spec = settings?.trustedRoots;
+  if (spec !== undefined && spec.source !== 'defaults') config.roots = spec.fixtures.map(b64);
+  const revocation = settings?.revocation ?? {};
+  if (revocation.lists?.length) config.revocation_lists = revocation.lists.map(b64);
+  if (revocation.issuers?.length) config.revocation_issuers = revocation.issuers.map(b64);
+  if (revocation.distrust?.length) {
+    config.distrust = revocation.distrust.map(({ issuer, serial }) => ({ issuer, serial }));
+  }
+  return JSON.stringify(config);
 }
 
 function nowMs(kase) {
@@ -302,7 +330,7 @@ function modeCases(modulePath, casesPath, answersDir) {
   };
   const invoke = (config, fn, ...args) => {
     const got = guestFor(config);
-    if (got.refused !== undefined) throw new Error(`init refused the case's roots: ${got.refused}`);
+    if (got.refused !== undefined) throw new Error(`init refused the case's configuration: ${got.refused}`);
     try {
       const out = got.g.call(fn, ...args);
       if (fn === 'verify-receipt' || fn === 'verify-signed-data') answers[fn].push(out);
@@ -314,8 +342,48 @@ function modeCases(modulePath, casesPath, answersDir) {
     }
   };
 
+  // buildConfig: init in a new instance, never pooled. It builds or it does
+  // not; when it builds, the two reported values must match.
+  const runBuild = (kase) => {
+    const config = initConfig(kase.input, fixture);
+    const g = new Guest(module);
+    let answer;
+    try {
+      answer = g.call('init', bytesOf(config));
+    } catch (e) {
+      g.unexpectedCalls.forEach((c) => unexpected.add(c));
+      throw e;
+    }
+    answers['init-config'].push(config);
+    answers.init.push(answer);
+    const accepted = parseInitAccepted(answer);
+    const e = kase.expected;
+    if (e.status === 'error') {
+      const refused = (() => {
+        try {
+          const a = JSON.parse(answer);
+          return Object.keys(a).join() === 'ok,message' && a.ok === false && typeof a.message === 'string';
+        } catch {
+          return false;
+        }
+      })();
+      return refused ? [] : [`init answered ${answer.slice(0, 200)}, want a refusal`];
+    }
+    if (accepted === null) return [`init answered ${answer.slice(0, 200)}, want it to build`];
+    const problems = [];
+    if (!sameValue(accepted.revocation_urls, e.revocationUrls)) {
+      problems.push(`revocation_urls ${stringify(accepted.revocation_urls)}, want ${stringify(e.revocationUrls)}`);
+    }
+    const until = e.revocationValidUntil === null ? null : Date.parse(e.revocationValidUntil);
+    if (Number.isNaN(until)) throw new Error(`unparseable revocationValidUntil "${e.revocationValidUntil}"`);
+    if (accepted.revocation_valid_until_ms !== until) {
+      problems.push(`revocation_valid_until_ms ${accepted.revocation_valid_until_ms}, want ${until} (${e.revocationValidUntil})`);
+    }
+    return problems;
+  };
+
   const runVerify = (kase) => {
-    const config = initConfig(kase, fixture);
+    const config = initConfig(kase.config, fixture);
     const now = nowMs(kase);
     const problems = [];
     let out;
@@ -419,6 +487,8 @@ function modeCases(modulePath, casesPath, answersDir) {
     try {
       if (kase.operation === 'decodeBase64') {
         problems = runDecode(kase);
+      } else if (kase.operation === 'buildConfig') {
+        problems = runBuild(kase);
       } else if (kase.maxMillis !== undefined) {
         runVerify(kase); // warm-up, as every port's runner does
         const start = performance.now();
@@ -558,7 +628,7 @@ function modeAbiTests(modulePath, casesPath) {
 
   let g = new Guest(module);
   let r = attempt(() => g.call('init', DEFAULTS));
-  check('init with no roots of its own answers {"ok":true,"max_input_bytes":3145729}', r.out === '{"ok":true,"max_input_bytes":3145729}', show(r));
+  check(`init with no roots of its own answers ${DEFAULT_INIT_ANSWER}`, r.out === DEFAULT_INIT_ANSWER, show(r));
   g = fresh();
   check('verify-receipt(genuine g5) verifies', verifies(g));
   r = attempt(() => fresh(jwsConfig).call('verify-signed-data', now(), jws));

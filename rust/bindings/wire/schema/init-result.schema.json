@@ -2,13 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/rust/bindings/wire/schema/init-result.schema.json",
   "title": "The answer of init",
-  "description": "What aprv.wasm's init export returns: {\"ok\":true,\"max_input_bytes\":N}, or {\"ok\":false,\"message\":...} naming why the configuration was refused (not JSON, a member other than roots, an empty roots list, a root that is not base64 or not a certificate). After a refusal init may be called again on the same instance; after {\"ok\":true,...} a second init traps.",
+  "description": "What aprv.wasm's init export returns: {\"ok\":true,\"max_input_bytes\":N,\"revocation_urls\":[...],\"revocation_valid_until_ms\":N|null}, or {\"ok\":false,\"message\":...} naming why the configuration was refused (not JSON, a member other than the four, an empty roots list, a root or issuer that is not base64 or not a certificate, a revocation list, issuer or distrust entry the core refuses). After a refusal init may be called again on the same instance; after {\"ok\":true,...} a second init traps.",
   "oneOf": [
     {
       "type": "object",
       "required": [
         "ok",
-        "max_input_bytes"
+        "max_input_bytes",
+        "revocation_urls",
+        "revocation_valid_until_ms"
       ],
       "additionalProperties": false,
       "properties": {
@@ -19,6 +21,21 @@
           "description": "The most bytes of one input a host needs to hand the module: one over the core's largest size cap. A longer input may be cut to this length, and the module answers TOO_LARGE for it (21002 from verify-receipt-endpoint), as for the whole input. A host reads it here and keeps no copy (DECISIONS.md R42).",
           "type": "integer",
           "minimum": 1
+        },
+        "revocation_urls": {
+          "description": "The URLs of the revocation lists the verifier would use, for the host to download (docs/design/revocation.md §7): the built-in issuers' lists that chain to the configured roots, then the http and https cRLDistributionPoints of the added issuers, each once.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "revocation_valid_until_ms": {
+          "description": "The earliest nextUpdate, epoch milliseconds, among the lists held for the issuers the verifier expects lists from, or null when one has none (or there is none). Null means live revocation is not fully in force; an instant in the past means a list is stale.",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       }
     },

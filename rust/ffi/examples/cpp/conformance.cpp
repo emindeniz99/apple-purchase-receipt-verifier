@@ -721,6 +721,7 @@ int main(int argc, char **argv) {
   size_t checked_fields = 0;
   size_t skipped_to_json = 0;
   size_t decode_groups = 0;
+  size_t unreachable = 0;
   // Every id the manifest lists, which gen-cases-manifest.mjs writes one per
   // case in cases.json, and the ids that reached a verdict: the coverage
   // self-check after the loop compares them.
@@ -754,6 +755,14 @@ int main(int argc, char **argv) {
         std::cerr << "FAIL  " << id << ": " << error << "\n";
         failed += 1;
       }
+      continue;
+    }
+    // A case the C ABI cannot express (revocation settings, buildConfig):
+    // the C ABI has no way to pass lists, issuers or distrust entries, so it
+    // is counted and never passed. Rust's own runner and every package run it.
+    if (kase.has("abiUnreachable")) {
+      ran.insert(id);
+      unreachable += 1;
       continue;
     }
     skipped_fields += static_cast<size_t>(std::stoul(kase.get("skippedFields", "0")));
@@ -812,6 +821,8 @@ int main(int argc, char **argv) {
             << " toJson values not compared here (no JSON parser), left to "
                "rust/ffi/tests/conformance.py\n";
   std::cout << decode_groups << " decodeBase64 groups through the verify calls\n";
+  std::cout << unreachable
+            << " revocation cases not reachable: the C ABI cannot pass revocation settings\n";
   if (passed + failed + skipped == 0) {
     std::cerr << "the manifest held no cases\n";
     return 2;

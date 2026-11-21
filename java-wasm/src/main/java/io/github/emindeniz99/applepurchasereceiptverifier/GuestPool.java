@@ -1,12 +1,14 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The instance model of ARCHITECTURE.md §5: a small pool of instances of one
  * compiled module. Each instance gets {@code init} once, when it is made, so
- * the roots are parsed once per instance; each serves one call at a time; an
+ * the roots and revocation settings are read once per instance; each serves one call at a time; an
  * instance whose call threw is discarded with everything in it, and the next
  * call takes another or makes a new one. Instances die with the pool; there
  * is nothing to close.
@@ -32,8 +34,8 @@ final class GuestPool {
     private final ConcurrentLinkedDeque<Guest> idle = new ConcurrentLinkedDeque<>();
     private final AtomicInteger idleCount = new AtomicInteger();
     private final AtomicInteger created = new AtomicInteger();
-    /** The {@code max_input_bytes} of the last {@code init} answer; 0 before the first. */
-    private volatile int maxInputBytes;
+    /** The last {@code init} answer; null before the first. */
+    private volatile @Nullable InitAnswer init;
 
     GuestPool(GuestFactory factory, byte[] configJson, int maxIdle) {
         this.factory = factory;
@@ -55,11 +57,11 @@ final class GuestPool {
         } catch (InitRefused e) {
             // Only reachable with the runtime probe off: create() would have
             // refused this configuration.
-            throw new GuestFailure("the verifier module refused the configured roots: " + e.getMessage(), e);
+            throw new GuestFailure("the verifier module refused the configuration: " + e.getMessage(), e);
         }
         T result;
         try {
-            result = call.run(guest, maxInputBytes);
+            result = call.run(guest, maxInputBytes());
         } catch (GuestFailure e) {
             throw e;
         } catch (RuntimeException e) {
@@ -86,9 +88,28 @@ final class GuestPool {
         return created.get();
     }
 
-    /** The {@code max_input_bytes} the module's {@code init} stated, for tests; 0 before the first instance. */
+    /** The {@code max_input_bytes} the module's {@code init} stated; 0 before the first instance. */
     int maxInputBytes() {
-        return maxInputBytes;
+        InitAnswer answer = init;
+        return answer == null ? 0 : answer.maxInputBytes;
+    }
+
+    /**
+     * The module's {@code init} answer for this pool's configuration,
+     * making the first instance now when none was made yet (the runtime
+     * probe off) and keeping it for the next call.
+     *
+     * @throws InitRefused  if the module refused the configuration
+     * @throws GuestFailure if the instance could not be made or {@code init}
+     *     failed
+     */
+    InitAnswer initAnswer() {
+        InitAnswer answer = init;
+        if (answer != null) {
+            return answer;
+        }
+        prime();
+        return Objects.requireNonNull(init, "init");
     }
 
     /** How many instances are idle now, for tests. */
@@ -114,9 +135,10 @@ final class GuestPool {
         } catch (RuntimeException e) {
             throw new GuestFailure("the verifier module failed in init: " + e, e);
         }
-        // Every instance runs the one compiled module, so each answer states
-        // the same length; the last one read is kept.
-        maxInputBytes = Wire.initAnswer(answer);
+        // Every instance runs the one compiled module on the one
+        // configuration, so each answer states the same; the last one read
+        // is kept.
+        init = Wire.initAnswer(answer);
         return guest;
     }
 

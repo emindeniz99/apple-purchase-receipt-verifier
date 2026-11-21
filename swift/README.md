@@ -105,23 +105,28 @@ let verifier = try Verifier(config: config)
 ```
 
 `Config(roots:clock:)` is the one way to build a `Config`, and `nil` for
-either argument means its default. It never throws: it stores what it is
-given, and `Verifier(config:)` checks it. `Config()` uses Apple's three
+either argument means its default. (Three more arguments, all empty by
+default, are described under [Revocation](#revocation).) It never throws:
+it stores what it is given, and `Verifier(config:)` checks it. `Config()` uses Apple's three
 published roots and the system clock. The roots are compiled into
 `aprv.wasm` and pinned there, so `Config().roots` is `nil`: "the module's
 built-in roots". `Config(roots: ...)` replaces them with your own
 certificates, as DER or PEM bytes (the module tells them apart; a PEM bundle
 of several certificates is one entry), which tests use. `Verifier(config:)`
-hands them to a fresh module instance at once, so a certificate the module
-refuses throws `ConfigError` there, at startup, and never on a call. It also
-throws `ConfigError` for an empty root set, since a verifier with no roots
-would answer `.untrustedChain` to everything and nobody would notice until
-production. With the default roots it never throws.
+hands the configuration to a fresh module instance at once, so a certificate
+the module refuses throws `ConfigError` there, at startup, and never on a
+call. That instance then serves the first call. It also throws
+`ConfigError` for an empty root set, since a verifier with no roots would
+answer `.untrustedChain` to everything and nobody would notice until
+production. With the default roots and no revocation settings it throws
+only if the module this package carries cannot be loaded.
 
 The clock is read once per call, before the input is looked at, and passed
-to the module. The module uses it for exactly two things: the
+to the module. The module uses it for exactly three things: the
 chain-validity instant when the receipt or JWS states no signing date of its
-own, and `request_date` in the endpoint response. It never decides whether
+own, `request_date` in the endpoint response, and whether a revocation list
+is still fresh when it holds a `certificateHold` entry for a certificate on
+the path. It never decides whether
 a certificate is expired when the input states a date; see
 [Trust anchors](#trust-anchors). A clock must be safe to call from several
 threads.
@@ -246,7 +251,7 @@ the `status` field inside the body:
 | verified, sandbox receipt on `.production` | 21007 |
 | verified, production receipt on `.sandbox` | 21008 |
 | `.malformed`, `.tooLarge` | 21002 |
-| `.invalidSignature`, `.untrustedChain`, `.invalidCertificate`, `.invalidCertificatePurpose` | 21003 |
+| `.invalidSignature`, `.untrustedChain`, `.invalidCertificate`, `.invalidCertificatePurpose`, `.certificateRevoked` | 21003 |
 | `.unreadablePayload`, `.internalError` | 21009 |
 | verified, environment matches, but an in-app purchase does not decode | 21009 |
 
@@ -316,6 +321,101 @@ root vouches for is simply excluded from the path. A certificate on the
 resulting path is then checked for validity at the chain instant, and last
 for Apple's marker OIDs (the receipt-signing / WWDR OIDs on the receipt
 path, the same pair on the JWS `x5c` chain).
+
+## Revocation
+
+A verifier refuses a certificate Apple has revoked, when it knows of the
+revocation. It knows from three sources, all checked inside the module with
+no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this package | always on; cannot be turned off |
+| `distrust` | you | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with
+`.certificateRevoked` (21003 at the endpoint), whatever date the payload
+states: whoever holds a leaked key chooses that date. A missing or stale
+list never fails a call.
+
+```swift
+let config = Config(
+    revocationLists: [crl],  // CRL files exactly as downloaded (DER)
+    revocationIssuers: [ca],  // optional: a CA that signs lists, as DER or PEM, like a root
+    distrust: [RevokedCertificate(issuer: issuerId, serial: "7D3920094EBEF3F8EFCA6C10EA8E4303")])
+let verifier = try Verifier(config: config)
+```
+
+The package downloads nothing and starts no task or timer. Refresh on your
+own schedule, with your own HTTP client: download the lists the current
+verifier names, build a new verifier, and swap the reference.
+
+```swift
+final class VerifierHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var verifier: Verifier
+    init(_ verifier: Verifier) { self.verifier = verifier }
+    var current: Verifier { lock.withLock { verifier } }
+    func replace(_ next: Verifier) { lock.withLock { verifier = next } }
+}
+
+func refreshRevocation(_ holder: VerifierHolder) async throws {
+    var lists: [[UInt8]] = []
+    for text in holder.current.revocationUrls {
+        guard let url = URL(string: text),
+            let (data, response) = try? await URLSession.shared.data(from: url),
+            (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1 << 20
+        else { continue }  // a missing list fails nothing; revocationValidUntil shows it
+        lists.append([UInt8](data))
+    }
+    // Throws ConfigError for a list the module refuses: the old verifier keeps serving.
+    holder.replace(try Verifier(config: Config(revocationLists: lists)))
+}
+```
+
+- **Take the URLs from `revocationUrls`, never from Apple's PKI page.** The
+  page also links an old copy of Apple Root CA's list and a list signed
+  under a retired root name, which `Verifier(config:)` refuses, and a 2.3 MB
+  WWDR G1 list over the 1 MiB cap. With Apple's roots the URLs are the lists
+  of Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are
+  `http://`: the module authenticates each list by its signature, not by
+  the transport (an app on Apple platforms needs an App Transport Security
+  exception for `crl.apple.com` to fetch them).
+- **Monitor `revocationValidUntil`.** It is the earliest `nextUpdate` of the
+  lists held. `nil` means some issuer the verifier expects a list from has
+  none (none passed, or the list was ignored); a date in the past means a
+  list is stale. Alert on both. Apple reissues WWDR G6's list daily.
+
+  ```swift
+  if let until = verifier.revocationValidUntil, until > Date() {
+      // live revocation is in force
+  } else {
+      alertOps("live revocation is not in force")
+  }
+  ```
+- **`Verifier(config:)` throws `ConfigError`**, naming the first problem
+  and its index, when a list is not a CRL, is over 1 MiB, is signed by no
+  issuer the verifier knows, or is older than the list this release was
+  built with; when there are more than 16 lists; when a `revocationIssuers`
+  certificate does not chain to your roots; or when a `distrust` entry is
+  malformed or there are more than 1,000. A genuine list in a form the
+  module does not support is ignored instead, and counts as missing. A
+  `revocationIssuers` certificate that is itself revoked is set aside with
+  its own list, not refused: a path through it fails with
+  `.certificateRevoked`.
+- **`distrust`** takes `RevokedCertificate(issuer:serial:)` strings:
+  `issuer` is the SHA-256, in hex, of the issuing certificate's subject Name
+  followed by its subjectPublicKeyInfo, both as encoded in that certificate;
+  `serial` is the revoked certificate's serial number in hex. Either letter
+  case. The package passes both strings to the module unchanged.
+- **With your own roots** `revocationUrls` is empty until you add
+  `revocationIssuers`; it then names the lists those issuers may appear on.
+  The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
 
 ## Resource bounds
 

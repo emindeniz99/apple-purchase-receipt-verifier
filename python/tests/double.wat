@@ -18,10 +18,12 @@
 ;;   else a failure whose message names the call: {"verified":false,
 ;;        "reason":"MALFORMED","message":"receipt now=<n>"} (or "jws"), and for the
 ;;        endpoint {"status":21009,"env":<env>,"now":<n>}
-;; init answers {"ok":true,"max_input_bytes":3145729}, as aprv.wasm does,
-;; traps when called twice (so a pool that inits an
-;; instance twice shows at once), and refuses (ok:false) a configuration
-;; whose first root's base64 starts with "R". A verify before init traps.
+;; init answers {"ok":true,"max_input_bytes":3145729,"revocation_urls":[],
+;; "revocation_valid_until_ms":null}, as aprv.wasm does for the caller's own
+;; roots and no revocation setting; traps when called twice (so a pool that
+;; inits an instance twice shows at once); and refuses (ok:false) a
+;; configuration whose first root's base64 starts with "R". A verify before
+;; init traps.
 (module
   (import "aprv:verifier/host@0.2.0" "random-get" (func $random-get (param i32 i32)))
   (memory (export "memory") 16)
@@ -36,7 +38,7 @@
   (data (i32.const 416) ",\"now\":")
   (data (i32.const 448) "}")
   (data (i32.const 480) "not json")
-  (data (i32.const 512) "{\"ok\":true,\"max_input_bytes\":3145729}")
+  (data (i32.const 512) "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[],\"revocation_valid_until_ms\":null}")
 
   (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
     (local $p i32)
@@ -135,7 +137,7 @@
           (i32.eq (i32.load8_u (i32.add (local.get $ptr) (i32.const 11))) (i32.const 82)))
       (then (return (call $ret (i32.const 96) (i32.const 53)))))
     (global.set $inited (i32.const 1))
-    (call $ret (i32.const 512) (i32.const 37)))
+    (call $ret (i32.const 512) (i32.const 91)))
 
   (func (export "aprv:verifier/verify@0.2.0#verify-receipt") (param i64 i32 i32) (result i32)
     (call $verify (i32.const 0) (i32.const 0) (local.get 0) (local.get 1) (local.get 2)))

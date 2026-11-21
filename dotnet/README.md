@@ -71,9 +71,9 @@ These are the properties the library exists to hold.
   from `new Config(roots: ...)`, or from `new Config()`, whose roots are
   Apple's three published roots pinned inside the module,
   so they work unchanged in a container with no filesystem access.
-- **It never touches the network.** No OCSP, no CRL, no AIA fetch, no root
-  download. Revocation checking is disabled by design; an integrator who
-  needs it must layer it on top.
+- **It never touches the network.** No OCSP, no AIA fetch, no root
+  download, no CRL download. Apple's revocation lists reach the module only
+  as bytes you pass in ([Revocation](#revocation)).
 - **It never uses a key no pinned root vouched for.** The chain is built
   top-down, from the pinned roots, so a certificate carrying an attacker's
   key (their choice of size and curve) is never used to check anything
@@ -115,6 +115,10 @@ roots would reject everything, and nobody would notice until production.
 read, and `InvalidOperationException` when the embedded module is not the
 one this library was built for; check for both at startup.
 
+Three more arguments, `revocationLists`, `revocationIssuers` and
+`distrust`, come after `clock` and are described under
+[Revocation](#revocation). Each defaults to `null`, which means none.
+
 The clock is read once per call, before the input is looked at, and the
 value goes to the module. A clock that throws, or answers a negative time,
 is an `InternalError` with the exception as its cause.
@@ -130,6 +134,9 @@ is an `InternalError` with the exception as its cause.
 `VerificationResult<T>` carries exactly one of `Payload` and `Failure` — check
 `result.Verified` before touching either. The endpoint never fails to
 answer: the Apple status code is a field of the body, for every input.
+
+Two read-only properties report the verifier's revocation state:
+`RevocationUrls` and `RevocationValidUntilMs` ([Revocation](#revocation)).
 
 ### `ReceiptPayload`
 
@@ -197,10 +204,111 @@ To stand in for `IVerifier` in your own tests, build results by hand:
 | `InvalidCertificatePurpose` | a certificate lacks Apple's marker OID for its place | 21003 |
 | `UnreadablePayload` | the chain and signature passed, but the signed content does not parse | 21009 |
 | `InternalError` | the module failed or trapped, its answer could not be read, or the configured clock threw; no input makes a correct library answer it | 21009 |
+| `CertificateRevoked` | a certificate on the path is revoked: by the list built into the module, by `distrust`, or by a list you passed | 21003 |
 
 `UnreadablePayload` and `InternalError` are not the client's fault: alert,
 log the failure, and reconcile the purchase through the App Store Server API
 rather than deny the user.
+
+## Revocation
+
+A verifier refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked inside the module
+with no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this package | always on; cannot be turned off |
+| `distrust` | you | none |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with `CertificateRevoked`
+(21003 at the endpoint), whatever date the payload states: whoever holds a
+leaked key chooses that date. A missing or stale list never fails a call.
+
+```csharp
+Config config = new Config(
+    revocationLists: new[] { crl },             // CRL files exactly as downloaded (DER)
+    revocationIssuers: new[] { caCertificate }, // optional: a CA that signs lists, as roots are passed
+    distrust: new[] { new RevokedCertificate(issuerId, "7D3920094EBEF3F8EFCA6C10EA8E4303") });
+```
+
+The package downloads nothing and starts no thread or timer. Refresh on
+your own schedule, with your own `HttpClient`: download the lists the
+current verifier names, build a new verifier, and swap the reference.
+
+```csharp
+private static IVerifier current = Verifier.Create(new Config());
+
+static async Task RefreshRevocationAsync(HttpClient http)
+{
+    List<byte[]> lists = new List<byte[]>();
+    foreach (string url in Volatile.Read(ref current).RevocationUrls)
+    {
+        try
+        {
+            using HttpResponseMessage response = await http.GetAsync(url);
+            byte[] body = await response.Content.ReadAsByteArrayAsync();
+            if (response.IsSuccessStatusCode && body.Length <= 1 << 20)
+            {
+                lists.Add(body);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // a missing list fails nothing; RevocationValidUntilMs shows it
+        }
+    }
+
+    // Throws ArgumentException for a list the module refuses: the old verifier keeps serving.
+    Volatile.Write(ref current, Verifier.Create(new Config(revocationLists: lists)));
+}
+```
+
+- **Take the URLs from `RevocationUrls`, never from Apple's PKI page.**
+  The page also links an old copy of Apple Root CA's list and a list signed
+  under a retired root name, which `Verifier.Create` refuses, and a 2.3 MB
+  WWDR G1 list over the 1 MiB cap. With Apple's roots the URLs are the
+  lists of Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are
+  `http://`: the module authenticates each list by its signature, not by
+  the transport.
+- **Monitor `RevocationValidUntilMs`.** It is the earliest `nextUpdate` of
+  the lists held, in epoch milliseconds like every date this library
+  reports (`DateTimeOffset.FromUnixTimeMilliseconds` turns it into a
+  `DateTimeOffset`). `null` means some issuer the verifier expects a list
+  from has none (none passed, or the list was ignored); a time in the past
+  means a list is stale. Alert on both. Apple reissues WWDR G6's list daily.
+
+  ```csharp
+  if (verifier.RevocationValidUntilMs is not long until
+      || until < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+  {
+      AlertOps("live revocation is not in force");
+  }
+  ```
+- **`Verifier.Create` throws `ArgumentException`**, naming the first
+  problem and its index, when a list is not a CRL, is over 1 MiB, is signed
+  by no issuer the verifier knows, or is older than the list this release
+  was built with; when there are more than 16 lists; when a
+  `revocationIssuers` certificate does not chain to your roots; or when a
+  `distrust` entry is malformed or there are more than 1,000. A genuine
+  list in a form the module does not support is ignored instead, and counts
+  as missing. A `revocationIssuers` certificate that is itself revoked is
+  set aside with its own list, not refused: a path through it fails with
+  `CertificateRevoked`.
+- **`distrust`** takes `RevokedCertificate(issuer, serial)` strings:
+  `issuer` is the SHA-256, in hex, of the issuing certificate's subject Name
+  followed by its subjectPublicKeyInfo, both as encoded in that certificate;
+  `serial` is the revoked certificate's serial number in hex. Either letter
+  case. The package passes both strings to the module unchanged.
+- **With your own roots** `RevocationUrls` is empty until you add
+  `revocationIssuers`; it then names the lists those issuers may appear on.
+  The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand. As with
+  roots, only each issuer certificate's `RawData` reaches the module.
+
+The full rules are in
+[docs/design/revocation.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/docs/design/revocation.md).
 
 ## What to check after verification
 
@@ -563,6 +671,19 @@ for the full picture and
 [COMPARISON.md](https://github.com/emindeniz99/apple-purchase-receipt-verifier/blob/main/COMPARISON.md)
 for how it differs from Apple's official libraries.
 
+## Upgrading to 0.14.0
+
+- `IVerifier` gained two read-only properties, `RevocationUrls` and
+  `RevocationValidUntilMs`. A hand-written `IVerifier` in your tests must
+  add them; mocking libraries pick them up on their own.
+- The `Config` constructor gained three optional parameters after `clock`.
+  Calls compile unchanged, but code compiled against 0.13 must be rebuilt.
+- `VerificationReason` gained `CertificateRevoked`. A `switch` over it
+  needs the new case.
+- The `ArgumentException` that `Verifier.Create` throws for a refused
+  configuration now reads "the module refused the configuration: ...",
+  since the module also refuses revocation settings.
+
 ## Upgrading to 0.11.0
 
 The `InAppPurchase` constructor gained a `long? cancellationReason`
@@ -645,8 +766,10 @@ normative cross-language vector file every port of this library answers,
 as one named test per case, and fails unless every case in the file ran.
 The adapter carries no case-specific knowledge: it builds a `Config` from
 the case, dispatches on the operation and evaluates the expected JSON
-Pointers on the result. A case with a `maxMillis` budget is timed after a
-warm-up call. The `decodeBase64` cases run through the module, which is the
+Pointers on the result. A `buildConfig` case builds its `Config` into a
+verifier and checks that `Verifier.Create` refuses it, or that
+`RevocationUrls` and `RevocationValidUntilMs` report what the case states.
+A case with a `maxMillis` budget is timed after a warm-up call. The `decodeBase64` cases run through the module, which is the
 only decoder there is, and are judged on which side of the rule each text
 lands, since a host cannot read the decoded bytes.
 
@@ -660,9 +783,10 @@ The other tests are about the wrapper, not the module:
   (`StubModule`) that speaks the same ABI: a verdict, a trap, an unreadable
   answer, a return pointer outside the memory, a module of another version
   or with another import, and the post-return that must happen once per call.
-- `ModuleAnswersTests`, `ClockTests`, `RootsTests`, `CultureTests` and
-  `PlatformTests` cover reading the wire, the clock read, the roots that
-  reach `init`, culture independence and four threads on one verifier.
+- `ModuleAnswersTests`, `ClockTests`, `RootsTests`, `RevocationTests`,
+  `CultureTests` and `PlatformTests` cover reading the wire, the clock read,
+  the roots and revocation settings that reach `init`, the revocation state
+  `init` answers, culture independence and four threads on one verifier.
 - `Tests.Floor` loads the library as its netstandard2.0 asset and runs a
   slice of the same fixtures, read through the endpoint's status.
 

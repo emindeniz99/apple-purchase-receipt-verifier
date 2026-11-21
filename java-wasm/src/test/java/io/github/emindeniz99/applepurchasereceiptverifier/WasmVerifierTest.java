@@ -376,7 +376,9 @@ class WasmVerifierTest {
                 new WasmVerifier(Config.builder().runtimeProbe(false).build(), refusing);
         Failure failure = lazy.verifySignedData("x").failure();
         assertEquals(Reason.INTERNAL_ERROR, failure.reason());
-        assertTrue(failure.message().contains("refused the configured roots"), failure.message());
+        assertTrue(failure.message().contains("refused the configuration"), failure.message());
+        IllegalArgumentException asked = assertThrows(IllegalArgumentException.class, lazy::revocationUrls);
+        assertTrue(asked.getMessage().contains("roots[0] is not a certificate"), asked.getMessage());
         assertEquals("{\"status\":21009}", lazy.verifyReceiptEndpoint(Environment.PRODUCTION, "{}"));
     }
 
@@ -409,9 +411,10 @@ class WasmVerifierTest {
     /** One form for the built-in roots in both engines: the module and aprv-server refuse {"roots":[]}. */
     @Test
     void theDefaultRootsReachTheModuleAsTheBuiltInOnes() throws Exception {
-        assertEquals("{}", InitConfig.json(DEFAULTS.roots()));
-        String custom =
-                InitConfig.json(new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))));
+        assertEquals("{}", InitConfig.json(DEFAULTS));
+        String custom = InitConfig.json(Config.builder()
+                .roots(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]")))
+                .build());
         assertTrue(custom.startsWith("{\"roots\":[\"MII") && custom.endsWith("\"]}"), custom);
     }
 

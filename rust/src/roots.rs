@@ -38,6 +38,32 @@ static APPLE_ROOT_SHA256: [&str; 3] = [
     "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",
 ];
 
+/// The built-in revocation list (docs/design/revocation.md §5), embedded
+/// at compile time. `certs/revocations.json` in this directory is a copy of
+/// the repository's `certs/revocations.json`, which
+/// `tools/refresh-apple-revocations.mjs` writes; CI diffs the two.
+pub(crate) static REVOCATIONS_JSON: &[u8] = include_bytes!("../certs/revocations.json");
+
+/// The SHA-256 of [`REVOCATIONS_JSON`]. Checked when the list is loaded,
+/// so a file swapped at build time is not used; a refresh of the list
+/// changes this pin in the same commit.
+pub(crate) static REVOCATIONS_JSON_SHA256: &str =
+    "985caa4fa596a9ef19c81f9f919e0975acc509737abecf75f767f5e7824d15e8";
+
+/// The certificates of the built-in issuers that are not roots: Apple's
+/// WWDR G5 and G6 intermediates, which sign the lists `wwdrg5.crl` and
+/// `wwdrg6.crl` (docs/design/revocation.md §6).
+pub(crate) static REVOCATION_ISSUER_DER: [&[u8]; 2] = [
+    include_bytes!("../certs/revocation-issuers/AppleWWDRCAG5.cer"),
+    include_bytes!("../certs/revocation-issuers/AppleWWDRCAG6.cer"),
+];
+
+/// The SHA-256 of each of [`REVOCATION_ISSUER_DER`], in the same order.
+pub(crate) static REVOCATION_ISSUER_SHA256: [&str; 2] = [
+    "53fd008278e5a595fe1e908ae9c5e5675f26243264a5a6438c023e3ce2870760",
+    "bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30",
+];
+
 /// Apple marker OID on the leaf that signs App Store JWS payloads and legacy
 /// receipts alike. The chain check alone is not enough: developer
 /// certificates ("Apple Distribution", "Apple Development") chain through the
@@ -216,7 +242,7 @@ fn load_roots(ders: &[&[u8]], fingerprints: &[&str]) -> Vec<TrustAnchor> {
         .unwrap_or_default()
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(64);
     for byte in aprv_openssl::sha256(bytes) {
         // Writing to a String cannot fail.
@@ -251,6 +277,29 @@ mod tests {
         assert_eq!(APPLE_ROOT_SHA256, published);
         let loaded: Vec<String> = apple_roots().iter().map(|a| sha256_hex(a.der())).collect();
         assert_eq!(loaded, published);
+    }
+
+    #[test]
+    fn the_built_in_revocation_files_match_their_pins() {
+        use super::{
+            REVOCATIONS_JSON, REVOCATIONS_JSON_SHA256, REVOCATION_ISSUER_DER,
+            REVOCATION_ISSUER_SHA256,
+        };
+        // Written out here too, so a change of a pinned file has to change
+        // this test as well as the pin.
+        assert_eq!(
+            REVOCATION_ISSUER_SHA256,
+            [
+                "53fd008278e5a595fe1e908ae9c5e5675f26243264a5a6438c023e3ce2870760",
+                "bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30",
+            ]
+        );
+        let issuers: Vec<String> = REVOCATION_ISSUER_DER
+            .iter()
+            .map(|der| sha256_hex(der))
+            .collect();
+        assert_eq!(issuers, REVOCATION_ISSUER_SHA256);
+        assert_eq!(sha256_hex(REVOCATIONS_JSON), REVOCATIONS_JSON_SHA256);
     }
 
     #[test]

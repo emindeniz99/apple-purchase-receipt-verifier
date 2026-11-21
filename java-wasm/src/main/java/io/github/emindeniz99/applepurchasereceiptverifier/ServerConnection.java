@@ -35,8 +35,8 @@ final class ServerConnection {
     private final ConcurrentLinkedQueue<HttpConn> idle = new ConcurrentLinkedQueue<>();
     private final AtomicInteger idleCount = new AtomicInteger();
     private volatile boolean closed;
-    /** The module's {@code max_input_bytes}, as {@code GET /v1/info} stated it; 0 until it is read. */
-    private volatile int maxInputBytes;
+    /** The module's {@code init} answer, as {@code GET /v1/info} stated it; null until it is read. */
+    private volatile @Nullable InitAnswer init;
 
     private ServerConnection(
             HttpConn.@Nullable Target fixed, @Nullable ServerProcess process, String description, int maxIdle) {
@@ -78,15 +78,26 @@ final class ServerConnection {
      *     every input to nothing
      */
     int maxInputBytes() {
-        int max = maxInputBytes;
-        if (max < 1) {
-            throw new ServerProcessFailure("aprv-server (" + description + "): its max_input_bytes was never read");
-        }
-        return max;
+        return initAnswer().maxInputBytes;
     }
 
-    void maxInputBytes(int maxInputBytes) {
-        this.maxInputBytes = maxInputBytes;
+    /**
+     * What {@code GET /v1/info} stated of the module's {@code init} answer,
+     * which {@link ServerSources#open} reads before it hands the connection
+     * out.
+     *
+     * @throws ServerProcessFailure when it was never read
+     */
+    InitAnswer initAnswer() {
+        InitAnswer answer = init;
+        if (answer == null) {
+            throw new ServerProcessFailure("aprv-server (" + description + "): its GET /v1/info was never read");
+        }
+        return answer;
+    }
+
+    void initAnswer(InitAnswer init) {
+        this.init = init;
     }
 
     @Nullable

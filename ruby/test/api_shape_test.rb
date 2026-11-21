@@ -16,7 +16,7 @@ class ApiShapeTest < Minitest::Test
 
   def test_the_public_classes_exist
     [APRV::Config, APRV::Verifier, APRV::VerificationResult, APRV::Failure,
-     APRV::ReceiptPayload, APRV::InAppPurchase, APRV::JsonPayload,
+     APRV::ReceiptPayload, APRV::InAppPurchase, APRV::JsonPayload, APRV::RevokedCertificate,
      APRV::AbiMismatchError, APRV::ModuleIntegrityError, APRV::TrapError].each do |klass|
       assert_kind_of Class, klass
     end
@@ -30,8 +30,8 @@ class ApiShapeTest < Minitest::Test
     internals.each { |name| assert(APRV.const_defined?(name, false), "#{name} is not defined") }
     assert_empty internals & APRV.constants
     assert_equal %i[AbiMismatchError AppleStatus Config Environment Failure InAppPurchase JsonPayload
-                    ModuleIntegrityError Reason ReceiptPayload TrapError VERSION VerificationResult Verifier
-                    Version],
+                    ModuleIntegrityError Reason ReceiptPayload RevokedCertificate TrapError VERSION
+                    VerificationResult Verifier Version],
                  APRV.constants.sort
   end
 
@@ -50,6 +50,19 @@ class ApiShapeTest < Minitest::Test
     end
   end
 
+  # docs/design/revocation.md §9: three settings on Config, two read-only
+  # values on Verifier, and no setter, timer or HTTP client anywhere.
+  def test_the_revocation_settings_and_values_exist
+    %i[revocation_lists revocation_issuers distrust].each do |name|
+      assert_includes APRV::Config.public_instance_methods, name
+    end
+    %i[revocation_urls revocation_valid_until].each do |name|
+      assert_includes APRV::Verifier.public_instance_methods, name
+    end
+    assert_empty(APRV::Verifier.public_instance_methods(false).grep(/=\z|refresh|reload/))
+    assert_equal %i[issuer serial], APRV::RevokedCertificate.members
+  end
+
   # The canonical SCREAMING_SNAKE token is `reason.to_s`, with no mapping table
   # anywhere. This reads the vocabulary out of the shared schema, so a change
   # to the cross-language contract breaks the Ruby port loudly.
@@ -57,7 +70,7 @@ class ApiShapeTest < Minitest::Test
     schema = TestSupport.cases_schema
     expected = schema["$defs"]["reason"]["enum"]
     assert_equal expected.sort, APRV::Reason::ALL.map(&:to_s).sort
-    assert_equal 8, APRV::Reason::ALL.size
+    assert_equal 9, APRV::Reason::ALL.size
     APRV::Reason::ALL.each { |reason| assert_kind_of Symbol, reason }
   end
 

@@ -26,11 +26,18 @@ class EndiveAbiTest {
 
     private static final byte[] NONE = new byte[0];
     /**
-     * {@code init}'s answer to a configuration it accepts: ok, and the most
-     * bytes of one input to hand the module, one over its largest cap
-     * (DECISIONS.md R42).
+     * {@code init}'s answer to the built-in roots: ok, the most bytes of one
+     * input to hand the module, one over its largest cap (DECISIONS.md R42),
+     * Apple's four list URLs and no list held (docs/design/revocation.md §7).
      */
-    private static final String INIT_OK = "{\"ok\":true,\"max_input_bytes\":3145729}";
+    private static final String INIT_OK = "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":["
+            + "\"http://crl.apple.com/root.crl\",\"http://crl.apple.com/applerootcag3.crl\","
+            + "\"http://crl.apple.com/wwdrg5.crl\",\"http://crl.apple.com/wwdrg6.crl\"],"
+            + "\"revocation_valid_until_ms\":null}";
+
+    /** {@code init}'s answer to roots of the caller's own and no revocation setting: no list expected. */
+    private static final String INIT_OK_OWN_ROOTS =
+            "{\"ok\":true,\"max_input_bytes\":3145729,\"revocation_urls\":[],\"revocation_valid_until_ms\":null}";
 
     private static final byte[] DEFAULT_ROOTS = "{}".getBytes(StandardCharsets.US_ASCII);
     private static final long NOW = System.currentTimeMillis();
@@ -45,8 +52,10 @@ class EndiveAbiTest {
 
     /** init's configuration naming the JWS fixture's own root. */
     private static byte[] jwsConfig() throws Exception {
-        return InitConfig.json(new java.util.LinkedHashSet<>(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]"))))
-                .getBytes(StandardCharsets.US_ASCII);
+        return InitConfig.json(Config.builder()
+                        .roots(Cases.roots(Cases.MAPPER.readTree("[\"jws-root\"]")))
+                        .build())
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     private static byte[] endpointRequest() throws Exception {
@@ -56,7 +65,8 @@ class EndiveAbiTest {
 
     private static EndiveGuest fresh(byte[] config) {
         EndiveGuest guest = new EndiveGuest(new SecureRandom());
-        assertEquals(INIT_OK, guest.init(config));
+        boolean builtIn = java.util.Arrays.equals(config, NONE) || java.util.Arrays.equals(config, DEFAULT_ROOTS);
+        assertEquals(builtIn ? INIT_OK : INIT_OK_OWN_ROOTS, guest.init(config));
         return guest;
     }
 

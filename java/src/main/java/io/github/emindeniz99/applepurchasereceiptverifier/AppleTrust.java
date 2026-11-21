@@ -96,9 +96,10 @@ final class AppleTrust {
      *       this asks no purpose of a CA, so no genuine chain is refused for
      *       it.</li>
      *   <li>cRLDistributionPoints (2.5.29.31): it only says where a CRL is.
-     *       Apple's intermediates carry it non-critical today. Revocation
-     *       checking is off, so a critical one would be acted on by nothing
-     *       here.</li>
+     *       Apple's intermediates carry it non-critical today. PKIX
+     *       revocation checking is off; {@link Revocation} checks the lists
+     *       the caller passes, whatever this extension names, so a critical
+     *       one changes nothing here.</li>
      * </ul>
      *
      * <p>Every other critical extension BouncyCastle does not process is
@@ -149,20 +150,29 @@ final class AppleTrust {
      * decoded only for an issuer whose subject names it.
      */
     static boolean signedByAny(X509Certificate certificate, Iterable<X509Certificate> issuers) {
+        return signerAmong(certificate, issuers) != null;
+    }
+
+    /**
+     * The first of {@code issuers} that {@link #signedByAny} would find, or
+     * null: the revocation check needs to know which root signed a JWS
+     * intermediate, since two roots may share a name.
+     */
+    static @Nullable X509Certificate signerAmong(X509Certificate certificate, Iterable<X509Certificate> issuers) {
         for (X509Certificate issuer : issuers) {
             if (!certificate.getIssuerX500Principal().equals(issuer.getSubjectX500Principal())) {
                 continue;
             }
             try {
                 if (signedBy(certificate, issuer.getPublicKey())) {
-                    return true;
+                    return issuer;
                 }
             } catch (RuntimeException e) {
                 // The issuer's key is one BouncyCastle cannot build; try the
                 // next one.
             }
         }
-        return false;
+        return null;
     }
 
     /**

@@ -20,9 +20,20 @@ from _support import fixture, fixture_text
 G5 = fixture_text("public-receipts", "receipt-sandbox-g5.b64").encode("ascii")
 JWS = fixture_text("generated", "transaction.jws").encode("ascii")
 JWS_ROOT = fixture("generated", "jws-root.der")
-#: init's accepting answer: the most bytes of one input the module needs, one
-#: over the receipt and endpoint-body cap (DECISIONS.md R42).
-OK = '{"ok":true,"max_input_bytes":3145729}'
+#: init's accepting answer for Apple's roots: the most bytes of one input the
+#: module needs, one over the receipt and endpoint-body cap (DECISIONS.md
+#: R42), then the four Apple list URLs and no list in force
+#: (docs/design/revocation.md section 7).
+OK = (
+    '{"ok":true,"max_input_bytes":3145729,"revocation_urls":['
+    '"http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl",'
+    '"http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"],'
+    '"revocation_valid_until_ms":null}'
+)
+#: The same for roots of the caller's own and no revocation setting: no URLs.
+OK_OWN_ROOTS = (
+    '{"ok":true,"max_input_bytes":3145729,"revocation_urls":[],"revocation_valid_until_ms":null}'
+)
 
 
 def now() -> int:
@@ -34,7 +45,7 @@ def fresh(config: bytes = b"", *, init: bool = True) -> _host.Instance:
     instance = _host.Instance(_host.default_runtime())
     if init:
         answer = instance.call("init", (), config)
-        assert answer == OK, answer
+        assert answer == (OK if config in (b"", b"{}") else OK_OWN_ROOTS), answer
         instance.max_input = _wire.init_accepted(answer)
     return instance
 
@@ -49,7 +60,7 @@ class ContractTest(unittest.TestCase):
         self.assertEqual(3_145_729, fresh().max_input)
         refusal = '{"ok":false,"message":"not a certificate"}'
         self.assertIsNone(_wire.init_accepted(refusal))
-        self.assertEqual("not a certificate", _wire.check_init(refusal))
+        self.assertEqual("not a certificate", _wire.read_init(refusal))
         # An accepting answer without a positive integer is a module of
         # another ABI version: no cap of the wrapper's own stands in for it.
         for answer in (
@@ -64,7 +75,7 @@ class ContractTest(unittest.TestCase):
             with self.subTest(answer=answer):
                 self.assertIsNone(_wire.init_accepted(answer))
                 with self.assertRaises(_wire.ResultShapeError):
-                    _wire.check_init(answer)
+                    _wire.read_init(answer)
 
     def test_init_with_no_roots_uses_the_built_in_ones_and_answers_ok(self) -> None:
         self.assertEqual(b"{}", _wire.init_config(None))
@@ -76,13 +87,36 @@ class ContractTest(unittest.TestCase):
 
     def test_init_refuses_an_empty_root_list(self) -> None:
         answer = _host.Instance(_host.default_runtime()).call("init", (), _wire.init_config([]))
-        self.assertEqual("roots must not be empty", _wire.check_init(answer))
+        self.assertEqual("roots must not be empty", _wire.read_init(answer))
 
     def test_init_takes_roots_as_base64_der_and_answers_ok(self) -> None:
         self.assertEqual(
-            OK,
+            OK_OWN_ROOTS,
             _host.Instance(_host.default_runtime()).call("init", (), _wire.init_config([JWS_ROOT])),
         )
+
+    def test_init_states_the_revocation_state_and_the_wrapper_reads_it(self) -> None:
+        self.assertEqual(
+            (
+                (
+                    "http://crl.apple.com/root.crl",
+                    "http://crl.apple.com/applerootcag3.crl",
+                    "http://crl.apple.com/wwdrg5.crl",
+                    "http://crl.apple.com/wwdrg6.crl",
+                ),
+                None,
+            ),
+            _wire.read_init(OK),
+        )
+        self.assertEqual(((), None), _wire.read_init(OK_OWN_ROOTS))
+
+    def test_init_refuses_a_revocation_list_that_is_not_a_crl_and_can_be_retried(self) -> None:
+        instance = fresh(init=False)
+        answer = instance.call("init", (), _wire.init_config(None, [b"\x01\x02\x03"]))
+        message = _wire.read_init(answer)
+        assert isinstance(message, str), answer
+        self.assertTrue(message.startswith("revocation_lists[0]"), message)
+        self.assertEqual(OK, instance.call("init", (), b"{}"))
 
     def test_a_configuration_init_refuses_is_ok_false_and_init_can_be_retried(self) -> None:
         instance = fresh(init=False)

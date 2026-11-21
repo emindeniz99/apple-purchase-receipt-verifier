@@ -39,6 +39,10 @@ namespace ApplePurchaseReceiptVerifier.Internal
         /// <summary>The instances this verifier owns, for tests that look inside one.</summary>
         internal InstancePool Pool => _pool;
 
+        public IReadOnlyList<string> RevocationUrls => _pool.Stated.RevocationUrls;
+
+        public long? RevocationValidUntilMs => _pool.Stated.RevocationValidUntilMs;
+
         public VerificationResult<ReceiptPayload> VerifyReceipt(string base64)
         {
             return Run(
@@ -72,7 +76,14 @@ namespace ApplePurchaseReceiptVerifier.Internal
                 (_, _, _) => EndpointInternalError);
         }
 
-        /// <summary>The <c>init</c> configuration: <c>{}</c> for the module's built-in roots, else each root's DER as base64.</summary>
+        /// <summary>
+        /// The <c>init</c> configuration (docs/design/revocation.md §8):
+        /// <c>{}</c> for the module's built-in roots and no revocation
+        /// settings; else each root's DER, each revocation list and each
+        /// revocation issuer's DER as base64, and each distrust entry as
+        /// <c>{"issuer":...,"serial":...}</c> with the strings as given. An
+        /// empty revocation setting is left out.
+        /// </summary>
         internal static byte[] ConfigJson(Config config)
         {
             using (MemoryStream json = new MemoryStream())
@@ -82,10 +93,28 @@ namespace ApplePurchaseReceiptVerifier.Internal
                     writer.WriteStartObject();
                     if (config.RootDer is IReadOnlyList<byte[]> roots)
                     {
-                        writer.WriteStartArray("roots");
-                        foreach (byte[] der in roots)
+                        WriteBase64Array(writer, "roots", roots);
+                    }
+
+                    if (config.RevocationListBytes.Count != 0)
+                    {
+                        WriteBase64Array(writer, "revocation_lists", config.RevocationListBytes);
+                    }
+
+                    if (config.RevocationIssuerDer.Count != 0)
+                    {
+                        WriteBase64Array(writer, "revocation_issuers", config.RevocationIssuerDer);
+                    }
+
+                    if (config.Distrust.Count != 0)
+                    {
+                        writer.WriteStartArray("distrust");
+                        foreach (RevokedCertificate entry in config.Distrust)
                         {
-                            writer.WriteBase64StringValue(der);
+                            writer.WriteStartObject();
+                            writer.WriteString("issuer", entry.Issuer);
+                            writer.WriteString("serial", entry.Serial);
+                            writer.WriteEndObject();
                         }
 
                         writer.WriteEndArray();
@@ -96,6 +125,17 @@ namespace ApplePurchaseReceiptVerifier.Internal
 
                 return json.ToArray();
             }
+        }
+
+        private static void WriteBase64Array(Utf8JsonWriter writer, string name, IReadOnlyList<byte[]> values)
+        {
+            writer.WriteStartArray(name);
+            foreach (byte[] value in values)
+            {
+                writer.WriteBase64StringValue(value);
+            }
+
+            writer.WriteEndArray();
         }
 
         /// <summary>

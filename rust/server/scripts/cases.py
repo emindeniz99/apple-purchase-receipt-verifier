@@ -5,10 +5,19 @@ the file's comment defines it.
 
     cases.py --aprv PATH/TO/aprv [--mode http|cli|both] [--cases FILE] [--list]
 
-Each case gets its roots and its clock through the server's own
-configuration: `--roots FILE` (one base64 DER per line) for fixture roots,
-nothing for the defaults, and `X-Aprv-Now-Ms` / `--now-ms` for clock.now.
-Over HTTP one server runs per distinct root set, default lifecycle (pool).
+Each case gets its roots, revocation settings and clock through the
+server's own configuration: `--roots FILE` (one base64 DER per line) for
+fixture roots, nothing for the defaults; `--revocation-list FILE`,
+`--revocation-issuer FILE` and `--distrust ISSUER:SERIAL` for the case's
+`revocation` object; and `X-Aprv-Now-Ms` / `--now-ms` for clock.now. Over
+HTTP one server runs per distinct configuration, default lifecycle (pool).
+
+A buildConfig case starts a server with its configuration: an error case
+must stop it at start (exit 2), and an ok case's `revocationUrls` and
+`revocationValidUntil` are compared with `GET /v1/info`'s
+`revocation_urls` and `revocation_valid_until_ms`. The CLI has no way to
+state those two values, so there a buildConfig case checks only that the
+configuration is refused (exit 2) or taken (exit 0).
 
 A body over the cap reaches the module cut to 3,145,729 bytes: the server
 answers 413 and the CLI exits 3, each with the module's own answer (its size
@@ -75,18 +84,34 @@ def case_input(case, fixtures):
     raise ValueError(op)
 
 
+def case_config(case):
+    """verifyConfig, endpointConfig, or buildConfig's input."""
+    return case["input"] if case["operation"] == "buildConfig" else case["config"]
+
+
 def roots_key(case, fixtures):
-    tr = case["config"]["trustedRoots"]
+    tr = case_config(case)["trustedRoots"]
     if tr["source"] == "defaults":
         return None
     return "\n".join(base64.b64encode(fixtures[f][1]).decode() for f in tr["fixtures"]) + "\n"
 
 
+def revocation_key(case):
+    """(list ids, issuer ids, distrust (issuer, serial) pairs), each in order."""
+    r = case_config(case).get("revocation", {})
+    return (tuple(r.get("lists", [])), tuple(r.get("issuers", [])),
+            tuple((d["issuer"], d["serial"]) for d in r.get("distrust", [])))
+
+
+def iso_ms(text):
+    t = datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    return int(t.timestamp()) * 1000
+
+
 def now_ms(case):
     if "clock" not in case:
         return None
-    t = datetime.datetime.strptime(case["clock"]["now"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-    return int(t.timestamp()) * 1000
+    return iso_ms(case["clock"]["now"])
 
 
 # ---------------------------------------------------------------- evaluation
@@ -194,17 +219,31 @@ def evaluate(case, answer):
 
 # ---------------------------------------------------------------- transports
 
+class Refused(Exception):
+    """The server stopped at start: exit status 2, a configuration refused."""
+
+
 class Server:
-    def __init__(self, aprv, roots_file):
-        args = [aprv, "serve", "--listen", "127.0.0.1:0"] + (["--roots", roots_file] if roots_file else [])
+    def __init__(self, aprv, flags):
+        args = [aprv, "serve", "--listen", "127.0.0.1:0"] + flags
         self.p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
         line = self.p.stdout.readline().decode()
         if not line.startswith("APRV_LISTEN="):
             err = self.p.stderr.read().decode()
-            self.p.wait()
-            raise RuntimeError(f"server did not start: {err.strip()}")
+            code = self.p.wait()
+            if code == 2:
+                raise Refused(err.strip())
+            raise RuntimeError(f"server did not start (exit {code}): {err.strip()}")
         host, port = line.strip().split("=", 1)[1].rsplit(":", 1)
         self.conn = http.client.HTTPConnection(host, int(port), timeout=60)
+
+    def info(self):
+        self.conn.request("GET", "/v1/info")
+        r = self.conn.getresponse()
+        data = r.read()
+        if r.status != 200:
+            raise AssertionError(f"GET /v1/info: HTTP {r.status}")
+        return json.loads(data)
 
     def call(self, path, body, now):
         headers = {"Content-Type": "application/octet-stream"}
@@ -234,18 +273,41 @@ def route(case):
     return ROUTE[case["operation"]]
 
 
-def cli_call(aprv, case, body, now, roots_file):
-    cmd = [aprv] + (CLI.get(case["operation"]) or ["verify-receipt-endpoint", case["config"]["environment"].lower()])
+def cli_call(aprv, case, body, now, flags):
+    if case["operation"] == "buildConfig":
+        cmd = [aprv, "verify-signed-data"]
+    else:
+        cmd = [aprv] + (CLI.get(case["operation"]) or ["verify-receipt-endpoint", case["config"]["environment"].lower()])
     if now is not None:
         cmd += ["--now-ms", str(now)]
-    if roots_file:
-        cmd += ["--roots", roots_file]
+    cmd += flags
     p = subprocess.run(cmd, input=body, capture_output=True, timeout=120)
     if p.returncode == 0:
         return "json", p.stdout
     if p.returncode == 3:
         return "too-large", p.stdout
+    if p.returncode == 2 and case["operation"] == "buildConfig":
+        return "refused", p.stderr.decode(errors="replace").strip()
     return "failure", f"exit {p.returncode}: {p.stderr[:200].decode(errors='replace').strip()}"
+
+
+def evaluate_build(case, answer, info):
+    """A buildConfig case: answer is ('refused', text) or ('built', None);
+    info is GET /v1/info's document, or None where there is none (CLI)."""
+    exp = case["expected"]
+    if exp["status"] == "error":
+        if answer[0] != "refused":
+            raise AssertionError("the configuration was taken; expected a refusal")
+        return
+    if answer[0] != "built":
+        raise AssertionError(f"expected the configuration to build: {answer[1][:200]}")
+    if info is None:
+        return
+    if info.get("revocation_urls") != exp["revocationUrls"]:
+        raise AssertionError(f"revocation_urls {info.get('revocation_urls')}, want {exp['revocationUrls']}")
+    want = None if exp["revocationValidUntil"] is None else iso_ms(exp["revocationValidUntil"])
+    if info.get("revocation_valid_until_ms") != want:
+        raise AssertionError(f"revocation_valid_until_ms {info.get('revocation_valid_until_ms')}, want {want}")
 
 
 # ---------------------------------------------------------------- main
@@ -263,6 +325,7 @@ def main():
     cases = doc["cases"]
     tmp = tempfile.mkdtemp(prefix="aprv-cases-")
     roots_files = {}
+    fixture_files = {}
 
     def roots_file(case):
         key = roots_key(case, fixtures)
@@ -273,6 +336,26 @@ def main():
             open(path, "w").write(key)
             roots_files[key] = path
         return roots_files[key]
+
+    def fixture_file(fid):
+        if fid not in fixture_files:
+            path = os.path.join(tmp, f"fixture-{len(fixture_files)}.der")
+            open(path, "wb").write(fixtures[fid][1])
+            fixture_files[fid] = path
+        return fixture_files[fid]
+
+    def flags(case):
+        """The server's flags for the case's roots and revocation settings."""
+        rf = roots_file(case)
+        out = ["--roots", rf] if rf else []
+        lists, issuers, distrust = revocation_key(case)
+        for fid in lists:
+            out += ["--revocation-list", fixture_file(fid)]
+        for fid in issuers:
+            out += ["--revocation-issuer", fixture_file(fid)]
+        for issuer, serial in distrust:
+            out += ["--distrust", f"{issuer}:{serial}"]
+        return out
 
     modes = ["http", "cli"] if a.mode == "both" else [a.mode]
     all_ok = True
@@ -287,15 +370,34 @@ def main():
                 if case["operation"] == "decodeBase64":
                     results[cid] = ("not-expressible", "decodeBase64 tests a port's decoders; the server exposes none")
                     continue
-                body = case_input(case, fixtures)
                 now = now_ms(case)
-                rf = roots_file(case)
+                fl = flags(case)
+                key = tuple(fl)
+                if case["operation"] == "buildConfig":
+                    try:
+                        if mode == "http":
+                            try:
+                                if key not in servers:
+                                    servers[key] = Server(a.aprv, fl)
+                                evaluate_build(case, ("built", None), servers[key].info())
+                            except Refused as e:
+                                evaluate_build(case, ("refused", str(e)), None)
+                        else:
+                            kind, detail = cli_call(a.aprv, case, b"", now, fl)
+                            if kind == "failure":
+                                raise AssertionError(detail)
+                            evaluate_build(case, ("refused", detail) if kind == "refused" else ("built", None), None)
+                        results[cid] = ("pass", "")
+                    except (AssertionError, ValueError, KeyError, TypeError) as e:
+                        results[cid] = ("FAIL", str(e))
+                    continue
+                body = case_input(case, fixtures)
                 if mode == "http":
-                    if rf not in servers:
-                        servers[rf] = Server(a.aprv, rf)
-                    call = lambda: servers[rf].call(route(case), body, now)
+                    if key not in servers:
+                        servers[key] = Server(a.aprv, fl)
+                    call = lambda: servers[key].call(route(case), body, now)
                 else:
-                    call = lambda: cli_call(a.aprv, case, body, now, rf)
+                    call = lambda: cli_call(a.aprv, case, body, now, fl)
                 if "maxMillis" in case:
                     call()  # the warm-up call the file's comment asks for
                 t = time.monotonic()
@@ -322,7 +424,7 @@ def main():
         print(f"# {mode}: over the size cap, answered by the module with 413 / exit 3: {len(transport_413)}: {', '.join(transport_413)}")
         print(f"# {mode}: maxMillis cases, slowest: {sorted(slow, key=lambda x: -x[1])[:3]}")
         if servers:
-            print(f"# {mode}: {len(servers)} server processes (one per root set)")
+            print(f"# {mode}: {len(servers)} server processes (one per configuration)")
         fails = [(k, v[1]) for k, v in results.items() if v[0] == "FAIL"]
         for k, why in fails if a.list else fails[:0]:
             print(f"FAIL {mode} {k}: {why}")

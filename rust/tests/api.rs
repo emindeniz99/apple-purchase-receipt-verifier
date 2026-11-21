@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 #[test]
 fn every_reason_spells_the_canonical_token() {
-    // These eight strings are the cross-port contract. A change here is a
-    // change to fixtures/cases.schema.json and to all nine ports.
+    // These nine strings are the cross-port contract. A change here is a
+    // change to fixtures/cases.schema.json and to every port.
     let expected = [
         "MALFORMED",
         "TOO_LARGE",
@@ -33,6 +33,7 @@ fn every_reason_spells_the_canonical_token() {
         "INVALID_CERTIFICATE_PURPOSE",
         "UNREADABLE_PAYLOAD",
         "INTERNAL_ERROR",
+        "CERTIFICATE_REVOKED",
     ];
     let actual: Vec<&str> = Reason::all().iter().map(|r| r.as_str()).collect();
     assert_eq!(actual, expected);

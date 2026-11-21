@@ -1,7 +1,12 @@
-//! The roots configuration: read once at start, handed to every instance's
+//! The configuration: read once at start, handed to every instance's
 //! `init` as `{"roots":["<base64>", ...]}` (or `{}` for the three Apple
-//! roots built into the module), and reported as SHA-256 fingerprints by
-//! `GET /v1/info` so a client can refuse a server configured otherwise.
+//! roots built into the module) plus the revocation members
+//! (docs/design/revocation.md §8), and reported by `GET /v1/info` (the
+//! roots' and issuers' SHA-256 fingerprints, the lists' SHA-256s, the
+//! distrust entries) so a client can refuse a server configured otherwise.
+//!
+//! The server does not parse a revocation list or judge a distrust entry
+//! either: it passes them to `init`, which refuses what the core refuses.
 //!
 //! The server does not parse a certificate: whether a root is one is
 //! `init`'s answer. A `--roots` file is one raw DER certificate (Apple's
@@ -39,15 +44,15 @@ pub enum Roots {
 }
 
 impl Roots {
-    /// `init`'s argument.
+    /// `init`'s argument for these roots and no revocation setting (the
+    /// tests' shorthand for [`Settings::config_json`]).
+    #[cfg(test)]
     pub fn config_json(&self) -> Vec<u8> {
-        match self {
-            Roots::Defaults => b"{}".to_vec(),
-            Roots::Configured(ders) => {
-                let roots: Vec<String> = ders.iter().map(|d| STANDARD.encode(d)).collect();
-                json!({ "roots": roots }).to_string().into_bytes()
-            }
+        Settings {
+            roots: self.clone(),
+            revocation: Revocation::default(),
         }
+        .config_json()
     }
 
     /// SHA-256 of each root `init` anchors, over its DER. `init` anchors a
@@ -114,35 +119,242 @@ impl Roots {
         Ok(Roots::Configured(ders))
     }
 
-    /// The managed child's second stdin line: `init`'s own shape,
-    /// `{"roots":["<base64 DER>", ...]}`, or `{}` for the defaults.
-    pub fn from_config_json(text: &str) -> Result<Roots, String> {
-        let v: Value =
-            serde_json::from_str(text).map_err(|e| format!("roots line is not JSON: {e}"))?;
-        let obj = v.as_object().ok_or("roots line is not a JSON object")?;
-        if let Some(k) = obj.keys().find(|k| *k != "roots") {
-            return Err(format!("roots line has an unknown member {k:?}"));
-        }
-        let Some(list) = obj.get("roots") else {
+    /// The `roots` member of the managed configuration line: `None` (no
+    /// member) is the defaults; an empty list is refused.
+    fn from_config_member(list: Option<&Value>) -> Result<Roots, String> {
+        let Some(list) = list else {
             return Ok(Roots::Defaults);
         };
         let list = list.as_array().ok_or("roots is not an array")?;
         if list.is_empty() {
             return Err("roots is an empty list; send {} for the built-in Apple roots".into());
         }
-        let ders = list
+        Ok(Roots::Configured(certificates_member("roots", list)?))
+    }
+}
+
+/// The revocation settings every instance's `init` receives
+/// (docs/design/revocation.md §4). Empty means none.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Revocation {
+    /// Each list's bytes as given (a DER CRL as downloaded), in order.
+    pub lists: Vec<Vec<u8>>,
+    /// Each added issuer's DER, PEM unwrapped as for a root, in order.
+    pub issuers: Vec<Vec<u8>>,
+    /// Each `(issuer, serial)` exactly as given; `init` judges them.
+    pub distrust: Vec<(String, String)>,
+}
+
+impl Revocation {
+    /// The `--revocation-list`, `--revocation-issuer` and `--distrust`
+    /// values. A list file is passed whole (an empty one is refused); an
+    /// issuer file has the `--roots` format; a distrust value is
+    /// `ISSUER:SERIAL`, split at its first colon.
+    pub fn from_flags(
+        lists: &[(&str, &[u8])],
+        issuers: &[(&str, &[u8])],
+        distrust: &[String],
+    ) -> Result<Revocation, String> {
+        let lists = lists
             .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let s = r
-                    .as_str()
-                    .ok_or_else(|| format!("roots[{i}] is not a string"))?;
-                decode(s)
-                    .and_then(root)
-                    .map_err(|e| format!("roots[{i}]: {e}"))
+            .map(|(name, bytes)| {
+                if bytes.is_empty() {
+                    Err(format!("--revocation-list {name}: the file is empty"))
+                } else {
+                    Ok(bytes.to_vec())
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Roots::Configured(ders.concat()))
+        let mut issuer_ders = Vec::new();
+        for (name, bytes) in issuers {
+            issuer_ders.extend(
+                certificates_in_file(bytes)
+                    .map_err(|e| format!("--revocation-issuer {name}: {e}"))?,
+            );
+        }
+        let distrust = distrust
+            .iter()
+            .map(|d| {
+                d.split_once(':')
+                    .map(|(i, s)| (i.to_owned(), s.to_owned()))
+                    .ok_or_else(|| format!("--distrust {d}: expected ISSUER:SERIAL"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Revocation {
+            lists,
+            issuers: issuer_ders,
+            distrust,
+        })
+    }
+
+    /// What `GET /v1/info` states besides the module's answer: the SHA-256
+    /// of each list given, sorted (their order does not matter to the
+    /// core); of each issuer's DER, in order (the first issuer whose key
+    /// verifies a list owns it); and the distrust entries as given.
+    pub fn info(&self) -> (Value, Value, Value) {
+        let mut lists: Vec<String> = self
+            .lists
+            .iter()
+            .map(|l| crate::manifest::sha256_hex(l))
+            .collect();
+        lists.sort();
+        let issuers: Vec<String> = self
+            .issuers
+            .iter()
+            .map(|d| crate::manifest::sha256_hex(d))
+            .collect();
+        (json!(lists), json!(issuers), self.distrust_json())
+    }
+
+    /// The distrust entries as given, each `{"issuer":...,"serial":...}`:
+    /// the one shape `init` receives and `GET /v1/info` states, which a
+    /// client compares with what it sent.
+    fn distrust_json(&self) -> Value {
+        self.distrust
+            .iter()
+            .map(|(i, s)| json!({ "issuer": i, "serial": s }))
+            .collect()
+    }
+}
+
+/// The whole configuration `init` receives: the roots and the
+/// revocation settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Settings {
+    pub roots: Roots,
+    pub revocation: Revocation,
+}
+
+impl Settings {
+    /// `init`'s argument: `{}` for the defaults and no revocation setting;
+    /// an empty revocation setting is left out, as `init` reads it.
+    pub fn config_json(&self) -> Vec<u8> {
+        let b64 = |v: &[Vec<u8>]| -> Vec<String> { v.iter().map(|d| STANDARD.encode(d)).collect() };
+        let mut m = serde_json::Map::new();
+        if let Roots::Configured(ders) = &self.roots {
+            m.insert("roots".into(), json!(b64(ders)));
+        }
+        let r = &self.revocation;
+        if !r.lists.is_empty() {
+            m.insert("revocation_lists".into(), json!(b64(&r.lists)));
+        }
+        if !r.issuers.is_empty() {
+            m.insert("revocation_issuers".into(), json!(b64(&r.issuers)));
+        }
+        if !r.distrust.is_empty() {
+            m.insert("distrust".into(), r.distrust_json());
+        }
+        Value::Object(m).to_string().into_bytes()
+    }
+
+    /// The managed child's second stdin line: `init`'s own shape
+    /// (`rust/bindings/wire/schema/init-config.schema.json`), `{}` for the
+    /// defaults. Roots and issuers are base64 of DER or PEM, PEM unwrapped
+    /// to DER here; lists are base64 of the list's bytes; a distrust entry
+    /// is an object of exactly two strings, `issuer` and `serial`. An empty
+    /// revocation array is no setting; an empty list entry is passed on,
+    /// for `init` to refuse.
+    pub fn from_config_json(text: &str) -> Result<Settings, String> {
+        let v: Value = serde_json::from_str(text)
+            .map_err(|e| format!("configuration line is not JSON: {e}"))?;
+        let obj = v
+            .as_object()
+            .ok_or("configuration line is not a JSON object")?;
+        if let Some(k) = obj.keys().find(|k| {
+            !matches!(
+                k.as_str(),
+                "roots" | "revocation_lists" | "revocation_issuers" | "distrust"
+            )
+        }) {
+            return Err(format!("configuration line has an unknown member {k:?}"));
+        }
+        let roots = Roots::from_config_member(obj.get("roots"))?;
+        let array = |name: &str| -> Result<&[Value], String> {
+            match obj.get(name) {
+                None => Ok(&[]),
+                Some(v) => v
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .ok_or_else(|| format!("{name} is not an array")),
+            }
+        };
+        let lists = array("revocation_lists")?
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let s = l
+                    .as_str()
+                    .ok_or_else(|| format!("revocation_lists[{i}] is not a string"))?;
+                // An empty entry goes on to `init`, which refuses it as the
+                // component refuses any list it cannot read, so a client
+                // reads it as the configuration refused, as on every other
+                // engine, not as a server that failed to start.
+                if s.is_empty() {
+                    return Ok(Vec::new());
+                }
+                decode(s).map_err(|e| format!("revocation_lists[{i}]: {e}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let issuers = certificates_member("revocation_issuers", array("revocation_issuers")?)?;
+        let distrust = array("distrust")?
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let entry = d.as_object().filter(|o| o.len() == 2);
+                let field = |k: &str| entry.and_then(|o| o.get(k)).and_then(Value::as_str);
+                match (field("issuer"), field("serial")) {
+                    (Some(issuer), Some(serial)) => Ok((issuer.to_owned(), serial.to_owned())),
+                    _ => Err(format!(
+                        "distrust[{i}] is not an object of two strings, issuer and serial"
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Settings {
+            roots,
+            revocation: Revocation {
+                lists,
+                issuers,
+                distrust,
+            },
+        })
+    }
+}
+
+/// The certificates of a `roots` or `revocation_issuers` array: each a
+/// base64 string of DER or PEM, read as [`root`] reads it.
+fn certificates_member(name: &str, list: &[Value]) -> Result<Vec<Vec<u8>>, String> {
+    let ders = list
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let s = r
+                .as_str()
+                .ok_or_else(|| format!("{name}[{i}] is not a string"))?;
+            decode(s)
+                .and_then(root)
+                .map_err(|e| format!("{name}[{i}]: {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ders.concat())
+}
+
+/// The certificates of one `--roots` or `--revocation-issuer` file, by
+/// the rule of [`Roots::from_files`].
+fn certificates_in_file(bytes: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    match bytes.first() {
+        None => Err("the file is empty".into()),
+        Some(0x30) => Ok(vec![bytes.to_vec()]),
+        Some(_) => {
+            let text = std::str::from_utf8(bytes).map_err(|_| {
+                "neither a DER certificate (first byte 0x30) nor UTF-8 text".to_owned()
+            })?;
+            let ders = read_text(text, true)?;
+            if ders.is_empty() {
+                return Err("the file holds no certificate".into());
+            }
+            Ok(ders)
+        }
     }
 }
 
@@ -260,21 +472,33 @@ fn decode(s: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
 
+    /// The roots of a managed configuration line.
+    fn managed_line(text: &str) -> Result<Roots, String> {
+        Settings::from_config_json(text).map(|s| s.roots)
+    }
+
+    /// The names of the root certificates in `certs/`: its top-level
+    /// `.cer` files, sorted. `certs/` also holds `revocations.json` and the
+    /// `revocation-issuers/` intermediates, which are not roots.
+    fn root_names() -> Vec<String> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap())
+            .filter(|e| e.file_type().unwrap().is_file())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".cer"))
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn default_fingerprints_are_the_pinned_apple_roots_in_certs() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        let got: Vec<String> = names
+        let got: Vec<String> = root_names()
             .iter()
-            .map(|n| {
-                crate::manifest::sha256_hex(
-                    &std::fs::read(format!("{dir}{}", n.to_string_lossy())).unwrap(),
-                )
-            })
+            .map(|n| crate::manifest::sha256_hex(&std::fs::read(format!("{dir}{n}")).unwrap()))
             .collect();
         assert_eq!(got, DEFAULT_ROOT_SHA256);
     }
@@ -299,14 +523,9 @@ mod tests {
     #[test]
     fn a_pem_bundle_of_the_apple_roots_reads_back_to_their_der() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        let ders: Vec<Vec<u8>> = names
+        let ders: Vec<Vec<u8>> = root_names()
             .iter()
-            .map(|n| std::fs::read(format!("{dir}{}", n.to_string_lossy())).unwrap())
+            .map(|n| std::fs::read(format!("{dir}{n}")).unwrap())
             .collect();
         let mut bundle = String::from("# the Apple roots\r\n");
         for der in &ders {
@@ -371,8 +590,8 @@ mod tests {
         for r in [
             Roots::from_file_text(&format!("{der_line}\n")).unwrap(),
             Roots::from_file_text(&format!("{pem_line}\n")).unwrap(),
-            Roots::from_config_json(&der_json).unwrap(),
-            Roots::from_config_json(&format!(r#"{{"roots":["{pem_line}"]}}"#)).unwrap(),
+            managed_line(&der_json).unwrap(),
+            managed_line(&format!(r#"{{"roots":["{pem_line}"]}}"#)).unwrap(),
         ] {
             assert_eq!(r, Roots::Configured(vec![ders[2].clone()]));
             assert_eq!(r.fingerprints(), [DEFAULT_ROOT_SHA256[2]]);
@@ -392,15 +611,14 @@ mod tests {
         let line = STANDARD.encode(&bundle);
         for r in [
             Roots::from_file_text(&format!("# bundle\n{line}\n")).unwrap(),
-            Roots::from_config_json(&format!(r#"{{"roots":["{line}"]}}"#)).unwrap(),
+            managed_line(&format!(r#"{{"roots":["{line}"]}}"#)).unwrap(),
         ] {
             assert_eq!(r, Roots::Configured(ders.clone()));
             assert_eq!(r.fingerprints(), DEFAULT_ROOT_SHA256);
         }
         // Next to a DER line, in configuration order.
         let der_line = STANDARD.encode(&ders[1]);
-        let r =
-            Roots::from_config_json(&format!(r#"{{"roots":["{der_line}","{line}"]}}"#)).unwrap();
+        let r = managed_line(&format!(r#"{{"roots":["{der_line}","{line}"]}}"#)).unwrap();
         assert_eq!(
             r.fingerprints(),
             [
@@ -438,7 +656,7 @@ mod tests {
             "line 1: PEM root: line 3: PEM block: only CERTIFICATE PEM blocks are read, not PRIVATE KEY"
         );
         assert_eq!(
-            Roots::from_config_json(&format!(
+            managed_line(&format!(
                 r#"{{"roots":["{}"]}}"#,
                 STANDARD.encode(b"-----BEGIN \xff")
             ))
@@ -533,12 +751,7 @@ mod tests {
 
     fn certs() -> Vec<(String, Vec<u8>)> {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs/");
-        let mut names: Vec<_> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        names
+        root_names()
             .into_iter()
             .map(|n| {
                 let bytes = std::fs::read(format!("{dir}{n}")).unwrap();
@@ -593,16 +806,152 @@ mod tests {
         );
     }
 
+    /// The configuration line carries `init`'s revocation members: lists
+    /// as base64 of their bytes, issuers as roots are (PEM unwrapped to
+    /// DER), distrust entries of exactly two strings, passed on as given
+    /// for `init` to judge. An empty array is no setting, and `init`
+    /// receives the same line back with no empty member.
+    #[test]
+    fn reads_the_revocation_members_of_the_configuration_line() {
+        let der = certs().remove(0).1;
+        let pem = STANDARD.encode(pem_of(std::slice::from_ref(&der)));
+        let text = format!(
+            r#"{{"revocation_lists":["AQID","BAU="],"revocation_issuers":["{pem}"],"distrust":[{{"issuer":"AB","serial":"x"}}]}}"#
+        );
+        let s = Settings::from_config_json(&text).unwrap();
+        assert_eq!(s.roots, Roots::Defaults);
+        assert_eq!(
+            s.revocation,
+            Revocation {
+                lists: vec![vec![1, 2, 3], vec![4, 5]],
+                issuers: vec![der.clone()],
+                distrust: vec![("AB".into(), "x".into())],
+            }
+        );
+        let back: Value = serde_json::from_slice(&s.config_json()).unwrap();
+        assert_eq!(
+            back,
+            json!({
+                "revocation_lists": ["AQID", "BAU="],
+                "revocation_issuers": [STANDARD.encode(&der)],
+                "distrust": [{ "issuer": "AB", "serial": "x" }],
+            })
+        );
+        assert_eq!(
+            Settings::from_config_json(&String::from_utf8(s.config_json()).unwrap()).unwrap(),
+            s
+        );
+        let empty = Settings::from_config_json(
+            r#"{"roots":["AQID"],"revocation_lists":[],"revocation_issuers":[],"distrust":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(empty.revocation, Revocation::default());
+        assert_eq!(empty.config_json(), br#"{"roots":["AQID"]}"#);
+        let refused = |t: &str| Settings::from_config_json(t).unwrap_err();
+        assert_eq!(
+            refused(r#"{"revocation_lists":"AQID"}"#),
+            "revocation_lists is not an array"
+        );
+        assert_eq!(
+            refused(r#"{"revocation_lists":[1]}"#),
+            "revocation_lists[0] is not a string"
+        );
+        // An empty list is passed on for `init` to refuse, so a client
+        // reads the component's refusal, as on its other engines.
+        let empty_list = Settings::from_config_json(r#"{"revocation_lists":[""]}"#).unwrap();
+        assert_eq!(empty_list.revocation.lists, vec![Vec::<u8>::new()]);
+        assert_eq!(empty_list.config_json(), br#"{"revocation_lists":[""]}"#);
+        assert!(refused(r#"{"revocation_lists":["AQ!D"]}"#)
+            .starts_with("revocation_lists[0]: not standard base64"));
+        assert_eq!(
+            refused(r#"{"revocation_issuers":[1]}"#),
+            "revocation_issuers[0] is not a string"
+        );
+        for d in [
+            r#"[1]"#,
+            r#"[{"issuer":"a"}]"#,
+            r#"[{"issuer":"a","serial":1}]"#,
+            r#"[{"issuer":"a","serial":"1","x":"2"}]"#,
+        ] {
+            assert_eq!(
+                refused(&format!(r#"{{"distrust":{d}}}"#)),
+                "distrust[0] is not an object of two strings, issuer and serial",
+                "{d}"
+            );
+        }
+        assert_eq!(
+            refused(r#"{"crls":[]}"#),
+            r#"configuration line has an unknown member "crls""#
+        );
+    }
+
+    /// `--revocation-list` files pass whole, `--revocation-issuer` files
+    /// read as `--roots` files do, `--distrust` splits at its first colon;
+    /// `/v1/info` reports the lists' SHA-256s sorted, the issuers' in
+    /// order and the distrust entries as given.
+    #[test]
+    fn reads_the_revocation_flags_and_reports_them() {
+        let certs = certs();
+        let (g3, root) = (&certs[2].1, &certs[0].1);
+        let pem = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            STANDARD.encode(root)
+        );
+        let r = Revocation::from_flags(
+            &[("b.crl", b"\x30\x02"), ("a.crl", b"\x30\x01")],
+            &[("g3.cer", g3), ("root.pem", pem.as_bytes())],
+            &["ab:0:1".into(), ":".into()],
+        )
+        .unwrap();
+        assert_eq!(r.lists, [vec![0x30, 2], vec![0x30, 1]]);
+        assert_eq!(r.issuers, [g3.clone(), root.clone()]);
+        assert_eq!(
+            r.distrust,
+            [("ab".into(), "0:1".into()), (String::new(), String::new())]
+        );
+        let (lists, issuers, distrust) = r.info();
+        let mut sorted = vec![
+            crate::manifest::sha256_hex(&[0x30, 2]),
+            crate::manifest::sha256_hex(&[0x30, 1]),
+        ];
+        sorted.sort();
+        assert_eq!(lists, json!(sorted));
+        assert_eq!(
+            issuers,
+            json!([DEFAULT_ROOT_SHA256[2], DEFAULT_ROOT_SHA256[0]])
+        );
+        assert_eq!(
+            distrust,
+            json!([{"issuer": "ab", "serial": "0:1"}, {"issuer": "", "serial": ""}])
+        );
+        assert_eq!(
+            Revocation::from_flags(&[("l.crl", b"")], &[], &[]).unwrap_err(),
+            "--revocation-list l.crl: the file is empty"
+        );
+        assert_eq!(
+            Revocation::from_flags(&[], &[("i.txt", b"# none\n")], &[]).unwrap_err(),
+            "--revocation-issuer i.txt: the file holds no certificate"
+        );
+        assert_eq!(
+            Revocation::from_flags(&[], &[], &["ab01".into()]).unwrap_err(),
+            "--distrust ab01: expected ISSUER:SERIAL"
+        );
+        assert_eq!(
+            Revocation::default().info(),
+            (json!([]), json!([]), json!([]))
+        );
+    }
+
     #[test]
     fn reads_the_managed_roots_line() {
-        assert_eq!(Roots::from_config_json("{}").unwrap(), Roots::Defaults);
+        assert_eq!(managed_line("{}").unwrap(), Roots::Defaults);
         assert_eq!(
-            Roots::from_config_json(r#"{"roots":["AQID"]}"#).unwrap(),
+            managed_line(r#"{"roots":["AQID"]}"#).unwrap(),
             Roots::Configured(vec![vec![1, 2, 3]])
         );
-        assert!(Roots::from_config_json(r#"{"roots":[]}"#).is_err());
-        assert!(Roots::from_config_json(r#"{"roots":["AQID"],"x":1}"#).is_err());
-        assert!(Roots::from_config_json("[]").is_err());
+        assert!(managed_line(r#"{"roots":[]}"#).is_err());
+        assert!(managed_line(r#"{"roots":["AQID"],"x":1}"#).is_err());
+        assert!(managed_line("[]").is_err());
         assert_eq!(Roots::Defaults.config_json(), b"{}");
     }
 }

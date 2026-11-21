@@ -103,6 +103,7 @@ class ScalaInteropTest:
       case Reason.UNTRUSTED_CHAIN             => "untrusted chain"
       case Reason.INVALID_CERTIFICATE         => "bad cert"
       case Reason.INVALID_CERTIFICATE_PURPOSE => "wrong purpose"
+      case Reason.CERTIFICATE_REVOKED         => "revoked"
       case Reason.UNREADABLE_PAYLOAD          => "unreadable payload"
       case Reason.INTERNAL_ERROR              => "internal error"
     assertEquals("untrusted chain", description)

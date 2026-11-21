@@ -406,12 +406,24 @@ class TrustStoreIsolationTest {
         "https://",
     };
 
+    /**
+     * The one main source whose string literals may hold a URL:
+     * {@code AppleRevocations} carries {@code certs/revocations.json}, whose
+     * {@code list} members are the URLs {@link Verifier#revocationUrls()}
+     * reports for the caller to fetch. They are data; nothing here opens
+     * them, which every other needle above still checks in that file.
+     */
+    private static final String URL_DATA = "AppleRevocations.java";
+
     @Test
     void noMainSourceCanReachATrustStoreOrTheNetwork() throws Exception {
         List<Path> sources = mainSources();
         for (Path source : sources) {
             String code = codeOf(source);
             for (String needle : FORBIDDEN) {
+                if (needle.endsWith("://") && source.getFileName().toString().equals(URL_DATA)) {
+                    continue;
+                }
                 assertFalse(
                         code.contains(needle),
                         source.getFileName() + " names \"" + needle + "\" in code: anchors come from the caller's "

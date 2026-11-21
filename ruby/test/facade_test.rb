@@ -96,7 +96,7 @@ class FacadeTest < Minitest::Test
     # The fake refuses a root whose base64 starts with "X".
     refused = APRV::Config.new(roots: ["\x5f\xff\xff".b])
     error = assert_raises(ArgumentError) { verifier(refused) }
-    assert_match(/refused config\.roots/, error.message)
+    assert_match(/refused the configuration/, error.message)
     assert_match(/root 0 is not a certificate/, error.message)
   end
 
@@ -150,7 +150,8 @@ class FacadeTest < Minitest::Test
   # The input length is the module's, read from each instance's `init`
   # answer (DECISIONS.md R42), never a number of the wrapper's own.
   def test_each_instance_takes_the_input_length_its_init_answer_states
-    stated = Internals::Runtime.new(FakeModule.wat(init: '{"ok":true,"max_input_bytes":7}'))
+    answer = '{"ok":true,"max_input_bytes":7,"revocation_urls":[],"revocation_valid_until_ms":null}'
+    stated = Internals::Runtime.new(FakeModule.wat(init: answer))
     assert_equal 7, Internals::Guest.new(stated, "{}").max_input_bytes
     assert_equal 3_145_729, Internals::Guest.new(FAKE, "{}").max_input_bytes
   end
@@ -162,6 +163,85 @@ class FacadeTest < Minitest::Test
       older = Internals::Runtime.new(FakeModule.wat(init: answer))
       error = assert_raises(APRV::TrapError, answer) { verifier(runtime: older) }
       assert_includes error.message, "max_input_bytes", answer
+    end
+  end
+
+  # An accepting answer without the revocation state is a module older than
+  # this wrapper, refused at create like one without an input length.
+  def test_an_init_answer_without_the_revocation_state_fails_at_create
+    [
+      ["revocation_urls", '"revocation_valid_until_ms":null'],
+      ["revocation_urls", '"revocation_urls":[1],"revocation_valid_until_ms":null'],
+      ["revocation_valid_until_ms", '"revocation_urls":[]'],
+      ["revocation_valid_until_ms", '"revocation_urls":[],"revocation_valid_until_ms":1.5']
+    ].each do |member, members|
+      answer = %({"ok":true,"max_input_bytes":7,#{members}})
+      older = Internals::Runtime.new(FakeModule.wat(init: answer))
+      error = assert_raises(APRV::TrapError, answer) { verifier(runtime: older) }
+      assert_includes error.message, member, answer
+    end
+  end
+
+  # --- revocation (docs/design/revocation.md) --------------------------------
+
+  # Each setting reaches init as bytes or strings, as given: whether a list
+  # is a CRL, a certificate an issuer or a distrust entry hex is the
+  # module's to say.
+  def test_the_revocation_settings_reach_init_as_given
+    wire = Internals::Wire
+    assert_equal "{}", wire.init_config(APRV::Config.new)
+    empty = APRV::Config.new(revocation_lists: [], revocation_issuers: [], distrust: [])
+    assert_equal "{}", wire.init_config(empty)
+    issuer = Struct.new(:to_der).new("der".b)
+    config = APRV::Config.new(
+      revocation_lists: ["\x30\x01".b, ""], revocation_issuers: [issuer, "-----BEGIN"],
+      distrust: [APRV::RevokedCertificate.new(issuer: "AB", serial: "0x"), ["", "02"]]
+    )
+    want = '{"revocation_lists":["MAE=",""],"revocation_issuers":["ZGVy","LS0tLS1CRUdJTg=="],' \
+           '"distrust":[{"issuer":"AB","serial":"0x"},{"issuer":"","serial":"02"}]}'
+    assert_equal want, wire.init_config(config)
+    own = APRV::Config.new(roots: ["r".b], distrust: [%w[a 1]])
+    assert_equal '{"roots":["cg=="],"distrust":[{"issuer":"a","serial":"1"}]}', wire.init_config(own)
+  end
+
+  def test_the_verifier_reports_the_revocation_state_init_answered
+    apple = verifier
+    assert_equal %w[http://crl.apple.com/root.crl http://crl.apple.com/applerootcag3.crl
+                    http://crl.apple.com/wwdrg5.crl http://crl.apple.com/wwdrg6.crl], apple.revocation_urls
+    assert_predicate apple.revocation_urls, :frozen?
+    assert_nil apple.revocation_valid_until
+
+    answer = '{"ok":true,"max_input_bytes":7,"revocation_urls":["https://b","http://a"],' \
+             '"revocation_valid_until_ms":1795046400123}'
+    stated = Internals::Runtime.new(FakeModule.wat(init: answer))
+    reported = verifier(runtime: stated)
+    assert_equal %w[https://b http://a], reported.revocation_urls, "the module's order"
+    until_time = reported.revocation_valid_until
+    assert_equal Time.utc(2026, 11, 19, 0, 0, Rational(123, 1000)), until_time
+    assert_predicate until_time, :utc?
+    refute_same until_time, reported.revocation_valid_until, "a caller's Time#localtime cannot reach it"
+  end
+
+  def test_config_keeps_frozen_copies_of_the_revocation_settings
+    list = +"\x30\x01"
+    config = APRV::Config.new(revocation_lists: [list], distrust: [%w[ab 01]])
+    list << "x"
+    assert_equal ["\x30\x01".b], config.revocation_lists
+    assert_equal [APRV::RevokedCertificate.new(issuer: "ab", serial: "01")], config.distrust
+    [config.revocation_lists, config.revocation_issuers, config.distrust, config.revocation_lists.first]
+      .each { |value| assert_predicate value, :frozen? }
+    assert_equal [[], [], []], [APRV::Config.new.revocation_lists, APRV::Config.new.revocation_issuers,
+                                APRV::Config.new.distrust]
+  end
+
+  def test_config_refuses_revocation_settings_of_the_wrong_type
+    [
+      { revocation_lists: "not a list" }, { revocation_lists: [1] },
+      { revocation_issuers: "x" }, { revocation_issuers: [nil] },
+      { distrust: "x" }, { distrust: [["a"]] }, { distrust: [%w[a b c]] }, { distrust: [["a", 1]] },
+      { distrust: [{ "issuer" => "a", "serial" => "1" }] }, { distrust: [["\xff".b, "1"]] }
+    ].each do |settings|
+      assert_raises(ArgumentError, settings.inspect) { APRV::Config.new(**settings) }
     end
   end
 

@@ -36,7 +36,8 @@ of them. [PORTS.md](PORTS.md) shows what each package runs on, and
 rule that adds or drops one.
 
 Every package exposes the same three methods on one `Verifier`, built
-once from a `Config` (the pinned roots and a clock):
+once from a `Config` (the pinned roots, a clock and, optionally, revocation
+settings; see [Certificate revocation](#certificate-revocation)):
 
 - **`verifyReceipt(base64)`** checks a legacy PKCS#7 app receipt and returns
   its decoded payload.
@@ -50,7 +51,7 @@ once from a `Config` (the pinned roots and a clock):
   can pipe the bytes through untouched.
 
 The first two return a `VerificationResult`: the payload when Apple signed
-the input, otherwise a failure carrying one of eight reasons. None of them
+the input, otherwise a failure carrying one of nine reasons. None of them
 throws for any input, and none takes a bundle id, environment or product id:
 those checks are yours ([Using the result](#using-the-result)). Method names
 follow each language's casing. [COMPARISON.md](./COMPARISON.md) has the
@@ -239,7 +240,8 @@ decision, made on the payload. In short:
    environment yourself. Accept Sandbox only where App Review reaches it, and
    record it with the grant.
 3. **Revoked or expired**: deny when `revocationDate` is set or `expiresDate`
-   is past. For a receipt, drop in-app entries with a cancellation date and
+   is past. (This `revocationDate` is Apple's refund field inside the
+   transaction, unrelated to certificate revocation.) For a receipt, drop in-app entries with a cancellation date and
    judge a subscription by the entry with the latest expiry.
 4. **Freshness is your call**: compare the payload's `signedDate` (or the
    receipt's creation date) with a window you choose, and re-fetch from the
@@ -273,6 +275,7 @@ all.
 | `INVALID_SIGNATURE` | possible fraud | Deny and alert. The bytes were altered after Apple signed them. `21003` at the endpoint. |
 | `INVALID_CERTIFICATE_PURPOSE` | possible fraud | Deny and alert. A certificate chaining to an Apple root without the marker OID its position requires: a developer's own certificate signing a forged payload looks exactly like this. `21003` at the endpoint. |
 | `UNREADABLE_PAYLOAD` | not the client's | The chain and signature verified, but the content Apple signed does not parse. Deterministic: the same bytes fail the same way, so do not retry the library. Log the failure with the library version, alert, and settle the purchase through the App Store Server API by transaction id; grant provisionally only if the business accepts that. `21009` at the endpoint. |
+| `CERTIFICATE_REVOKED` | possible fraud | Deny and alert. The chain and signature verified, but a certificate on the path is on the built-in revocation list, on a revocation list you passed in, or in your `distrust` entries: Apple's key may have leaked. Reported before the payload is read. `21003` at the endpoint. Since 0.14.0. |
 | `INTERNAL_ERROR` | not the client's | The library itself failed before it could decide: a trap inside the module, an `aprv-server` that did not answer, a runtime missing an algorithm, or a clock that throws. Alert, do not retry. `21009` at the endpoint. |
 
 A payload for another app, another environment or another app Apple id
@@ -317,6 +320,7 @@ Start with INTENT, then PLAN, then ROADMAP.
 - [SUPPORT-MATRIX.md](./SUPPORT-MATRIX.md): every runtime line CI runs, the platforms each package reaches, and the rule that adds or drops one.
 - [BENCHMARKS.md](./BENCHMARKS.md): per-host benchmarks, same operations on the same fixtures.
 - [INTEGRATION.md](./INTEGRATION.md): the full flow from verified payload to entitlement.
+- [docs/design/revocation.md](./docs/design/revocation.md): certificate revocation, the contract every package implements.
 - [CONTRIBUTING.md](./CONTRIBUTING.md): building the module, the test suites, fixture tiers, conformance vectors, behaviour changes, adding a wrapper, commits, releases.
 - [SECURITY.md](./SECURITY.md): reporting a vulnerability, supported versions, dependency policy.
 - [BOOTSTRAP.md](./BOOTSTRAP.md): the one-time owner action each registry needs before CI can publish to it.
@@ -333,6 +337,36 @@ its PKI page rather than a specific one; PLAN.md D15 has the sourced
 rationale. The Rust core compiles them in, so every package that runs the
 module carries them inside `aprv.wasm`; the Java implementation carries them
 as constants. A `Config` also accepts caller-supplied roots.
+
+## Certificate revocation
+
+Since 0.14.0 every package refuses a payload signed through a certificate
+Apple has revoked, with the reason `CERTIFICATE_REVOKED`. Three sources
+count, all checked offline:
+
+- **The built-in list**, `certs/revocations.json`, compiled into the core
+  and into Java. It is always on and is updated by releases. On
+  2026-11-05 none of its nineteen entries is a certificate seen on a
+  genuine App Store chain; it is there for what Apple revokes next.
+- **Apple's lists**, which you download yourself and pass in `Config`
+  (`revocationLists`). Each `Verifier` reports the URLs to fetch
+  (`revocationUrls`): with the default roots, `root.crl`,
+  `applerootcag3.crl`, `wwdrg5.crl` and `wwdrg6.crl` on
+  `http://crl.apple.com/`. Each list is checked against its Apple
+  issuer's signature, so the transport does not matter. Refresh by
+  building a new `Verifier` and swapping the reference. WWDR G6's list
+  is reissued daily, and each WWDR list is valid for two weeks.
+- **`distrust`**: issuer id and serial pairs you add in `Config` when you
+  learn of a revocation before a release carries it.
+
+A missing or stale list does not fail a call. `revocationValidUntil`
+reports the earliest `nextUpdate` of the lists in force, or null when one
+is missing: alert on null or on a date in the past if you rely on the
+lists. The library makes no network call, has no timer and keeps no HTTP
+client; each package README shows a refresh in its own language. The
+limits, including what a network attacker can do by withholding lists,
+are in [THREAT-MODEL.md](./THREAT-MODEL.md) §3.10, and the rules in
+[docs/design/revocation.md](./docs/design/revocation.md).
 
 ## Debugging a receipt by hand
 

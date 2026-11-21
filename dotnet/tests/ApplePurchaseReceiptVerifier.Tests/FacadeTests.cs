@@ -74,6 +74,7 @@ public class FacadeTests
     [InlineData("INVALID_CERTIFICATE_PURPOSE", VerificationReason.InvalidCertificatePurpose)]
     [InlineData("UNREADABLE_PAYLOAD", VerificationReason.UnreadablePayload)]
     [InlineData("INTERNAL_ERROR", VerificationReason.InternalError)]
+    [InlineData("CERTIFICATE_REVOKED", VerificationReason.CertificateRevoked)]
     public void EveryReasonTheModuleGivesIsTheVerdictAndCarriesNoCause(string token, VerificationReason reason)
     {
         VerifierImpl verifier = Over(new StubModule
@@ -137,7 +138,9 @@ public class FacadeTests
     [Fact]
     public void EachInstanceCutsInputToTheLengthItsInitStated()
     {
-        AprvRuntime runtime = new(new StubModule { InitAnswer = "{\"ok\":true,\"max_input_bytes\":4}" }.ToWasm(), null);
+        AprvRuntime runtime = new(
+            new StubModule { InitAnswer = "{\"ok\":true,\"max_input_bytes\":4,\"revocation_urls\":[],\"revocation_valid_until_ms\":null}" }.ToWasm(),
+            null);
         InstancePool pool = new(runtime, Encoding.UTF8.GetBytes("{}"));
         AprvInstance instance = pool.Rent();
         Assert.Equal(4, instance.MaxInputBytes);

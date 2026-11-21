@@ -448,7 +448,7 @@ Status, from the verification outcome:
 | Verified, a production receipt answered by a `SANDBOX` endpoint | 21008 |
 | Verified, but an in-app purchase (attribute 17) does not decode | 21009 |
 | `Reason.MALFORMED`, `Reason.TOO_LARGE` | 21002 |
-| `Reason.INVALID_SIGNATURE`, `Reason.UNTRUSTED_CHAIN`, `Reason.INVALID_CERTIFICATE`, `Reason.INVALID_CERTIFICATE_PURPOSE` | 21003 |
+| `Reason.INVALID_SIGNATURE`, `Reason.UNTRUSTED_CHAIN`, `Reason.INVALID_CERTIFICATE`, `Reason.INVALID_CERTIFICATE_PURPOSE`, `Reason.CERTIFICATE_REVOKED` | 21003 |
 | `Reason.UNREADABLE_PAYLOAD`, `Reason.INTERNAL_ERROR` | 21009 |
 
 A receipt whose `receipt_type` is missing or unknown counts as
@@ -501,8 +501,11 @@ never by `ordinal()`.
 | `INVALID_CERTIFICATE_PURPOSE` | A certificate that chains to a pinned root but is the wrong kind: the leaf lacks Apple's signing marker OID, the intermediate lacks Apple's WWDR marker OID, or a root issued the leaf with no intermediate between them. This is what keeps a genuine developer certificate, which chains to the same roots, from signing a receipt or JWS |
 | `UNREADABLE_PAYLOAD` | The signature and chain verified, so the payload bytes are Apple's, but they do not parse. `Failure.cause()` carries the parser's exception when a parser threw one; a payload refused on its shape (not UTF-8 JSON text, not a JSON object, an attribute that is not a SET) has none. Deterministic: alert, do not retry |
 | `INTERNAL_ERROR` | The library itself failed before it could decide, for example a clock that threw. `Failure.cause()` carries the exception. Deterministic: alert, do not retry |
+| `CERTIFICATE_REVOKED` | The chain and signature verified, but a certificate below the trust anchor is revoked: on the built-in list, on a list passed through `revocationLists`, or in `distrust`. The message names the serial and the layer (`built-in list`, `distrust` or `Apple's list`). Decided before the payload is read. Deny and alert: Apple's key may have leaked ([Certificate revocation](#certificate-revocation)) |
 
 The set is closed: adding or removing a `Reason` is a breaking change.
+0.14.0 added `CERTIFICATE_REVOKED`, after `INTERNAL_ERROR`; a `switch`
+with a `default` branch, like the one above, already denies it.
 
 ## Trust anchors
 
@@ -539,11 +542,13 @@ CA - G2" (ECC, under Apple Root CA - G3) carries
 1.2.840.113635.100.6.2.15 instead, so a leaf under it is
 `INVALID_CERTIFICATE_PURPOSE` here, as it is in Apple's library.
 
-Revocation is not checked: no OCSP, no CRL. Offline verification is the
-point; Apple handles a compromised signing certificate by rotating it, and
-`INVALID_CERTIFICATE` is where a future revocation check would report a
-revoked certificate. Use the App Store Server API for refunds, revocations
-and subscription state, none of which a signature can express.
+Since 0.14.0 a certificate Apple has revoked fails as
+`CERTIFICATE_REVOKED`, checked offline against a built-in list, against
+Apple's lists when you pass them, and against your own `distrust` entries
+([Certificate revocation](#certificate-revocation)). There is no OCSP and
+the library opens no connection. Use the App Store Server API for refunds,
+refund revocations and subscription state, none of which a signature can
+express.
 
 ES256 signatures are accepted in both of their equivalent forms (low-S and
 high-S). The alternate form is the same key signing the same bytes, not a
@@ -609,6 +614,99 @@ and the rest are never reached):
 | `org.bouncycastle.x509.max_cert_path_build_nodes` | 262,144 | Lower can only refuse a chain build. A receipt's build sees at most 10 certificates, each already authenticated | No |
 | `org.bouncycastle.x509.max_policy_nodes` | 8,192 | Lower can only refuse a chain whose policy tree grows past it. Apple's certificates carry policies, so a very low value refuses genuine input | No |
 | A provider registered with `Security` as `"BC"` | none | BouncyCastle's PKIX builder and validator run their internal checks on that instance instead of their own. It is the same class, or a subclass; only in-process code that changes that instance could matter | No |
+
+## Certificate revocation
+
+Since 0.14.0 every verify call checks each certificate below the trust
+anchor against three sources, offline, after the chain and the signature
+and before the payload is read. The contract is
+[docs/design/revocation.md](../docs/design/revocation.md).
+
+- **The built-in list.** `AppleRevocations` holds the repository's
+  `certs/revocations.json`, compiled in, so no classpath resource can
+  replace it, and it cannot be turned off. It grows with releases. On
+  2026-11-05 none of its nineteen entries is a certificate seen on a
+  genuine App Store chain.
+- **Apple's lists**, passed as `revocationLists`: CRL files exactly as you
+  downloaded them (DER), any order, at most 16 of 1 MiB each.
+- **`distrust`**: `new RevokedCertificate(issuerId, serial)`, for a
+  revocation you learn of before a release carries it. The issuer id is
+  the lowercase hex SHA-256 of the issuing CA's subject Name followed by
+  its SubjectPublicKeyInfo, both as encoded in that CA's certificate; the
+  serial is hex, either case. At most 1,000.
+
+A listed certificate is revoked whatever the list's age and whatever the
+dates on its entry, because whoever holds a leaked key also picks the
+payload's date. A `certificateHold` entry counts only while its list is
+fresh at the `Config` clock; a `removeFromCRL` entry never counts. A
+missing or stale list never fails a call.
+
+`Verifier.create` throws `IllegalArgumentException`, naming the setting
+and its index, when a list is not a DER CRL, is over a bound, is signed by
+no configured issuer, or is older than the newest list the built-in file
+records for that issuer (Apple's stale `www.apple.com/appleca/root.crl`,
+still linked from its PKI page, is refused this way), when an added issuer
+does not qualify, or when a `distrust` entry is malformed. A genuine list
+in a format the library does not read (version 1, no `nextUpdate`, a
+distribution point, a delta, an unknown critical extension) is ignored,
+not refused, so a change at Apple cannot stop your service from starting.
+An added issuer that is itself revoked is set aside with any list it
+signed, not refused: a path through it fails with `CERTIFICATE_REVOKED`.
+
+Two read-only properties tell you what to fetch and whether it is in
+force:
+
+- `verifier.revocationUrls()`: the lists to download. With the default
+  roots, `http://crl.apple.com/root.crl`, `applerootcag3.crl`,
+  `wwdrg5.crl` and `wwdrg6.crl` on the same host. Each list is
+  authenticated by its issuer's signature, so plain HTTP is fine.
+- `verifier.revocationValidUntil()`: the earliest `nextUpdate` of the
+  lists in force, as an `Instant`, or null when one is missing. Alert on
+  null or on an instant in the past.
+
+The library has no HTTP client, timer or setter. Refresh by building a new
+verifier and swapping the reference; keep serving with the old one when a
+download or a build fails:
+
+```java
+AtomicReference<Verifier> current = new AtomicReference<>(Verifier.create(Config.defaults()));
+
+// On your scheduler, for example every 6 hours:
+void refresh() {
+    List<byte[]> lists = new ArrayList<>();
+    for (String url : current.get().revocationUrls()) {
+        lists.add(download(url));          // your HTTP client, with a timeout
+    }
+    try {
+        current.set(Verifier.create(Config.builder().revocationLists(lists).build()));
+    } catch (IllegalArgumentException refused) {
+        alert(refused);                    // keep the verifier you have
+    }
+}
+```
+
+`revocationIssuers(Collection<X509Certificate>)` adds a CA that signs
+lists, for a new Apple intermediate before a release knows it or for a
+test PKI. It must be signed by a configured root, be a CA with `cRLSign`,
+carry Apple's WWDR marker OID 1.2.840.113635.100.6.2.1 and not be revoked
+itself. Its own list URL cannot be known from its certificate (Apple names
+it on the certificates it signs), so add that URL to your download list
+by hand.
+
+Two limits hold for every package. A missing or stale list passes, so a
+network attacker who withholds the lists, or keeps feeding an old one,
+reduces the check to the built-in list and `distrust`; only monitoring of
+`revocationValidUntil()` sees it. And the built-in list reaches you at the
+speed of releases. [THREAT-MODEL.md](../THREAT-MODEL.md) §3.10 has the
+rest.
+
+One Java-only difference: a certificate whose Name is not DER (the parts
+of one RDN out of order) verifies here only as a trust anchor, because
+BouncyCastle re-encodes a certificate before checking its signature. The
+issuer id is computed over the certificate's bytes as given; a root you
+parsed with BouncyCastle rather than the JDK has already been re-encoded,
+so pass the JDK's `X509Certificate` when the id must match the original
+bytes.
 
 ## Resource bounds
 
@@ -793,11 +891,15 @@ never-throws contract does not cover. `jackson-core` 2.16 or newer. Make
 the build fail on a violation rather than relying on review. See
 [Vendoring](#vendoring) for why each floor exists.
 
-**Write down the residual risk.** Revocation is not checked, and the
-validity instant is the payload's own date. A leaked historical Apple leaf
-key would therefore verify a payload back-dated into that key's validity
-window. Apple's own libraries behave the same. Watch Apple's published
-roots (https://www.apple.com/certificateauthority/) for a change, and own the
+**Write down the residual risk.** The validity instant is the payload's
+own date, so a leaked historical Apple leaf key verifies a payload
+back-dated into that key's validity window until the key is revoked in a
+source this verifier reads: the built-in list (a release), a list you
+pass (a refresh), or your `distrust` entries. Pass Apple's lists and alert
+when `revocationValidUntil()` is null or in the past
+([Certificate revocation](#certificate-revocation)); page on
+`CERTIFICATE_REVOKED`. Watch Apple's published roots
+(https://www.apple.com/certificateauthority/) for a change, and own the
 root set in service config through `Config.builder().roots(...)` so a new root is
 a config change, not a dependency bump.
 
@@ -1040,7 +1142,10 @@ instead of the first `verifyReceipt` throwing a `NoClassDefFoundError`. 1.84 add
 `StackOverflowError` out of `verifyReceipt` on a deeply nested receipt), and
 1.85 fixed CVE-2026-12860, in the RSA PKCS#1 signature check the receipt
 path uses. 1.85 also fixed CVE-2026-13506, in a lazy-parse path that only
-CRL code reaches; this library has none.
+CRL code reaches. Since 0.14.0 this library reads revocation lists with
+BouncyCastle's ASN.1 `CertificateList`, not `X509CRL`; whether that reaches
+the CVE's path is not established, and the 1.86 floor carries the fix
+either way.
 The pom declares all three jars, so Maven's nearest-wins rule no longer
 lets another library's older bcprov replace them unnoticed; a BOM or your
 own `dependencyManagement` still can, and the check at create is what

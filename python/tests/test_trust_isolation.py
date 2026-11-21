@@ -346,6 +346,8 @@ class SourceScanTest(unittest.TestCase):
             "collections",
             "contextlib",
             "dataclasses",
+            # revocation_valid_until, as a UTC datetime (README, "Revocation")
+            "datetime",
             "enum",
             "hashlib",
             "importlib",

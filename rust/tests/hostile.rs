@@ -432,7 +432,7 @@ fn five_thousand_mutations_of_a_genuine_receipt_never_panic_and_never_verify() {
                 accepted_unchanged += 1;
             }
             Err(error) => {
-                // Every reason must still be one of the eight.
+                // Every reason must still be one of the nine.
                 assert!(
                     Reason::all().contains(&error.reason()),
                     "mutation {iteration} produced {:?}",

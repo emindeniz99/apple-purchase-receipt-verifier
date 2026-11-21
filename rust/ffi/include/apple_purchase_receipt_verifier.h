@@ -91,6 +91,9 @@ enum AprvReason
   // A trusted signer signed content the library cannot read, found only
   // after the chain and the signature passed. Not the caller's fault.
   APRV_REASON_UNREADABLE_PAYLOAD = 16,
+  // A certificate on the verified path is revoked: by the built-in
+  // revocation list (this ABI passes no other revocation setting).
+  APRV_REASON_CERTIFICATE_REVOKED = 17,
   // A required pointer argument was `NULL`. Nothing was verified.
   APRV_REASON_NULL_POINTER = 100,
   // A `const char *` argument of a 0.7 call was not valid UTF-8. Nothing

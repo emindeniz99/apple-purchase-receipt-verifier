@@ -31,6 +31,7 @@ use EminDeniz99\ApplePurchaseReceiptVerifier\Environment;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\CliTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\HttpTransport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Operation;
+use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\RevocationState;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Transport\Transport;
 use EminDeniz99\ApplePurchaseReceiptVerifier\Verifier;
 use Psr\Clock\ClockInterface;
@@ -51,9 +52,9 @@ final class Recorder implements Transport
     {
     }
 
-    public function open(?array $roots): void
+    public function open(Config $config): RevocationState
     {
-        $this->inner->open($roots);
+        return $this->inner->open($config);
     }
 
     public function call(Operation $operation, string $input, int $nowMs): string

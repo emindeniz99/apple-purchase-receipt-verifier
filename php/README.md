@@ -133,8 +133,10 @@ status table.
 nothing; each call starts `aprv verify-receipt` (or `verify-signed-data`,
 `verify-receipt-endpoint production|sandbox`) through `symfony/process`,
 writes the input to its stdin, reads the JSON from its stdout and waits for it
-to exit. The argv array holds only the subcommand, the clock and the roots
-file's path, so nothing a caller or a receipt contains is on a command line.
+to exit. The argv array holds only the subcommand, the clock, the paths of
+the configuration's files (roots, revocation lists and issuers) and the
+`Config`'s distrust entries, so nothing a receipt contains is on a command
+line.
 Where a shell starts the binary (always with `symfony/process` 6.4, and on
 Windows), every argument is quoted for it. The child's environment is `PATH`
 alone (on Windows also `SystemRoot` and `ComSpec`), so nothing your
@@ -163,7 +165,12 @@ front of it when the path is not a private one. No proxy is used. The roots
 live in the server (`aprv serve --roots FILE`, or the built-in ones), so
 `create` fetches `GET /v1/info` and refuses a server whose roots are not
 exactly your `Config`'s: a server that trusts something else would answer a
-different question than the one you asked.
+different question than the one you asked. The same holds for the
+revocation settings (`--revocation-list`, `--revocation-issuer`,
+`--distrust`): the server reports the SHA-256 of each list and issuer it
+was given and its distrust entries as written, and `create` compares them
+with the `Config`'s (lists in any order; issuers, which must then be DER,
+and distrust entries in order and spelled the same).
 
 `Verifier::create(Config, ?Transport)` takes the transport as its second
 argument, so `Config` stays exactly the 0.7 one. `CliTransport` also takes an
@@ -177,16 +184,18 @@ before 1970, is `INTERNAL_ERROR` (status 21009 at the endpoint).
 
 **Custom roots** go to `aprv` as one owner-only temporary file per `Verifier`
 (`--roots FILE`, one base64 DER certificate per line), written by `create` and
-deleted when the `Verifier` is destroyed. `create` runs the module once with
-them, so a root it refuses is an `InvalidArgumentException` at startup.
+deleted when the `Verifier` is destroyed; so do the revocation issuers (one
+file) and each revocation list (one file each). `create` runs `aprv info`
+once with them, which runs the module's `init`, so a root, list, issuer or
+distrust entry it refuses is an `InvalidArgumentException` at startup.
 
 **Six outcomes, kept distinct.**
 
 | Outcome | What you see |
 |---|---|
 | Verified | `$result->payload` |
-| Verification failure | a `Failure` with one of the eight `Reason`s, no `cause` |
-| Caller misuse | `InvalidArgumentException` from `create()`: an empty root list, a root that is not a certificate, a server that trusts other roots or refuses the token |
+| Verification failure | a `Failure` with one of the nine `Reason`s, no `cause` |
+| Caller misuse | `InvalidArgumentException` from `create()`: an empty root list, a root that is not a certificate, a revocation list, issuer or distrust entry the module refuses, a server that trusts other roots, runs other revocation settings or refuses the token |
 | ABI mismatch, no binary | `RuntimeException` from `create()`, naming the ABI version this package expects and the one it found |
 | Trap or unreadable answer | `Reason::InternalError`, `cause` a `Transport\ModuleFaultException` |
 | `aprv` did not answer | `Reason::InternalError`, `cause` a `Transport\ServerProcessException` (it could not start, died, timed out, the connection broke, HTTP 5xx) |
@@ -195,6 +204,53 @@ them, so a root it refuses is an `InvalidArgumentException` at startup.
 the module's own verdicts, `INTERNAL_ERROR` and `UNREADABLE_PAYLOAD` included,
 carry none. An input over the 3 MiB cap is `TOO_LARGE` (status 21002 at the
 endpoint), as the module answers it.
+
+## Certificate revocation
+
+Every call checks the certificates on the verified path against a
+built-in list of revoked Apple certificates, compiled into the module and
+updated by releases. Two settings add to it
+(docs/design/revocation.md in the repository):
+
+```php
+use EminDeniz99\ApplePurchaseReceiptVerifier\RevokedCertificate;
+
+$verifier = Verifier::create(new Config(
+    revocationLists: $crlFiles,        // Apple's CRL files, DER, as downloaded
+    distrust: [new RevokedCertificate($issuerId, $serial)],
+));
+$verifier->revocationUrls();          // the lists to download
+$verifier->revocationValidUntil();    // ?DateTimeImmutable: alert when null or past
+```
+
+- `revocationLists` are Apple's CRL files exactly as downloaded, from the
+  URLs `revocationUrls()` names (with the built-in roots,
+  `http://crl.apple.com/root.crl`, `applerootcag3.crl`, `wwdrg5.crl` and
+  `wwdrg6.crl`). The package never downloads anything: fetch them on a
+  schedule, build a new `Verifier` with them and swap it in.
+- `revocationIssuers` adds CA certificates that sign lists (DER or PEM,
+  like the roots), for an Apple intermediate a release does not know yet.
+  Its own list URL cannot be known from the certificate; add it by hand.
+  With a server URL, give one DER string per issuer certificate: the
+  server reports the SHA-256 of each certificate's DER, the client hashes
+  each `Config` issuer as given, and a PEM string never matches.
+- `distrust` names certificates to refuse: the issuer id (64 hex digits,
+  the SHA-256 of the issuing CA's subject Name and public key as they
+  appear in its certificate) and the serial in hex. At most 1,000.
+- A revoked certificate fails the call with `Reason::CertificateRevoked`
+  (21003 at the endpoint), before the payload is read.
+- `revocationValidUntil()` is the earliest `nextUpdate` of the lists held,
+  or null when an expected list is missing. A stale or missing list never
+  fails a call: an outage at Apple must not stop your verifications.
+  Monitor this value instead.
+
+`Verifier::create` refuses a list that is not a CRL, is over 1 MiB, or
+that no configured issuer signed (Apple's retired
+`www.apple.com/certificateauthority/root.crl` among them), one older than
+the newest the built-in list records (the stale
+`www.apple.com/appleca/root.crl`), more than 16 lists, an issuer that does
+not chain to the roots, and a malformed distrust entry. A list in a format
+the module does not support is ignored and counts as missing.
 
 ## Why offline
 
@@ -368,7 +424,7 @@ Apple's own endpoint, it checks no bundle id: compare
 |---|---|
 | 0 | Valid. `environment` and `receipt` are present in the response. |
 | 21002 | `receipt-data` is missing, not a string, too large, or the body isn't valid JSON. |
-| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired or wrong-purpose certificate). |
+| 21003 | The receipt failed to authenticate (bad signature, untrusted chain, expired, wrong-purpose or revoked certificate). |
 | 21007 | A sandbox receipt was sent to `Environment::Production`. |
 | 21008 | A production receipt was sent to `Environment::Sandbox`. |
 | 21009 | Internal data access error: the receipt authenticated but its signed content, or one of its in-app purchases, does not parse, or the library itself failed. Deterministic; alert, don't retry. |
@@ -474,6 +530,7 @@ is what runs underneath, and what you can see of it:
 |---|---|
 | PHP parsed and verified, on `ext-openssl` | `aprv` verifies; `ext-openssl` is no longer required, and `vendor/bin/aprv-install` (or a server URL) is |
 | `Verifier::create(Config)` | `Verifier::create(Config, ?Transport)`: the second argument picks the CLI (default) or a server |
+| (a custom `Transport`) | 0.14.0: `open(Config $config): Transport\RevocationState` replaces `open(?array $roots): void`; it receives the whole `Config`, revocation settings included, and returns what `aprv` stated about revocation |
 | `Config::defaults()->roots` listed Apple's three certificates; PEM text was accepted | `(new Config())->roots` is `null`, which means the module's built-in Apple roots (an empty list is refused at `create`); roots are DER or PEM strings, and "Apple's plus mine" is all four |
 | `AppleRootCerts::pinnedRoots()` returned Apple's three roots | removed: the package carries no copy of them. Read them from Apple's PKI page or the repository's `certs/` |
 | `Config::builder()->roots($roots)->clock($clock)->build()` (`ConfigBuilder`) | `new Config(roots: $roots, clock: $clock)`; pass only what differs from the defaults. `roots` takes any iterable, as the builder did, of DER or PEM strings |

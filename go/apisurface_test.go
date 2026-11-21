@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	applereceipt "github.com/emindeniz99/apple-purchase-receipt-verifier/go"
 )
@@ -172,8 +173,24 @@ func TestPublicAPIShape(t *testing.T) {
 
 	config := &applereceipt.Config{}
 	var (
-		_ func() []*x509.Certificate = config.Roots
-		_ func() func() int64        = config.Clock
+		_ func() []*x509.Certificate               = config.Roots
+		_ func() func() int64                      = config.Clock
+		_ func() [][]byte                          = config.RevocationLists
+		_ func() []*x509.Certificate               = config.RevocationIssuers
+		_ func() []applereceipt.RevokedCertificate = config.Distrust
+	)
+	options := applereceipt.ConfigOptions{}
+	var (
+		_ []*x509.Certificate               = options.Roots
+		_ func() int64                      = options.Clock
+		_ [][]byte                          = options.RevocationLists
+		_ []*x509.Certificate               = options.RevocationIssuers
+		_ []applereceipt.RevokedCertificate = options.Distrust
+	)
+	revoked := applereceipt.RevokedCertificate{}
+	var (
+		_ string = revoked.Issuer
+		_ string = revoked.Serial
 	)
 
 	verifier := &applereceipt.Verifier{}
@@ -181,6 +198,8 @@ func TestPublicAPIShape(t *testing.T) {
 		_ func(string) (*applereceipt.ReceiptPayload, error) = verifier.VerifyReceipt
 		_ func(string) (*applereceipt.JSONPayload, error)    = verifier.VerifySignedData
 		_ func(applereceipt.Environment, string) string      = verifier.VerifyReceiptEndpoint
+		_ func() []string                                    = verifier.RevocationURLs
+		_ func() (time.Time, bool)                           = verifier.RevocationValidUntil
 	)
 
 	payload := &applereceipt.JSONPayload{}
@@ -229,7 +248,7 @@ func TestPublicAPIShape(t *testing.T) {
 		}
 	}
 
-	// The eight-reason vocabulary, by symbol rather than by string (the
+	// The nine-reason vocabulary, by symbol rather than by string (the
 	// exact tokens are pinned in errors_test.go).
 	var reasons = []applereceipt.Reason{
 		applereceipt.ReasonMalformed,
@@ -240,6 +259,7 @@ func TestPublicAPIShape(t *testing.T) {
 		applereceipt.ReasonInvalidCertificatePurpose,
 		applereceipt.ReasonUnreadablePayload,
 		applereceipt.ReasonInternalError,
+		applereceipt.ReasonCertificateRevoked,
 	}
 	if len(reasons) != len(applereceipt.AllReasons()) {
 		t.Errorf("this file's reason list and AllReasons() have drifted apart")

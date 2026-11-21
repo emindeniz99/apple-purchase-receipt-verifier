@@ -46,6 +46,10 @@ class ServerProblemTest {
     private final List<Integer> bodyLengths = Collections.synchronizedList(new ArrayList<>());
     private volatile List<String> infoRoots;
     private volatile String infoLimits = ",\"limits\":{\"max_input_bytes\":3145729}";
+    /** The server's revocation members: its module's answer, and the settings it was given. */
+    private volatile String infoRevocation = ",\"revocation_urls\":[\"http://crl.apple.com/root.crl\"],"
+            + "\"revocation_valid_until_ms\":1796083200000,\"revocation_lists\":[],\"revocation_issuers\":[],"
+            + "\"distrust\":[]";
 
     @BeforeEach
     void serve() throws Exception {
@@ -70,7 +74,7 @@ class ServerProblemTest {
                 }
                 status = 200;
                 body = ("{\"roots\":{\"source\":\"test\",\"sha256\":[" + roots + "]},\"component_sha256\":\"fake\""
-                                + infoLimits + "}")
+                                + infoLimits + infoRevocation + "}")
                         .getBytes(StandardCharsets.UTF_8);
             } else {
                 nowHeaders.add(exchange.getRequestHeaders().getFirst("X-Aprv-Now-Ms"));
@@ -290,17 +294,60 @@ class ServerProblemTest {
     }
 
     @Test
-    void aRootsRefusalIsReadFromTheChildsStderr() {
-        String answer = "{\"ok\":false,\"message\":\"roots[0]: trust anchor is not a certificate\"}";
-        InitRefused refused =
-                ServerProcess.rootsRefusal("aprv: the component refused the roots configuration: " + answer);
+    void aConfigurationRefusalIsReadFromTheChildsStderr() {
+        String answer = "{\"ok\":false,\"message\":\"distrust[0]: not a 64-hex-digit issuer id and a hex serial\"}";
+        InitRefused refused = ServerProcess.configRefusal("aprv: the component refused the configuration: " + answer);
         assertEquals(answer, refused.answer());
-        assertEquals("roots[0]: trust anchor is not a certificate", refused.getMessage());
-        assertEquals(null, ServerProcess.rootsRefusal("aprv: bad handshake: the token is too short"));
+        assertEquals("distrust[0]: not a 64-hex-digit issuer id and a hex serial", refused.getMessage());
+        assertEquals(null, ServerProcess.configRefusal("aprv: bad handshake: the token is too short"));
         assertEquals(
                 null,
-                ServerProcess.rootsRefusal("aprv: the component refused the roots configuration: not json"),
+                ServerProcess.configRefusal("aprv: the component refused the configuration: not json"),
                 "an unreadable answer is a process failure, not a refusal");
+    }
+
+    /**
+     * The verifier reports the revocation state the server's {@code GET
+     * /v1/info} states, and refuses a server whose revocation settings
+     * differ from the config's: lists by SHA-256 in any order, issuers in
+     * order, distrust entries as written. A server that reports none is
+     * older than this library.
+     */
+    @Test
+    void theRevocationStateIsTheServersAndItsSettingsMustBeTheConfigs() throws Exception {
+        Verifier verifier = verifier(Config.defaults());
+        assertEquals(java.util.Collections.singletonList("http://crl.apple.com/root.crl"), verifier.revocationUrls());
+        assertEquals(java.time.Instant.parse("2026-12-01T00:00:00Z"), verifier.revocationValidUntil());
+
+        byte[] a = {0x30, 1, 1};
+        byte[] b = {0x30, 1, 2};
+        String sa = ServerBinary.sha256(a);
+        String sb = ServerBinary.sha256(b);
+        String first = sa.compareTo(sb) < 0 ? sa : sb;
+        String second = sa.compareTo(sb) < 0 ? sb : sa;
+        infoRevocation = ",\"revocation_urls\":[],\"revocation_valid_until_ms\":null,\"revocation_lists\":[\""
+                + first + "\",\"" + second + "\"],\"revocation_issuers\":[],"
+                + "\"distrust\":[{\"issuer\":\"AB\",\"serial\":\"01\"}]";
+        RevokedCertificate entry = new RevokedCertificate("AB", "01");
+        Verifier same = verifier(Config.builder()
+                .revocationLists(Arrays.asList(b, a))
+                .distrust(java.util.Collections.singletonList(entry))
+                .build());
+        assertEquals(null, same.revocationValidUntil());
+        for (Config other : new Config[] {
+            Config.defaults(),
+            Config.builder().revocationLists(Arrays.asList(a, b)).build(),
+            Config.builder()
+                    .revocationLists(Arrays.asList(a, b))
+                    .distrust(java.util.Collections.singletonList(new RevokedCertificate("ab", "1")))
+                    .build(),
+        }) {
+            IllegalStateException refused = assertThrows(IllegalStateException.class, () -> verifier(other));
+            assertTrue(refused.getMessage().contains("other revocation settings"), refused.getMessage());
+        }
+        infoRevocation = "";
+        IllegalStateException old = assertThrows(IllegalStateException.class, () -> verifier(Config.defaults()));
+        assertTrue(old.getMessage().contains("revocation"), old.getMessage());
     }
 
     /**

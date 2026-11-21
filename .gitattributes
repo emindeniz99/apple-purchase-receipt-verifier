@@ -12,6 +12,10 @@
 # text; it is about whether its bytes are load-bearing. These are.
 fixtures/** -text
 certs/** -text
+# The core compiles rust/certs/revocations.json and pins its SHA-256, so a
+# CRLF checkout fails to load it ("the built-in revocation list did not
+# load" on windows-latest).
+rust/certs/** -text
 *.der -text
 *.cer -text
 *.b64 -text

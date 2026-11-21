@@ -33,8 +33,9 @@ test('both entry points export exactly the same names', () => {
   assert.deepEqual(Object.keys(web).toSorted(), EXPORTS);
 });
 
-test('Reason is the eight 0.7 reasons, named as the module names them', () => {
-  // docs/rust-core/SURFACE.md §3 and §7 ("Reason parity").
+test('Reason is the eight 0.7 reasons and CERTIFICATE_REVOKED, named as the module names them', () => {
+  // docs/rust-core/SURFACE.md §3 and §7 ("Reason parity"); the ninth is
+  // docs/design/revocation.md §3.
   assert.deepEqual(Object.values(node.Reason), [
     'MALFORMED',
     'TOO_LARGE',
@@ -44,6 +45,7 @@ test('Reason is the eight 0.7 reasons, named as the module names them', () => {
     'INVALID_CERTIFICATE_PURPOSE',
     'UNREADABLE_PAYLOAD',
     'INTERNAL_ERROR',
+    'CERTIFICATE_REVOKED',
   ]);
   for (const [key, value] of Object.entries(node.Reason)) {
     assert.equal(key, value);
@@ -65,6 +67,8 @@ test('/web returns Promises where the default entry point returns values', async
     verifier.verifyReceipt('AQIDBA=='),
     verifier.verifySignedData('a.b'),
     verifier.verifyReceiptEndpoint(web.Environment.SANDBOX, '{}'),
+    verifier.revocationUrls(),
+    verifier.revocationValidUntil(),
   ];
   for (const p of pending) {
     assert.ok(p instanceof Promise);
@@ -72,6 +76,8 @@ test('/web returns Promises where the default entry point returns values', async
   await Promise.all(pending);
   const sync = node.createVerifier(node.createConfig());
   assert.equal(typeof sync.verifyReceiptEndpoint(node.Environment.SANDBOX, '{}'), 'string');
+  assert.ok(Array.isArray(sync.revocationUrls()));
+  assert.deepEqual(await verifier.revocationUrls(), sync.revocationUrls());
 });
 
 test('a result carries exactly one of payload and failure, in both entry points', async () => {
@@ -104,6 +110,42 @@ test('createConfig() names no roots: Apple roots are pinned inside the module', 
   assert.equal(config.roots, null);
   assert.equal(typeof config.clock(), 'number');
   assert.ok(Object.isFrozen(config));
+  // The built-in revocation list lives in the module; nothing is added here.
+  assert.deepEqual(config.revocationLists, []);
+  assert.deepEqual(config.revocationIssuers, []);
+  assert.deepEqual(config.distrust, []);
+});
+
+test('createConfig copies the revocation settings and keeps the distrust strings as given', () => {
+  const list = new Uint8Array([0x30, 0x03, 0x02, 0x01, 0x01]);
+  const issuer = new Uint8Array(gen('receipt-root.der'));
+  const entry = { issuer: 'AB'.repeat(32), serial: '0080', note: 'dropped' };
+  const config = node.createConfig({
+    revocationLists: [list, Buffer.from(list)],
+    revocationIssuers: [issuer],
+    distrust: [entry],
+  });
+  assert.deepEqual(config.revocationLists, [list, list]);
+  assert.notEqual(config.revocationLists[0], list, 'the config holds a copy of each list');
+  assert.deepEqual(config.revocationIssuers, [issuer]);
+  assert.notEqual(config.revocationIssuers[0], issuer, 'and of each issuer');
+  // The module checks and normalises the strings; the config passes them on.
+  assert.deepEqual(config.distrust, [{ issuer: 'AB'.repeat(32), serial: '0080' }]);
+  for (const part of [config.revocationLists, config.revocationIssuers, config.distrust]) {
+    assert.ok(Object.isFrozen(part));
+  }
+  assert.ok(Object.isFrozen(config.distrust[0]));
+  for (const bad of [
+    { revocationLists: ['not bytes'] },
+    { revocationLists: list },
+    { revocationIssuers: [42] },
+    { distrust: [{ issuer: 'ab' }] },
+    { distrust: [{ issuer: 'ab', serial: 1 }] },
+    { distrust: [null] },
+    { distrust: 'ab:01' },
+  ]) {
+    assert.throws(() => node.createConfig(bad), TypeError, JSON.stringify(bad));
+  }
 });
 
 test('createConfig copies DER roots', () => {

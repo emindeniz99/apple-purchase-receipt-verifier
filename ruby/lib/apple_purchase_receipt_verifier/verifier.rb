@@ -45,14 +45,16 @@ module ApplePurchaseReceiptVerifier
     class << self
       # Compiles the wasm module on the first call in a process (about a
       # second; later calls reuse it), and makes one instance to prove the
-      # module and the roots are usable.
+      # module and the configuration are usable.
       #
       # @param config [Config]
       # @return [Verifier]
       # @raise [ArgumentError] `config` is not a {Config}, its roots are an
       #   empty list (a verifier with no roots would answer UNTRUSTED_CHAIN to
       #   everything and nobody would notice until production), or the
-      #   module refuses a root as a certificate
+      #   module refuses the configuration: a root that is not a
+      #   certificate, or a revocation setting (see {Config#initialize});
+      #   the message names the first problem and its index
       # @raise [AbiMismatchError] the module does not speak the ABI this
       #   wrapper binds
       # @raise [ModuleIntegrityError] the module does not match its SHA-256
@@ -71,11 +73,35 @@ module ApplePurchaseReceiptVerifier
     #   supplies its own
     def initialize(config, runtime: Runtime.shared)
       @clock_proc = config.clock
-      roots = config.roots.map { |root| [root].pack("m0") }
-      @pool = InstancePool.new(runtime, config.custom_roots? ? JSON.generate("roots" => roots) : "{}")
+      @pool = InstancePool.new(runtime, Wire.init_config(config))
+      state = @pool.init_state
+      @revocation_urls = state.revocation_urls
+      @revocation_valid_until_ms = state.revocation_valid_until_ms
       freeze
     rescue RootsRejected => e
-      raise ArgumentError, "the module refused config.roots: #{e.message}"
+      raise ArgumentError, "the module refused the configuration: #{e.message}"
+    end
+
+    # The URLs of the revocation lists this verifier expects, as the module
+    # states them: with Apple's roots, the lists of Apple Root CA, Apple Root
+    # CA - G3, WWDR G5 and WWDR G6; then the cRLDistributionPoints of added
+    # {Config#revocation_issuers}. Download these, with your own client and
+    # schedule, and pass the bytes as {Config#revocation_lists} to a new
+    # verifier.
+    #
+    # @return [Array<String>] frozen
+    attr_reader :revocation_urls
+
+    # The earliest `nextUpdate` among the revocation lists held for the
+    # issuers this verifier expects a list from. nil when any of them has no
+    # list held (none passed, or the list was ignored): live revocation is
+    # then not fully in force. A time in the past means a list is stale.
+    # Monitor both.
+    #
+    # @return [Time, nil] a new UTC Time on each call
+    def revocation_valid_until
+      ms = @revocation_valid_until_ms
+      ms.nil? ? nil : Time.at(Rational(ms, 1000), in: "UTC")
     end
 
     # Verifies a legacy PKCS#7 app receipt, given as the base64 string a

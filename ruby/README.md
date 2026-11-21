@@ -140,7 +140,9 @@ config = APRV::Config.new(
 verifier = APRV::Verifier.create(config)
 ```
 
-Leave out either keyword to keep its default. `Config.new` is the one way to
+Leave out either keyword to keep its default. Three more keywords,
+`revocation_lists:`, `revocation_issuers:` and `distrust:`, are described
+under [Revocation](#revocation); each defaults to empty. `Config.new` is the one way to
 build a `Config`. Two 0.7 spellings are gone in 0.8:
 `Config.builder.roots(...).clock(...).build`, which
 `Config.new(roots: ..., clock: ...)` replaces, and `Config.defaults`, which
@@ -445,7 +447,7 @@ Status codes it can produce:
 | verified, sandbox receipt on `PRODUCTION` | 21007 |
 | verified, production receipt on `SANDBOX` | 21008 |
 | `MALFORMED`, `TOO_LARGE` | 21002 |
-| `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE` | 21003 |
+| `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`, `INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE`, `CERTIFICATE_REVOKED` | 21003 |
 | `UNREADABLE_PAYLOAD`, `INTERNAL_ERROR` | 21009 |
 | verified, environment matches, but an in-app purchase does not decode | 21009 |
 
@@ -463,6 +465,92 @@ and are out of scope; `COMPARISON.md` at the repository root has the
 field-by-field fidelity table, including what `latest_receipt_info` and
 `pending_renewal_info` would need.
 
+## Revocation
+
+A verifier refuses a certificate that Apple has revoked, when it knows of
+the revocation. It knows from three sources, all checked inside the module
+with no network access:
+
+| Source | Who sets it | Default |
+|---|---|---|
+| the list built into the module | each release of this gem | always on; cannot be turned off |
+| `distrust:` | you | empty |
+| Apple's revocation lists (CRLs) | you download them and pass the bytes | none |
+
+A revoked certificate on the path fails the call with `CERTIFICATE_REVOKED`
+(21003 at the endpoint), whatever date the payload states: whoever holds a
+leaked key chooses that date. A missing or stale list never fails a call.
+
+```ruby
+config = APRV::Config.new(
+  revocation_lists: [crl_der],    # CRL files exactly as downloaded (DER), as binary Strings
+  revocation_issuers: [ca_der],   # optional: a CA that signs lists, in the forms roots: takes
+  distrust: [APRV::RevokedCertificate.new(issuer: issuer_id, serial: "7D3920094EBEF3F8EFCA6C10EA8E4303")]
+)
+```
+
+The gem downloads nothing and starts no thread or timer. Refresh on your
+own schedule, with your own HTTP client: download the lists the current
+verifier names, build a new verifier, and swap the reference.
+
+```ruby
+require "net/http"
+
+@verifier = APRV::Verifier.create(APRV::Config.new)
+
+def refresh_revocation
+  lists = @verifier.revocation_urls.filter_map do |url|
+    response = Net::HTTP.get_response(URI(url))
+    response.body if response.is_a?(Net::HTTPSuccess)
+  rescue StandardError
+    nil # a missing list fails nothing; revocation_valid_until shows it
+  end
+  # A list the module refuses raises ArgumentError here, and the old verifier keeps serving.
+  @verifier = APRV::Verifier.create(APRV::Config.new(revocation_lists: lists))
+end
+```
+
+- **Take the URLs from `revocation_urls`, never from Apple's PKI page.** The
+  page also links an old copy of Apple Root CA's list and a list signed
+  under a retired root name, which `Verifier.create` refuses, and a 2.3 MB
+  WWDR G1 list over the 1 MiB cap. With Apple's roots the URLs are the lists
+  of Apple Root CA, Apple Root CA - G3, WWDR G5 and WWDR G6. They are
+  `http://`: the module authenticates each list by its signature, not by
+  the transport.
+- **Monitor `revocation_valid_until`.** It is the earliest `nextUpdate` of
+  the lists held, as a UTC `Time`. `nil` means some issuer the verifier
+  expects a list from has none (none passed, or the list was ignored); a
+  time in the past means a list is stale. Alert on both. Apple reissues
+  WWDR G6's list daily.
+
+  ```ruby
+  until_time = verifier.revocation_valid_until
+  alert_ops("live revocation is not in force") if until_time.nil? || until_time < Time.now
+  ```
+- **`Verifier.create` raises `ArgumentError`** naming the first problem and
+  its index when a list is not a CRL, is over 1 MiB, is signed by no issuer
+  the verifier knows, or is older than the list this release was built
+  with; when there are more than 16 lists; when a `revocation_issuers:`
+  certificate does not chain to your roots; or when a `distrust:` entry is
+  malformed or there are more than 1,000. A genuine list in a form the
+  module does not support is ignored instead, and counts as missing. A
+  `revocation_issuers:` certificate that is itself revoked is set aside
+  with its own list, not refused: a path through it fails with
+  `CERTIFICATE_REVOKED`. `Config.new` itself checks only the types.
+- **`distrust:`** takes `APRV::RevokedCertificate` values or
+  `[issuer, serial]` pairs of Strings: `issuer` is the SHA-256, in hex, of
+  the issuing certificate's subject Name followed by its
+  subjectPublicKeyInfo, both as encoded in that certificate; `serial` is
+  the revoked certificate's serial number in hex. Either letter case. The
+  gem passes both strings to the module unchanged.
+- **With your own roots** `revocation_urls` is empty until you add
+  `revocation_issuers:`; it then names the lists those issuers may appear
+  on. The URL of a list an added issuer signs is written only in the
+  certificates it issues, so add it to your downloads by hand.
+
+The full rules are in
+[docs/design/revocation.md](../docs/design/revocation.md).
+
 ## Time
 
 Certificate validity is judged at the instant Apple signed, not now — so a
@@ -472,9 +560,11 @@ is the receipt's creation-date attribute (legacy path) or the JWS
 representable instant (such as `1e300`), the **configured clock** stands in.
 
 `clock:` on `Config` is read once per call, before the input is looked at, and
-its value is handed to the module. The module uses it for exactly two things:
-the chain-validity fallback described above, and the endpoint's `request_date`
-/ `_ms` / `_pst` triple. It never otherwise decides whether a payload
+its value is handed to the module. The module uses it for exactly three things:
+the chain-validity fallback described above, the endpoint's `request_date`
+/ `_ms` / `_pst` triple, and whether a revocation list holding a
+`certificateHold` entry for a certificate on the path is still fresh (a hold
+counts only until the list's `nextUpdate`). It never otherwise decides whether a payload
 verifies: injecting a clock to control `request_date`, or to work around skew,
 must not let you authenticate an expired chain, and cannot. A clock that
 raises, or answers anything but an Integer from 0 to `2**63 - 1`, makes that
@@ -547,8 +637,8 @@ end
 ```
 
 `reason.to_s` is the canonical cross-language token, with no mapping table
-anywhere. The vocabulary is closed by the cross-port contract: eight reasons
-in `Reason::ALL`, and a ninth would be a change to every implementation in
+anywhere. The vocabulary is closed by the cross-port contract: nine reasons
+in `Reason::ALL`, and a tenth would be a change to every implementation in
 one pull request.
 
 | Reason | When |
@@ -561,6 +651,7 @@ one pull request.
 | `INVALID_CERTIFICATE_PURPOSE` | a certificate on the chain is missing its Apple marker OID |
 | `UNREADABLE_PAYLOAD` | the chain and signature verified, but the signed content does not parse (`failure.cause` is nil) |
 | `INTERNAL_ERROR` | the library failed before it could decide — not the client's fault: alert and escalate, never retry |
+| `CERTIFICATE_REVOKED` | a certificate on the path is revoked: by the list built into the module, by `distrust:`, or by a list you passed — see [Revocation](#revocation) |
 
 **Order of the checks**, the same for both paths: base64/JWS structure →
 the creation date or `signedDate` alone, to pick the chain instant → the
@@ -574,10 +665,11 @@ parse was signed by a trusted signer, so it is `UNREADABLE_PAYLOAD`, not
 `MALFORMED`.
 
 **Misconfiguration is not a verification verdict.** `Verifier.create` raises
-`ArgumentError` for an empty root set, and for a root the module does not
-accept as a certificate; `Config.new` raises it for a `clock:` that does not
-respond to `#call`, or a `roots:` entry that is neither a certificate object
-nor a String; `verify_receipt_endpoint` raises it for an `environment`
+`ArgumentError` for an empty root set, for a root the module does not
+accept as a certificate, and for a revocation setting the module refuses;
+`Config.new` raises it for a `clock:` that does not respond to `#call`, a
+`roots:` entry that is neither a certificate object nor a String, or a
+revocation setting of the wrong type; `verify_receipt_endpoint` raises it for an `environment`
 that is not `Environment::PRODUCTION` or `Environment::SANDBOX`. You cannot
 catch a typo as though a receipt were forged.
 
@@ -597,9 +689,9 @@ request with it.
   the three Apple roots compiled into the module. The operating system's trust
   store is never consulted: the module cannot read a file, and this gem
   contains no certificate or trust-store code at all.
-- **No network.** No OCSP, no CRL, no AIA fetch, no root download. Revocation
-  is disabled by design, the same trade-off Apple's official libraries make
-  in offline mode.
+- **No network.** No OCSP, no AIA fetch, no root download, no CRL download.
+  Apple's revocation lists reach the module only as bytes you pass in
+  ([Revocation](#revocation)).
 - **Top-down chain walk.** Each certificate's signature is checked only with
   a key already vouched for by a pinned anchor, so an attacker's own key is
   never asked to validate anything before it is trusted.

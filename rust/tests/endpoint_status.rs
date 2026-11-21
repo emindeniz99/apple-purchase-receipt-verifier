@@ -136,10 +136,29 @@ fn each_failure_answers_the_status_of_its_reason() {
         Reason::InvalidSignature
         | Reason::UntrustedChain
         | Reason::InvalidCertificate
-        | Reason::InvalidCertificatePurpose => 21003,
+        | Reason::InvalidCertificatePurpose
+        | Reason::CertificateRevoked => 21003,
         Reason::UnreadablePayload | Reason::InternalError => 21009,
     };
-    let cases: [(Verifier, String, Reason); 7] = [
+    // The test PKI's receipt, its signer (serial 03) distrusted under the
+    // intermediate's issuer id.
+    let revoked = Verifier::new(
+        apple_purchase_receipt_verifier::Config::builder()
+            .roots([common::anchor("generated-0.7/revocation/root.der")])
+            .distrust([(
+                "a604eb835029c0019e7904b7c007eca2a68f799e9dcba0012fdd34660cbcd9fb",
+                "03",
+            )])
+            .clock(|| NOW)
+            .build()
+            .unwrap(),
+    );
+    let cases: [(Verifier, String, Reason); 8] = [
+        (
+            revoked,
+            b64("generated-0.7/revocation/receipt.der"),
+            Reason::CertificateRevoked,
+        ),
         (verifier(), "not base64!".to_owned(), Reason::Malformed),
         (verifier(), "AQIDBA==".to_owned(), Reason::Malformed),
         (verifier(), "A".repeat(3_145_729), Reason::TooLarge),

@@ -1,5 +1,8 @@
 package io.github.emindeniz99.applepurchasereceiptverifier;
 
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -37,11 +40,14 @@ public interface Verifier {
      * <p>The runtime probe ({@link Config.Builder#runtimeProbe(boolean)})
      * starts the engine and proves it can answer: the Endive engine loads
      * the compiled verifier module, creates one instance, calls its
-     * {@code init} with {@code config}'s roots and keeps that instance for
-     * the first call. With the probe off the first call pays for that
-     * instead (on Endive, a few hundred milliseconds for the first instance
-     * in a JVM), and a module that cannot run, or a root it refuses, answers
-     * {@link Reason#INTERNAL_ERROR} on every call.</p>
+     * {@code init} with {@code config}'s roots and revocation settings and
+     * keeps that instance for the first call. With the probe off the first
+     * call pays for that instead (on Endive, a few hundred milliseconds for
+     * the first instance in a JVM), a module that cannot run, or a
+     * configuration it refuses, answers {@link Reason#INTERNAL_ERROR} on
+     * every call, and {@link #revocationUrls()} and
+     * {@link #revocationValidUntil()} throw what {@code create} would have
+     * thrown.</p>
      *
      * @throws NullPointerException          if {@code config} is null
      * @throws IllegalArgumentException      if {@code config} has no roots,
@@ -49,7 +55,13 @@ public interface Verifier {
      *                                       everything; or, unless
      *                                       {@link Config#runtimeProbe()} is
      *                                       off, if the verifier module refuses
-     *                                       one of them
+     *                                       one of them or a revocation setting
+     *                                       (see
+     *                                       {@link Config.Builder#revocationLists},
+     *                                       {@link Config.Builder#revocationIssuers}
+     *                                       and {@link Config.Builder#distrust});
+     *                                       the message names the first problem
+     *                                       and its index
      * @throws IllegalStateException         if this artifact and the main
      *                                       {@code apple-purchase-receipt-verifier}
      *                                       artifact are both on the classpath;
@@ -109,4 +121,40 @@ public interface Verifier {
      * @throws NullPointerException if {@code environment} is null
      */
     String verifyReceiptEndpoint(Environment environment, @Nullable String requestJson);
+
+    /**
+     * Where the revocation lists this verifier can use are published, to
+     * download and pass to {@link Config.Builder#revocationLists}: the list
+     * URL of each built-in issuer that chains to the configured roots, then
+     * the http and https cRLDistributionPoints of the added issuers,
+     * without duplicates, in that order. With the default roots:
+     * {@code http://crl.apple.com/root.crl},
+     * {@code http://crl.apple.com/applerootcag3.crl},
+     * {@code http://crl.apple.com/wwdrg5.crl} and
+     * {@code http://crl.apple.com/wwdrg6.crl}. An added issuer's own list
+     * URL is not known here (Apple names it only on the certificates that
+     * issuer signs); fetch it as well. Unmodifiable. In this artifact the
+     * module states them, and nothing here reads a certificate.
+     *
+     * <p>The default, for a caller's own implementation, is empty.</p>
+     */
+    default List<String> revocationUrls() {
+        return Collections.emptyList();
+    }
+
+    /**
+     * The earliest {@code nextUpdate} among the lists held for the issuers
+     * this verifier expects lists from (the built-in issuers that chain to
+     * the configured roots, and the added issuers), or null when any of
+     * them has no list held (none passed, or the one passed was ignored).
+     * Null means live revocation is not fully in force; an instant in the
+     * past means a list is stale. Neither fails a call: alert on both, and
+     * build a new verifier with fresh lists. In this artifact the module
+     * states it.
+     *
+     * <p>The default, for a caller's own implementation, is null.</p>
+     */
+    default @Nullable Instant revocationValidUntil() {
+        return null;
+    }
 }

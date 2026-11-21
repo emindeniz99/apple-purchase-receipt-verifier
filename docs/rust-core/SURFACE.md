@@ -104,26 +104,38 @@ R41).
   setup; every case fails closed (DECISIONS.md R39).
 - **Startup failures** stay where 0.7 puts them: an empty root set is
   refused by `Verifier.create`; bundled roots that do not parse fail
-  `Config.defaults()`. A Wasm host adds two of its own at `create`: an ABI
-  mismatch, and a root `init` refuses.
+  `Config.defaults()`. A revocation setting the core refuses (a list
+  that is not Apple's or is older than the built-in one, an added issuer
+  that does not qualify, a malformed `distrust` entry) fails
+  `Verifier.create` too. A Wasm host adds two of its own at `create`: an
+  ABI mismatch, and a configuration `init` refuses.
 - **The verify methods never throw for any input.** A null or empty input
   string is `MALFORMED`; a null `Config` or `Environment` is the
   language's programmer error. A trap or a server failure is
   `INTERNAL_ERROR` (21009 at the endpoint), with the category kept in the
   cause (ARCHITECTURE.md §4).
 - **`Config` is exactly 0.7's** in every package, the Java `-wasm`
-  artifact included. The engine of that artifact is a second argument to
-  `Verifier.create`, never a `Config` field (DECISIONS.md R25).
+  artifact included, plus the three revocation settings of 0.14.0
+  (`revocationLists`, `revocationIssuers`, `distrust`;
+  [revocation.md][revocation] §4, §9). The engine of that artifact is a
+  second argument to `Verifier.create`, never a `Config` field
+  (DECISIONS.md R25). Each `Verifier` also reports `revocationUrls` and
+  `revocationValidUntil`, read from `init`'s answer, never computed by
+  the wrapper.
 
-## 3. The eight reasons
+## 3. The nine reasons
 
 `MALFORMED`, `TOO_LARGE`, `INVALID_SIGNATURE`, `UNTRUSTED_CHAIN`,
-`INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE`, `UNREADABLE_PAYLOAD`
-and `INTERNAL_ERROR`. Their meanings, the rule for which failure a parse
-problem gets, and the endpoint's status table (0, 21002, 21003, 21007,
-21008, 21009) are in [0.7-api.md][api07], "Result" and §3. `Reason.java`
-carries the same text as Javadoc. No new reason is added in 0.8.0; a
-revoked certificate, if revocation ever lands, is `INVALID_CERTIFICATE`.
+`INVALID_CERTIFICATE`, `INVALID_CERTIFICATE_PURPOSE`, `UNREADABLE_PAYLOAD`,
+`INTERNAL_ERROR` and, since 0.14.0, `CERTIFICATE_REVOKED`. Their meanings,
+the rule for which failure a parse problem gets, and the endpoint's status
+table (0, 21002, 21003, 21007, 21008, 21009) are in [0.7-api.md][api07],
+"Result" and §3. `Reason.java` carries the same text as Javadoc.
+`CERTIFICATE_REVOKED` is appended last in every package, travels as that
+string on the wire, and answers 21003 at the endpoint; when it is given
+and why are in [revocation.md][revocation] §3 (DECISIONS.md R47). 0.8.0
+added no reason; until 0.14.0 this section said a revoked certificate
+would be `INVALID_CERTIFICATE`, which R47 reversed.
 
 ## 4. Payloads and the canonical JSON
 
@@ -179,11 +191,15 @@ and the module's answer, its own size refusal, is sent with HTTP 413,
 the status Apple's endpoint gives such a body ([aprv-server §1][server];
 DECISIONS.md R34, amended 2026-10-02; R42).
 
-## 6. The contract: `fixtures/cases.json` schema v2
+## 6. The contract: `fixtures/cases.json` schema v3
 
 - Every case is validated by `fixtures/cases.schema.json` and is one of
-  four operations: `verifyReceipt`, `verifySignedData`,
-  `verifyReceiptEndpoint` and `decodeBase64`.
+  five operations: `verifyReceipt`, `verifySignedData`,
+  `verifyReceiptEndpoint`, `decodeBase64` and, since schema v3 (0.14.0),
+  `buildConfig`, which builds a configuration with revocation settings
+  and checks that it is refused, or the two values the verifier reports
+  ([revocation.md][revocation] §10). A verify or endpoint case may carry
+  a `revocation` object beside its roots.
 - A case's `config.trustedRoots` is either the defaults or registered
   trust-anchor fixtures; its top-level `clock.now`, when present, is the
   instant the `Config` clock answers. A Wasm host expresses both through the
@@ -213,12 +229,14 @@ DECISIONS.md R34, amended 2026-10-02; R42).
   running them too, a case both pass is where the two implementations
   agree (DECISIONS.md R33).
 - **The C ABI** runs them through its C++ and ctypes harnesses, and
-  `aprv-server` through its HTTP routes and its CLI.
+  `aprv-server` through its HTTP routes and its CLI. The C ABI has no
+  way to pass revocation settings (it gained only the reason code 17), so
+  its harnesses can run only the cases that set none.
 - **ABI tests.** The ABI tests of the canonical-ABI final round, plus
   each facade's own, run on every host ([canonical ABI final][cabifinal];
   ARCHITECTURE.md §9).
 - **Reason parity.** Each wrapper's test lists its reason names and
-  compares them with the surface's eight.
+  compares them with the surface's nine.
 - **The corpus** (1,179 rows plus 5,000 mutants) runs on every change
   through a trap-on-anything host and through the built Endive jar, byte
   for byte against native (ARCHITECTURE.md §9).
@@ -300,6 +318,7 @@ agrees. The one exception by design is the Java implementation, which is
 a second implementation, not a wrapper (DECISIONS.md R33).
 
 [api07]: ../design/0.7-api.md
+[revocation]: ../design/revocation.md
 [abi]: ../evidence/2026-09-26-wasm-abi-v1.md
 [cabi]: ../evidence/2026-09-29-canonical-abi-spike.md
 [cabifinal]: ../evidence/2026-09-29-canonical-abi-final.md

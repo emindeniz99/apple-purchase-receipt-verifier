@@ -21,9 +21,14 @@ import (
 
 const now uint64 = 1_722_945_600_000 // 2024-08-06T12:00:00Z
 
-// initOK is init's accepting answer: the most bytes of one input the module
-// needs, one over the receipt and endpoint-body cap (DECISIONS.md R42).
-const initOK = `{"ok":true,"max_input_bytes":3145729}`
+// initOK is init's accepting answer for the built-in Apple roots: the most
+// bytes of one input the module needs, one over the receipt and
+// endpoint-body cap (DECISIONS.md R42), then the URLs of the four Apple
+// lists the verifier expects and null, since no list was passed.
+const initOK = `{"ok":true,"max_input_bytes":3145729,` +
+	`"revocation_urls":["http://crl.apple.com/root.crl","http://crl.apple.com/applerootcag3.crl",` +
+	`"http://crl.apple.com/wwdrg5.crl","http://crl.apple.com/wwdrg6.crl"],` +
+	`"revocation_valid_until_ms":null}`
 
 func testModule(t testing.TB) *module {
 	t.Helper()
@@ -80,31 +85,80 @@ func TestAnInstanceKeepsTheInputLengthItsInitStated(t *testing.T) {
 }
 
 func TestInitAnswerWithoutTheInputLengthIsUnusable(t *testing.T) {
-	if n, err := initAnswer(initOK); err != nil || n != 3_145_729 {
+	n, state, err := initAnswer(initOK)
+	if err != nil || n != 3_145_729 {
 		t.Fatalf("initAnswer(%s) = %d, %v", initOK, n, err)
+	}
+	if len(state.RevocationURLs) != 4 || state.RevocationURLs[0] != "http://crl.apple.com/root.crl" || state.RevocationValidUntilMs != nil {
+		t.Fatalf("initAnswer(%s) state = %+v", initOK, state)
 	}
 	refusal := `{"ok":false,"message":"not a certificate"}`
 	var refused *InitRefusedError
-	if _, err := initAnswer(refusal); !errors.As(err, &refused) || refused.Answer != refusal {
+	if _, _, err := initAnswer(refusal); !errors.As(err, &refused) || refused.Answer != refusal {
 		t.Fatalf("a refusal: %v, want *InitRefusedError", err)
 	}
-	// An accepting answer without a positive integer is a module of another
-	// ABI version: no cap of this package's own stands in for it.
+	// An accepting answer without a positive integer, or without the two
+	// revocation members, is a module of another ABI version: no cap or
+	// state of this package's own stands in for it.
+	const urls = `,"revocation_urls":[]`
+	const until = `,"revocation_valid_until_ms":null`
 	for _, answer := range []string{
 		`{"ok":true}`,
-		`{"ok":true,"max_input_bytes":0}`,
-		`{"ok":true,"max_input_bytes":-1}`,
-		`{"ok":true,"max_input_bytes":1.5}`,
-		`{"ok":true,"max_input_bytes":"3145729"}`,
-		`{"ok":true,"max_input_bytes":null}`,
-		`{"ok":true,"max_input_bytes":1e300}`,
-		`{"max_input_bytes":3145729}`,
+		`{"ok":true,"max_input_bytes":0` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":-1` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":1.5` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":"3145729"` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":null` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":1e300` + urls + until + `}`,
+		`{"max_input_bytes":3145729` + urls + until + `}`,
+		`{"ok":true,"max_input_bytes":3145729}`,
+		`{"ok":true,"max_input_bytes":3145729` + urls + `}`,
+		`{"ok":true,"max_input_bytes":3145729` + until + `}`,
+		`{"ok":true,"max_input_bytes":3145729,"revocation_urls":null` + until + `}`,
+		`{"ok":true,"max_input_bytes":3145729,"revocation_urls":[1]` + until + `}`,
+		`{"ok":true,"max_input_bytes":3145729,"revocation_urls":"http://x"` + until + `}`,
+		`{"ok":true,"max_input_bytes":3145729` + urls + `,"revocation_valid_until_ms":1.5}`,
+		`{"ok":true,"max_input_bytes":3145729` + urls + `,"revocation_valid_until_ms":"1"}`,
+		`{"ok":true,"max_input_bytes":3145729` + urls + `,"revocation_valid_until_ms":1e3}`,
+		`{"ok":true,"max_input_bytes":3145729` + urls + `,"revocation_valid_until_ms":9223372036854775808}`,
 		`not json`,
 	} {
 		var result *ResultError
-		if _, err := initAnswer(answer); !errors.As(err, &result) || result.Fn != "init" {
+		if _, _, err := initAnswer(answer); !errors.As(err, &result) || result.Fn != "init" {
 			t.Errorf("initAnswer(%s): %v, want a *ResultError for init", answer, err)
 		}
+	}
+}
+
+func TestInitAnswerGivesTheRevocationStateAsStated(t *testing.T) {
+	answer := `{"ok":true,"max_input_bytes":3145729,"revocation_urls":["https://b","http://a"],` +
+		`"revocation_valid_until_ms":1795046400000}`
+	_, state, err := initAnswer(answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.RevocationURLs) != 2 || state.RevocationURLs[0] != "https://b" || state.RevocationURLs[1] != "http://a" {
+		t.Errorf("urls %q, want the module's order", state.RevocationURLs)
+	}
+	if state.RevocationValidUntilMs == nil || *state.RevocationValidUntilMs != 1_795_046_400_000 {
+		t.Errorf("valid until %v", state.RevocationValidUntilMs)
+	}
+	// A date in the past, even before 1970, is the module's to state: a
+	// stale list, not an unreadable answer.
+	_, state, err = initAnswer(`{"ok":true,"max_input_bytes":1,"revocation_urls":[],"revocation_valid_until_ms":-1}`)
+	if err != nil || state.RevocationValidUntilMs == nil || *state.RevocationValidUntilMs != -1 || state.RevocationURLs == nil {
+		t.Errorf("a past date: %+v, %v", state, err)
+	}
+}
+
+func TestAPoolStatesTheRevocationStateOfItsConfiguration(t *testing.T) {
+	p, err := newPool(testModule(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := p.State()
+	if len(state.RevocationURLs) != 4 || state.RevocationValidUntilMs != nil {
+		t.Fatalf("the built-in roots: %+v, want the four Apple list URLs and no date", state)
 	}
 }
 

@@ -99,6 +99,10 @@ class InputSizeBoundsTest {
                 () -> JwsCore.verify(
                         headerJws(nestedJson(1000)),
                         AppleTrust.anchors(Collections.singleton(root("jws-root.der"))),
+                        Revocation.build(
+                                Collections.<X509Certificate>emptyList(),
+                                Config.defaults(),
+                                BuiltInRevocations.apple()),
                         System.currentTimeMillis()));
         assertEquals(Reason.MALFORMED, thrown.reason());
         assertTrue(

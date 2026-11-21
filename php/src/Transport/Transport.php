@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace EminDeniz99\ApplePurchaseReceiptVerifier\Transport;
 
+use EminDeniz99\ApplePurchaseReceiptVerifier\Config;
 use InvalidArgumentException;
 use LogicException;
 use RuntimeException;
@@ -22,15 +23,17 @@ interface Transport
 {
     /**
      * Checks that `aprv` is reachable and speaks this package's ABI, reads
-     * the `limits.max_input_bytes` it states, and checks that it will run
-     * with `$roots`. Called once, by `Verifier::create()`.
+     * the `limits.max_input_bytes` it states, checks that it will run with
+     * the roots and revocation settings of `$config`, and returns what the
+     * module answered about revocation for them. Called once, by
+     * `Verifier::create()`, which has checked each setting's type.
      *
-     * @param list<string>|null $roots DER or PEM bytes; null means the module's built-in Apple roots
-     *
-     * @throws InvalidArgumentException when the module refuses the roots, or the server refuses the token
-     * @throws RuntimeException when the binary or the server cannot be used, speaks another ABI or states no input length
+     * @throws InvalidArgumentException when the module refuses the configuration, the server
+     *         refuses the token, or the server runs other roots or revocation settings
+     * @throws RuntimeException when the binary or the server cannot be used, speaks another ABI
+     *         or states no input length or revocation state
      */
-    public function open(?array $roots): void;
+    public function open(Config $config): RevocationState;
 
     /**
      * Runs one operation.

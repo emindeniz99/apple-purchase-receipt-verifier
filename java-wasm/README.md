@@ -196,8 +196,9 @@ the source fails with a message that says so. Use `url()`, or
 For every source but `url()`, this JVM runs `aprv serve --managed` as a
 child process and supervises it:
 
-- A fresh 256-bit token and your roots go to the child on its standard
-  input, never on its command line or in its environment. The child
+- A fresh 256-bit token and your configuration (roots and revocation
+  settings, as `init` takes them) go to the child on its standard input,
+  never on its command line or in its environment. The child
   listens on `127.0.0.1` only, on a port it picks and reports.
 - A child that dies is started again by the next call. One that died 10
   times within a minute is not; calls answer `INTERNAL_ERROR` until you
@@ -227,23 +228,45 @@ them apart by `getClass().getName()` in logs.
 `Config.runtimeProbe()` is on by default. For this artifact it means that
 `Verifier.create` starts the engine before it returns: Endive loads the
 compiled module, creates one instance and calls its `init` with your
-roots, and keeps that instance for the first call. `create` then throws
-`IllegalStateException` if the module cannot run on this JVM or does not
-have the interface this library binds, and `IllegalArgumentException` if
-the module refuses one of your roots.
+roots and revocation settings, and keeps that instance for the first
+call. `create` then throws `IllegalStateException` if the module cannot
+run on this JVM or does not have the interface this library binds, and
+`IllegalArgumentException` if the module refuses one of your roots, a
+revocation list or issuer, or a distrust entry.
 
 On the server engine, the probe resolves the sources: `create` starts
 the child (or reaches the `url()` server), asks it for `/v1/info`, and
 refuses a server that trusts other roots than your `Config`, since it
-would answer for another trust anchor. A root the module refuses stops
-the child at start, and `create` throws `IllegalArgumentException` with
-the module's reason, as on Endive. On Java 8 the default
+would answer for another trust anchor, or runs other revocation settings:
+the SHA-256 of each list (in any order) and of each added issuer's DER
+(in order) and the distrust entries as written must be your `Config`'s.
+A `url()` server is configured by whoever runs it, with
+`--revocation-list`, `--revocation-issuer` and `--distrust`. A
+configuration the module refuses stops the child at start, and `create`
+throws `IllegalArgumentException` with the module's reason, as on
+Endive. On Java 8 the default
 `Verifier.create(config)` therefore returns a verifier whose server is
 already running.
 
 With the probe off, `create` does none of that and the first call pays
-for it; a module that cannot run, a root it refuses, or a server source
-that does not work then answers `INTERNAL_ERROR` on every call.
+for it; a module that cannot run, a configuration it refuses, or a server
+source that does not work then answers `INTERNAL_ERROR` on every call,
+and `revocationUrls()` and `revocationValidUntil()` throw what `create`
+would have thrown.
+
+## Revocation
+
+The API is the main artifact's (docs/design/revocation.md): the
+`Config.Builder` settings `revocationLists`, `revocationIssuers` and
+`distrust`, the `Verifier` methods `revocationUrls()` and
+`revocationValidUntil()`, and `Reason.CERTIFICATE_REVOKED` (21003 from
+the endpoint). Here the module decides everything: the lists, issuers
+and distrust entries go to its `init` as they are (on the server engine,
+through the child's handshake), and the two reported values are what
+`init` answered (on the server engine, what `GET /v1/info` states of it).
+Nothing in this jar reads a certificate or a list. To use fresh lists,
+create a new verifier and swap it in; on the server engine that starts a
+new child (or needs a `url()` server restarted with the new lists).
 
 ## Differences from the main artifact
 

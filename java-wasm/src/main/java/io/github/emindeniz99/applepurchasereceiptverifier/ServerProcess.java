@@ -21,7 +21,8 @@ import org.jspecify.annotations.Nullable;
  * {@code aprv serve --managed} as a supervised child (ARCHITECTURE.md §7.8,
  * THREAT-MODEL.md §6). The handshake: a fresh 256-bit {@link SecureRandom}
  * token as the first stdin line (never in argv, which {@code /proc} shows
- * to every user, nor in the environment), the roots as the second, and the
+ * to every user, nor in the environment), the configuration (roots and
+ * revocation settings, {@code init}'s JSON) as the second, and the
  * child answers {@code APRV_LISTEN=127.0.0.1:<port>} on stdout. stdin then
  * stays open: its EOF, which also happens when this JVM dies by
  * {@code kill -9}, makes the child exit.
@@ -40,7 +41,7 @@ final class ServerProcess {
 
     private final Path executable;
     private final @Nullable String pinnedSha256;
-    private final String rootsLine;
+    private final String configLine;
     private final SecureRandom random = new SecureRandom();
     private final Deque<Long> recentStarts = new ArrayDeque<>();
     private final AtomicInteger restarts = new AtomicInteger();
@@ -55,13 +56,13 @@ final class ServerProcess {
      * @param executable the binary
      * @param pinnedSha256 its expected SHA-256, checked before every start, or
      *     {@code null} for {@link ServerSource#executable}, which pins nothing
-     * @param rootsLine the second handshake line: {@code {}} or
-     *     {@code {"roots":[...]}}
+     * @param configLine the second handshake line: {@code {}} or an object
+     *     of {@code init}'s members ({@link InitConfig#json})
      */
-    ServerProcess(Path executable, @Nullable String pinnedSha256, String rootsLine) {
+    ServerProcess(Path executable, @Nullable String pinnedSha256, String configLine) {
         this.executable = executable;
         this.pinnedSha256 = pinnedSha256;
-        this.rootsLine = rootsLine;
+        this.configLine = configLine;
     }
 
     /** The running child's address, starting it first if it is not running. */
@@ -160,7 +161,8 @@ final class ServerProcess {
         String line;
         try {
             OutputStream stdin = child.getOutputStream();
-            stdin.write((token + "\n" + rootsLine + "\n").getBytes(StandardCharsets.US_ASCII));
+            // UTF-8: a distrust entry is written as given, and the child reads the line as UTF-8.
+            stdin.write((token + "\n" + configLine + "\n").getBytes(StandardCharsets.UTF_8));
             stdin.flush(); // stdin stays open: its EOF tells the child this JVM is gone
             line = firstLine.poll(PORT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (IOException | InterruptedException e) {
@@ -172,7 +174,7 @@ final class ServerProcess {
                     "aprv-server did not take the handshake: " + e + exitAndStderr(child, stderr), e);
         }
         if (line == null || !line.startsWith(LISTEN)) {
-            InitRefused refused = rootsRefusal(child, stderrReader, stderr);
+            InitRefused refused = configRefusal(child, stderrReader, stderr);
             if (refused != null) {
                 throw refused;
             }
@@ -242,14 +244,14 @@ final class ServerProcess {
         }
     }
 
-    private static final String REFUSED = "the component refused the roots configuration: ";
+    private static final String REFUSED = "the component refused the configuration: ";
 
     /**
-     * The child exited 2 because the module's {@code init} refused the roots
-     * of the handshake: the caller's mistake, as on Endive, not a process
-     * failure. Null for any other exit.
+     * The child exited 2 because the module's {@code init} refused the
+     * configuration of the handshake: the caller's mistake, as on Endive,
+     * not a process failure. Null for any other exit.
      */
-    private static @Nullable InitRefused rootsRefusal(Process child, Thread stderrReader, StderrTail stderr) {
+    private static @Nullable InitRefused configRefusal(Process child, Thread stderrReader, StderrTail stderr) {
         try {
             if (!child.waitFor(2, TimeUnit.SECONDS) || child.exitValue() != 2) {
                 return null;
@@ -259,11 +261,11 @@ final class ServerProcess {
             Thread.currentThread().interrupt();
             return null;
         }
-        return rootsRefusal(stderr.tail());
+        return configRefusal(stderr.tail());
     }
 
-    /** The refusal in the child's stderr, {@code aprv: ... refused the roots configuration: <init answer>}. */
-    static @Nullable InitRefused rootsRefusal(String stderr) {
+    /** The refusal in the child's stderr, {@code aprv: the component refused the configuration: <init answer>}. */
+    static @Nullable InitRefused configRefusal(String stderr) {
         int at = stderr.indexOf(REFUSED);
         if (at < 0) {
             return null;

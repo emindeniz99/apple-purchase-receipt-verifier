@@ -66,7 +66,7 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 	verifiers := map[string]*applereceipt.Verifier{}
 	var jobs []job
 	for _, c := range file.Cases {
-		if c.Operation == "decodeBase64" {
+		if c.Operation == "decodeBase64" || c.Operation == "buildConfig" {
 			continue
 		}
 		clock := c.Clock
@@ -75,7 +75,11 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 		}
 		// One Verifier per distinct configuration, shared by every case that
 		// uses it and so by every goroutine.
-		key := c.Config.TrustedRoots.Source + "|" + strings.Join(c.Config.TrustedRoots.Fixtures, ",") + "|" + clock.Now
+		revocation, err := json.Marshal(c.Config.Revocation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key := c.Config.TrustedRoots.Source + "|" + strings.Join(c.Config.TrustedRoots.Fixtures, ",") + "|" + string(revocation) + "|" + clock.Now
 		if verifiers[key] == nil {
 			verifiers[key] = buildVerifier(t, buildConfig(t, dir, file.Fixtures, c.Config, clock))
 		}

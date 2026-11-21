@@ -42,8 +42,8 @@ final class Cases {
     static synchronized JsonNode document() throws Exception {
         if (document == null) {
             JsonNode read = MAPPER.readTree(FIXTURES.resolve(CASES).toFile());
-            if (read.get("schemaVersion").asInt() != 2) {
-                throw new IllegalStateException(CASES + " is not schema version 2");
+            if (read.get("schemaVersion").asInt() != 3) {
+                throw new IllegalStateException(CASES + " is not schema version 3");
             }
             document = read;
         }
@@ -97,9 +97,16 @@ final class Cases {
         return decoded;
     }
 
-    /** The case's roots, and a clock fixed at {@code clock.now} when it pins one. */
+    /**
+     * The case's roots and revocation settings (a buildConfig case's
+     * {@code input}, any other case's {@code config}), and a clock fixed at
+     * {@code clock.now} when it pins one. Lists and issuers are fixture ids;
+     * distrust entries pass as written.
+     */
     static Config config(JsonNode kase) throws Exception {
-        JsonNode roots = kase.get("config").get("trustedRoots");
+        JsonNode settings =
+                "buildConfig".equals(kase.get("operation").asText()) ? kase.get("input") : kase.get("config");
+        JsonNode roots = settings.get("trustedRoots");
         Config.Builder builder = Config.builder();
         String source = roots.get("source").asText();
         if ("fixtures".equals(source)) {
@@ -109,6 +116,27 @@ final class Cases {
         }
         if (kase.has("clock")) {
             builder.clock(Clock.fixed(Instant.parse(kase.get("clock").get("now").asText()), ZoneOffset.UTC));
+        }
+        JsonNode revocation = settings.get("revocation");
+        if (revocation != null) {
+            if (revocation.has("lists")) {
+                List<byte[]> lists = new ArrayList<>();
+                for (JsonNode id : revocation.get("lists")) {
+                    lists.add(fixtureBytes(id.asText()));
+                }
+                builder.revocationLists(lists);
+            }
+            if (revocation.has("issuers")) {
+                builder.revocationIssuers(roots(revocation.get("issuers")));
+            }
+            if (revocation.has("distrust")) {
+                List<RevokedCertificate> distrust = new ArrayList<>();
+                for (JsonNode entry : revocation.get("distrust")) {
+                    distrust.add(new RevokedCertificate(
+                            entry.get("issuer").asText(), entry.get("serial").asText()));
+                }
+                builder.distrust(distrust);
+            }
         }
         return builder.build();
     }

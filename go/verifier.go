@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/emindeniz99/apple-purchase-receipt-verifier/go/internal/host"
@@ -34,6 +35,8 @@ import (
 type Verifier struct {
 	pool  *host.Pool
 	clock func() int64
+	// revocation is what init answered for the configuration.
+	revocation host.InitState
 }
 
 // NewVerifier builds a Verifier from config.
@@ -46,17 +49,49 @@ type Verifier struct {
 //
 // The first Verifier of a process compiles the module, which takes about a
 // second; later ones take a few milliseconds. NewVerifier also returns a
-// plain error when the module refuses a trust anchor (one that is not a
-// certificate) or is not the module this package binds.
+// plain error when the module refuses the configuration (a trust anchor
+// that is not a certificate, or a revocation setting it refuses, see
+// ConfigOptions; the message names the first problem and its index) or is
+// not the module this package binds.
 func NewVerifier(config *Config) (*Verifier, error) {
 	if err := checkConfig(config); err != nil {
 		return nil, err
 	}
-	pool, err := host.NewPool(initConfig(config.roots, config.builtin))
+	pool, err := host.NewPool(initConfig(config))
 	if err != nil {
 		return nil, fmt.Errorf("applereceipt: %w", err)
 	}
-	return &Verifier{pool: pool, clock: config.clock}, nil
+	return newVerifier(pool, config), nil
+}
+
+func newVerifier(pool *host.Pool, config *Config) *Verifier {
+	return &Verifier{pool: pool, clock: config.clock, revocation: pool.State()}
+}
+
+// RevocationURLs is the URLs of the revocation lists this Verifier expects,
+// as the module states them: with Apple's roots, the lists of Apple Root
+// CA, Apple Root CA - G3, WWDR G5 and WWDR G6; then the
+// cRLDistributionPoints of added RevocationIssuers. Download these, with
+// your own client and schedule, and pass the bytes as RevocationLists to a
+// new Verifier. A fresh copy; empty, never nil, for a Verifier made by
+// NewVerifier.
+func (v *Verifier) RevocationURLs() []string {
+	if v == nil {
+		return nil
+	}
+	return append([]string{}, v.revocation.RevocationURLs...)
+}
+
+// RevocationValidUntil is the earliest nextUpdate among the revocation
+// lists held for the issuers this Verifier expects a list from, in UTC.
+// ok is false when any of them has no list held (none passed, or the list
+// was ignored): live revocation is then not fully in force. A time in the
+// past means a list is stale. Monitor both.
+func (v *Verifier) RevocationValidUntil() (until time.Time, ok bool) {
+	if v == nil || v.revocation.RevocationValidUntilMs == nil {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(*v.revocation.RevocationValidUntilMs).UTC(), true
 }
 
 // checkConfig is the caller-misuse half of NewVerifier: the mistakes that
@@ -70,6 +105,9 @@ func checkConfig(config *Config) error {
 	}
 	if slices.Contains(config.roots, nil) {
 		return errors.New("applereceipt: config has a nil trust anchor")
+	}
+	if slices.Contains(config.revocationIssuers, nil) {
+		return errors.New("applereceipt: config has a nil revocation issuer")
 	}
 	return nil
 }
@@ -210,7 +248,7 @@ func unreadableAnswer(cause error) *Failure {
 // readResult reads the envelope of an answer: a failure becomes a
 // *Failure, a success yields the payload's JSON and the environment beside
 // it (nil for null). An answer that is not in the wire's shape, or names a
-// reason outside the eight or an environment outside the two, is unusable
+// reason outside the nine or an environment outside the two, is unusable
 // and therefore INTERNAL_ERROR: this never guesses at what a module meant.
 func readResult(answer string) (payload json.RawMessage, environment *Environment, err error) {
 	var wire struct {
@@ -248,7 +286,7 @@ func readResult(answer string) (payload json.RawMessage, environment *Environmen
 	}
 	reason := Reason(*wire.Reason)
 	if !slices.Contains(AllReasons(), reason) {
-		return nil, nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the eight", *wire.Reason))
+		return nil, nil, unreadableAnswer(fmt.Errorf("the reason %q is not one of the nine", *wire.Reason))
 	}
 	message := ""
 	if wire.Message != nil {
