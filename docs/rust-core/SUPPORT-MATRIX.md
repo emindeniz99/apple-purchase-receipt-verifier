@@ -22,7 +22,7 @@ Owner, 2026-09-28 (DECISIONS.md R30).
 | Node | 20 | 20 | unchanged |
 | Go | as today (1.22 in `go.mod`) | 1.22 | kept if the wazero release we need builds on it; wazero 1.12.0 fetched a Go 1.25 toolchain in the spikes ([rust-core spikes][spikes], Method), so Phase 4 checks and raises the floor only if it must |
 | PHP | 8.2 | 8.2 | unchanged |
-| Rust crate | the core's `rust-version` | 1.85.0 | the workspace's; `wasmtime` 50.0.1 in the server declares MSRV 1.97 ([aprv-server][server]), which binds only the server |
+| Rust crate | the core's `rust-version` | 1.85.0 | the workspace's; `wasmtime` 50.0.2 in the server declares MSRV 1.97 ([aprv-server][server]), which binds only the server |
 
 **Java 8 in CI.** Temurin's Java 8 builds end in late 2026 (0.7-api.md,
 "The other ports"). The `java-runtime-8` leg, which runs the server engine
