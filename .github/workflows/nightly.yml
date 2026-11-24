@@ -232,7 +232,7 @@ jobs:
             sudo apt-get install -y qemu-user-static
           fi
           docker run --rm --platform linux/s390x \
-            eclipse-temurin:21-jre-noble@sha256:0c324fbe2e1455c3159184717440f3b52906ef82a39c4a6efc9edb401d31971a \
+            eclipse-temurin:21-jre-noble@sha256:0d57a8e90c2bb844c5a8e1b2b71e11eff06dad7edcfd803cd21ed4ae203b2515 \
             sh -c 'uname -m && java -XshowSettings:properties -version 2>&1 | grep sun.cpu.endian'
       # Surefire starts the test JVM with absolute paths into the checkout,
       # ~/.m2 and the runner's temporary directory, and talks to it over
@@ -249,7 +249,7 @@ jobs:
             --user "$(id -u):$(id -g)" -e HOME="$HOME" \
             -v "$HOME/.m2:$HOME/.m2" -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP:$RUNNER_TEMP" \
             -w "$PWD" \
-            eclipse-temurin:21-jre-noble@sha256:0c324fbe2e1455c3159184717440f3b52906ef82a39c4a6efc9edb401d31971a \
+            eclipse-temurin:21-jre-noble@sha256:0d57a8e90c2bb844c5a8e1b2b71e11eff06dad7edcfd803cd21ed4ae203b2515 \
             java "$@"
           SH
           chmod +x "$RUNNER_TEMP/java-s390x/bin/java"
