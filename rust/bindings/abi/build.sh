@@ -118,7 +118,12 @@ if [[ -n "${RUSTUP_HOME:-}" ]]; then REMAP+=("--remap-path-prefix=$RUSTUP_HOME=/
 # The flags of every measured module (the canonical-ABI final round): the
 # reactor start file and its `_initialize`, wasi-libc's four emulation
 # libraries that OpenSSL's no-asm build needs, and the C file above.
+# link-self-contained=no keeps the crt and libc wasi-sdk's: without it
+# rustc adds its own bundled copies too, and from Rust 1.100 that includes
+# its crt1-reactor.o, a second `_initialize` the link refuses
+# (rust/openssl/CI-NOTES.md 16 already gives this flag).
 FLAGS=(
+  -C link-self-contained=no
   -L "native=$LIBDIR"
   -l static=wasi-emulated-signal
   -l static=wasi-emulated-process-clocks
