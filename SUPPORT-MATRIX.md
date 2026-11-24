@@ -197,7 +197,7 @@ Rust supports the current stable only.
 | Line | Status | CI |
 |---|---|---|
 | 1.85.0 | floor (`rust-version`) | `rust` |
-| 1.99.1 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
+| 1.100.0 | the pinned toolchain that builds `aprv.wasm` and `aprv-server` (`rust/rust-toolchain.toml`) | `rust-wasm`, `rust-wasm-checks`, `aprv-server` |
 | stable | active | `rust`, `rust-lint`, `rust-supply-chain`, `rust-fuzz` (nightly), `smoke-crates` (held with crates.io) |
 | beta | next stable | `rust` |
 

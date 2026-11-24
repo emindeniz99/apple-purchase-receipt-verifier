@@ -31,7 +31,7 @@ rust/bindings/abi/build.sh "$OUT"
 wasi-sdk (34.0), wasm-tools (1.263.0), wit-bindgen (0.63.0) and the
 OpenSSL 4.0.3 source, builds OpenSSL for `wasm32-wasip1`, and prints the
 variables `build.sh` reads. The Rust compiler is the one
-`rust/rust-toolchain.toml` pins (1.99.1, with the `wasm32-wasip1`
+`rust/rust-toolchain.toml` pins (1.100.0, with the `wasm32-wasip1`
 target); the released module's hash depends on it. `build.sh` writes
 `aprv.wasm`, `aprv.component.wasm`, `aprv.wit` and `SHA256SUMS` into
 `$OUT`, and fails when the module imports anything but `random-get`,
