@@ -65,8 +65,12 @@ export const PATHSPECS = [
   ':(glob).github/actions/*/action.yml',
 ];
 
-// Pages of 100 tags read before giving up on a Docker Hub digest.
-export const HUB_PAGES = 20;
+// Pages of 100 tags read before giving up on a Docker Hub digest. Ten is
+// Docker Hub's own limit: an anonymous listing stops at 1,000 results, and
+// page 11 answers 403 "pagination offset too large for anonymous requests"
+// (checked 2026-11-24). Asking for it made a digest older than the newest
+// 1,000 tags an error, exit 2, instead of an unknown age.
+export const HUB_PAGES = 10;
 
 const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 

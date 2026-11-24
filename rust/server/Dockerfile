@@ -23,8 +23,13 @@
 # stage runs natively per platform (buildx with QEMU or native runners), so
 # the full build precompiles for the platform's own baseline target.
 
-# rust:1.99.1-slim-trixie
-FROM rust:1.99.1-slim-trixie@sha256:ea0999ff67355d958b8799b6751c879a6d770076d26047dca66f6e51e77930d3 AS build
+# rust:1.100.0-slim-trixie, the build of 2026-11-17 (docker-library/repo-info
+# 9df4f15, recorded 2026-11-17T19:53Z). The tag is rebuilt about weekly, so
+# its newest digest is always inside the cooldown, and no tag names this one
+# any more: image-age-check reports its age as unknown. Checked by hand as
+# that warning asks: seven days old on 2026-11-24, and the index fetched by
+# digest hashes to this pin and sets RUST_VERSION=1.100.0.
+FROM rust:1.100.0-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS build
 ARG COMPONENT_SHA256
 ARG TARGETARCH
 WORKDIR /src

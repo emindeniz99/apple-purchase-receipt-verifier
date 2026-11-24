@@ -272,9 +272,9 @@ latest on 2026-11-03, pin the same version, and 10.x has no fix.
 - **Not shipped.** jco is a devDependency, as above.
 - **Not reached by our build.** jco-std uses it only in its WASI path
   implementation, which `jco transpile` does not load.
-- **Override.** 11.0.4 through 11.0.8 keep the same ESM entry point;
+- **Override.** 11.0.4 through 11.0.9 keep the same ESM entry point;
   their engines drop Node 18 only. `package.json` pins it with
-  `"minimatch": "11.0.8"` in `overrides`. `jco transpile` of one component gave byte-identical
+  `"minimatch": "11.0.9"` in `overrides`. `jco transpile` of one component gave byte-identical
   `src/generated/` before and after (2026-11-03, at 11.0.5), and `npm audit`
   reports 0 vulnerabilities (2026-11-20, at 11.0.8).
 
