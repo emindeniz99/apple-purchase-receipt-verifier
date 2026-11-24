@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "apple-purchase-receipt-verifier"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "aprv-openssl",
  "base64",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "aprv-openssl"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "cc",
  "foreign-types",
