@@ -542,7 +542,7 @@ jobs:
           host: python
       # setup-uv provisions the interpreter too (uv python install), from
       # python-build-standalone, including the 3.11 floor.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
           python-version: ${{ matrix.python }}
@@ -759,7 +759,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ matrix.go }}
           cache: true
@@ -796,7 +796,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -826,7 +826,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -857,7 +857,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -897,7 +897,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -973,7 +973,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -1021,7 +1021,7 @@ jobs:
         with:
           host: go
       - if: ${{ !cancelled() }}
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -1086,7 +1086,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1129,7 +1129,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
@@ -1166,7 +1166,7 @@ jobs:
         with:
           host: go
       - if: needs.changes.outputs.go == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -1183,7 +1183,7 @@ jobs:
         with:
           host: ruby
       - if: ${{ !cancelled() && needs.changes.outputs.ruby == 'true' }}
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1216,7 +1216,7 @@ jobs:
         with:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
       - name: python 3.11
@@ -1276,7 +1276,7 @@ jobs:
         with:
           host: go
       - if: needs.changes.outputs.go == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27"
           cache: true
@@ -1307,7 +1307,7 @@ jobs:
         with:
           host: python
       - if: ${{ !cancelled() && needs.changes.outputs.python == 'true' }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
       - name: python 3.11
@@ -1336,7 +1336,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: "3.4"
           bundler-cache: true
@@ -1373,7 +1373,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: "3.4"
           # The lockfile exists now, so the action can install and cache the
@@ -1857,7 +1857,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           # One line, not the library's matrix: this job proves the parsers
           # hold, not that they hold on five rubies. 3.3 is where the harness
@@ -1927,7 +1927,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: python
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
           python-version: "3.13"
@@ -2629,7 +2629,7 @@ jobs:
         with:
           name: aprv-server-x86_64-unknown-linux-musl
           path: ${{ runner.temp }}/server
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
           enable-cache: false
@@ -3118,7 +3118,7 @@ jobs:
       # pull request red; toolchain-watch reports each newer release once
       # it is seven days old, and moving the pin is when a new audit runs
       # over these workflows.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
       - run: uvx zizmor@1.32.0 .github/workflows/ .github/actions/
@@ -3188,7 +3188,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.9"
           python-version: "3.13"
@@ -3730,7 +3730,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: go
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.25"
           cache: false
@@ -3766,7 +3766,7 @@ jobs:
       - uses: ./.github/actions/place-module
         with:
           host: ruby
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1.343.0
         with:
           ruby-version: "3.3"
           bundler-cache: false
