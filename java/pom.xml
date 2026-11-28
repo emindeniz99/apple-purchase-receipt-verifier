@@ -59,7 +59,7 @@
          the floor. When Dependabot moves the pin past 1.86, add a CI leg
          running the suite with -Dbouncycastle.version=1.86 (floors are
          tested claims). -->
-    <bouncycastle.version>1.86</bouncycastle.version>
+    <bouncycastle.version>1.87</bouncycastle.version>
     <!-- Floor: Jackson 2.16. JwsCore and Endpoint read unsigned JSON
          under Jackson's default StreamReadConstraints, built into their
          own factory (JsonFields.JSON) so a process-wide override
@@ -271,7 +271,7 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>3.11.0</version>
+        <version>3.12.0</version>
         <configuration>
           <java>
             <!-- The default is the two source roots; naming them explicitly
