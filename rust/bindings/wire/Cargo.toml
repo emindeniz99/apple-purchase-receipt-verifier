@@ -33,7 +33,7 @@ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 # result in fixtures/cases.json, against schema/ (JSON Schema 2020-12). No
 # network: `resolve-http` and `resolve-file` stay off, the schemas are
 # registered in memory.
-jsonschema = { version = "0.61.2", default-features = false }
+jsonschema = { version = "0.62.0", default-features = false }
 # The core's test seams: the receipt types are the core's, and outside the
 # core a payload is built by hand only through them.
 apple-purchase-receipt-verifier = { path = "../..", default-features = false, features = ["test-seams"] }
